@@ -2,15 +2,14 @@
 -- SpellKeep - Initial Schema
 -- ============================================================
 
--- Enable required extensions
-create extension if not exists "uuid-ossp";
+-- Supabase uses gen_random_uuid() (pgcrypto) instead of uuid-ossp
 
 -- ============================================================
 -- LAYER 1: Card Data (Scryfall sync - read only for users)
 -- ============================================================
 
 create table sets (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   scryfall_id text unique not null,
   code text unique not null,
   name text not null,
@@ -24,7 +23,7 @@ create table sets (
 create index idx_sets_code on sets(code);
 
 create table cards (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   scryfall_id text unique not null,
   oracle_id text not null,
   name text not null,
@@ -102,7 +101,7 @@ create trigger on_auth_user_created
 -- ============================================================
 
 create table collections (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade,
   name text not null,
   type text not null default 'collection' check (type in ('collection', 'binder', 'list')),
@@ -131,7 +130,7 @@ create trigger on_profile_created
   for each row execute function handle_new_profile();
 
 create table collection_cards (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   collection_id uuid not null references collections(id) on delete cascade,
   card_id uuid not null references cards(id) on delete cascade,
   condition text not null default 'NM' check (condition in ('NM', 'LP', 'MP', 'HP', 'DMG')),
@@ -158,7 +157,7 @@ alter table collection_cards
 -- ============================================================
 
 create table deck_folders (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade,
   name text not null,
   parent_folder_id uuid references deck_folders(id) on delete cascade,
@@ -170,7 +169,7 @@ create table deck_folders (
 create index idx_deck_folders_user on deck_folders(user_id);
 
 create table decks (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade,
   folder_id uuid references deck_folders(id) on delete set null,
   name text not null,
@@ -190,7 +189,7 @@ create index idx_decks_folder on decks(folder_id);
 create index idx_decks_share_token on decks(share_token) where share_token is not null;
 
 create table deck_cards (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   deck_id uuid not null references decks(id) on delete cascade,
   card_id uuid not null references cards(id) on delete cascade,
   quantity integer not null default 1 check (quantity > 0),
@@ -207,7 +206,7 @@ create index idx_deck_cards_card on deck_cards(card_id);
 -- ============================================================
 
 create table scan_history (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id) on delete cascade,
   card_id uuid references cards(id),
   confidence numeric,
