@@ -1,0 +1,25 @@
+config:
+    edition: 3
+with:
+    user_collection_ids: "SELECT id as collection_id FROM collections WHERE user_id = auth.user_id()"
+    user_deck_ids: "SELECT id as deck_id FROM decks WHERE user_id = auth.user_id()"
+streams:
+    global_sets:
+        query: "SELECT id, scryfall_id, code, name, set_type, released_at, card_count, icon_svg_uri, updated_at FROM sets"
+    user_profile:
+        query: "SELECT * FROM profiles WHERE id = auth.user_id()"
+    user_collections:
+        queries:
+            - "SELECT * FROM collections WHERE user_id = auth.user_id()"
+            - "SELECT cc.* FROM collection_cards cc INNER JOIN collections c ON cc.collection_id = c.id WHERE c.user_id = auth.user_id()"
+    user_collection_cards:
+        query: "SELECT * FROM cards WHERE id IN (SELECT card_id FROM collection_cards WHERE collection_id IN user_collection_ids)"
+    user_decks:
+        queries:
+            - "SELECT * FROM deck_folders WHERE user_id = auth.user_id()"
+            - "SELECT * FROM decks WHERE user_id = auth.user_id()"
+            - "SELECT dc.* FROM deck_cards dc INNER JOIN decks d ON dc.deck_id = d.id WHERE d.user_id = auth.user_id()"
+    user_deck_cards:
+        query: "SELECT * FROM cards WHERE id IN (SELECT card_id FROM deck_cards WHERE deck_id IN user_deck_ids)"
+    user_scans:
+        query: "SELECT * FROM scan_history WHERE user_id = auth.user_id()"

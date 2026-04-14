@@ -1,7 +1,5 @@
-import { PowerSyncContext } from '@powersync/react';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
-import { db, setupPowerSync } from '../lib/powersync';
+import { ActivityIndicator, Platform, View, Text, StyleSheet } from 'react-native';
 import { colors, fontSize, spacing } from '../constants';
 
 type Props = {
@@ -9,18 +7,22 @@ type Props = {
 };
 
 export function PowerSyncProvider({ children }: Props) {
-  const [isReady, setIsReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(Platform.OS === 'web');
 
   useEffect(() => {
-    setupPowerSync()
-      .then(() => setIsReady(true))
-      .catch((err) => {
+    // PowerSync uses native SQLite — skip on web
+    if (Platform.OS === 'web') return;
+
+    (async () => {
+      try {
+        const { setupPowerSync } = await import('../lib/powersync');
+        await setupPowerSync();
+      } catch (err) {
         console.error('PowerSync setup error:', err);
-        // Still allow the app to function without sync
-        setError(err.message);
+      } finally {
         setIsReady(true);
-      });
+      }
+    })();
   }, []);
 
   if (!isReady) {
@@ -31,6 +33,16 @@ export function PowerSyncProvider({ children }: Props) {
       </View>
     );
   }
+
+  // On web, render children directly (no PowerSync context)
+  // On native, wrap with PowerSync context
+  if (Platform.OS === 'web') {
+    return <>{children}</>;
+  }
+
+  // Dynamic require to avoid web bundling native modules
+  const { PowerSyncContext } = require('@powersync/react');
+  const { db } = require('../lib/powersync');
 
   return (
     <PowerSyncContext.Provider value={db}>
