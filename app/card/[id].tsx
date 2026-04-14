@@ -1,14 +1,15 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ScryfallCard,
   getCardImageUri,
   formatPrice,
 } from '../../src/lib/scryfall';
+import { AddToCollectionModal } from '../../src/components/AddToCollectionModal';
 import { colors, spacing, fontSize, borderRadius } from '../../src/constants';
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
@@ -48,6 +49,7 @@ export default function CardDetailScreen() {
   const { cardJson } = useLocalSearchParams<{ id: string; cardJson: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const card: ScryfallCard | null = useMemo(() => {
     try {
@@ -162,7 +164,10 @@ export default function CardDetailScreen() {
 
         {/* Actions */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setShowAddModal(true)}
+          >
             <Ionicons name="add-circle-outline" size={22} color={colors.text} />
             <Text style={styles.actionText}>Add to Collection</Text>
           </TouchableOpacity>
@@ -172,6 +177,17 @@ export default function CardDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Add to Collection Modal */}
+      <AddToCollectionModal
+        visible={showAddModal}
+        card={card}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={() => {
+          setShowAddModal(false);
+          Alert.alert('Added!', `${card.name} added to your collection`);
+        }}
+      />
     </View>
   );
 }
