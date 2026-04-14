@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ':*)",
+      "Bash(pip3 install:*)",
+      "WebSearch",
+      "Bash(npx --version)",
+      "Bash(npx create-expo-app@latest . --template blank-typescript)",
+      "Read(//Users/adriangomez/Desktop/DEV/**)",
+      "Bash(npx create-expo-app@latest SpellKeepApp --template blank-typescript)",
+      "Bash(cp -r /Users/adriangomez/Desktop/DEV/SpellKeepApp/* /Users/adriangomez/Desktop/DEV/SpellKeep/)",
+      "Bash(cp /Users/adriangomez/Desktop/DEV/SpellKeepApp/.gitignore /Users/adriangomez/Desktop/DEV/SpellKeep/)",
+      "Bash(cp -r /Users/adriangomez/Desktop/DEV/SpellKeepApp/.expo /Users/adriangomez/Desktop/DEV/SpellKeep/)",
+      "Bash(rm -rf /Users/adriangomez/Desktop/DEV/SpellKeepApp)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
+    ]
+  }
+}
