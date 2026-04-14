@@ -14,6 +14,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
 import { formatPrice } from '../../src/lib/scryfall';
+import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
 import { colors, spacing, fontSize, borderRadius } from '../../src/constants';
 
 type CollectionEntry = {
@@ -60,6 +61,16 @@ export default function CollectionScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [totalValue, setTotalValue] = useState(0);
+  const [editEntry, setEditEntry] = useState<{
+    id: string;
+    condition: string;
+    quantity_normal: number;
+    quantity_foil: number;
+    quantity_etched: number;
+    cardName: string;
+    setName: string;
+    collectorNumber: string;
+  } | null>(null);
 
   const fetchCollection = useCallback(async () => {
     try {
@@ -168,6 +179,20 @@ export default function CollectionScreen() {
     });
   }
 
+  function handleEditPress(entry: CollectionEntry) {
+    const card = entry.cards;
+    setEditEntry({
+      id: entry.id,
+      condition: entry.condition,
+      quantity_normal: entry.quantity_normal,
+      quantity_foil: entry.quantity_foil,
+      quantity_etched: entry.quantity_etched,
+      cardName: card.name,
+      setName: card.set_name,
+      collectorNumber: card.collector_number,
+    });
+  }
+
   const totalCards = entries.reduce((sum, e) => sum + getTotalQuantity(e), 0);
   const uniqueCards = entries.length;
 
@@ -242,6 +267,13 @@ export default function CollectionScreen() {
                   <Text style={styles.cardQuantity}>
                     x{getTotalQuantity(item)}
                   </Text>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => handleEditPress(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="pencil" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             );
@@ -272,6 +304,16 @@ export default function CollectionScreen() {
           }
         />
       )}
+
+      <EditCollectionCardModal
+        visible={editEntry !== null}
+        entry={editEntry}
+        onClose={() => setEditEntry(null)}
+        onSaved={() => {
+          setEditEntry(null);
+          fetchCollection();
+        }}
+      />
     </View>
   );
 }
@@ -369,6 +411,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.sm,
     marginTop: 2,
+  },
+  editButton: {
+    marginTop: spacing.xs,
+    padding: spacing.xs,
   },
   centered: {
     flex: 1,
