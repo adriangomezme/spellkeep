@@ -30,7 +30,8 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@journeyapps/react-native-quick-sqlite"
     ]
   }
 }
