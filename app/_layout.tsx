@@ -8,7 +8,7 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <PowerSyncProvider>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <Stack
           screenOptions={{
             headerShown: false,

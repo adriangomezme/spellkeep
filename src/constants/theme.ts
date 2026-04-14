@@ -1,38 +1,72 @@
 export const colors = {
   // Base
-  background: '#1a1a2e',
-  surface: '#16213e',
-  surfaceLight: '#1f2f50',
-  card: '#0f3460',
+  background: '#F5F5F7',
+  surface: '#FFFFFF',
+  surfaceSecondary: '#F0F1F3',
+  card: '#FFFFFF',
 
   // Text
-  text: '#eaeaea',
-  textSecondary: '#a0a0b8',
-  textMuted: '#6b6b80',
+  text: '#0D0D0D',
+  textSecondary: '#6B7280',
+  textMuted: '#9CA3AF',
 
-  // Accent
-  primary: '#e94560',
-  primaryLight: '#ff6b81',
-  secondary: '#533483',
-  accent: '#0ea5e9',
+  // Brand
+  primary: '#023BFD',
+  primaryLight: '#E8EEFF',
+  primaryDark: '#0130D0',
 
   // MTG Mana colors
-  manaWhite: '#f9faf4',
-  manaBlue: '#0e68ab',
-  manaBlack: '#150b00',
-  manaRed: '#d3202a',
-  manaGreen: '#00733e',
-  manaColorless: '#ccc2c0',
-  manaMulti: '#e0c540',
+  manaWhite: '#F9FAF4',
+  manaBlue: '#0E68AB',
+  manaBlack: '#150B00',
+  manaRed: '#D3202A',
+  manaGreen: '#00733E',
+  manaColorless: '#CCC2C0',
+  manaMulti: '#E0C540',
 
   // Status
-  success: '#22c55e',
-  warning: '#f59e0b',
-  error: '#ef4444',
+  success: '#22C55E',
+  successLight: '#ECFDF5',
+  warning: '#F59E0B',
+  warningLight: '#FFFBEB',
+  error: '#EF4444',
+  errorLight: '#FEF2F2',
 
-  // Borders
-  border: '#2a2a4a',
-  borderLight: '#3a3a5a',
+  // Borders & Dividers
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  divider: '#F0F0F0',
+
+  // Shadows (used programmatically)
+  shadow: '#000000',
+
+  // Tab bar
+  tabBarBg: '#FFFFFF',
+  tabBarInactive: '#9CA3AF',
+} as const;
+
+export const shadows = {
+  sm: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 5,
+  },
 } as const;
 
 export const spacing = {
@@ -45,19 +79,19 @@ export const spacing = {
 } as const;
 
 export const fontSize = {
-  xs: 10,
-  sm: 12,
-  md: 14,
-  lg: 16,
+  xs: 11,
+  sm: 13,
+  md: 15,
+  lg: 17,
   xl: 20,
   xxl: 24,
-  xxxl: 32,
+  xxxl: 34,
 } as const;
 
 export const borderRadius = {
-  sm: 4,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
   full: 9999,
 } as const;

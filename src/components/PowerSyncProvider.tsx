@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, View, Text, StyleSheet } from 'react-native';
-import { colors, fontSize, spacing } from '../constants';
+import { ActivityIndicator, Platform, View, StyleSheet } from 'react-native';
+import { colors } from '../constants';
 
 type Props = {
   children: React.ReactNode;
@@ -10,7 +10,6 @@ export function PowerSyncProvider({ children }: Props) {
   const [isReady, setIsReady] = useState(Platform.OS === 'web');
 
   useEffect(() => {
-    // PowerSync uses native SQLite — skip on web
     if (Platform.OS === 'web') return;
 
     (async () => {
@@ -29,18 +28,14 @@ export function PowerSyncProvider({ children }: Props) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.text}>Loading...</Text>
       </View>
     );
   }
 
-  // On web, render children directly (no PowerSync context)
-  // On native, wrap with PowerSync context
   if (Platform.OS === 'web') {
     return <>{children}</>;
   }
 
-  // Dynamic require to avoid web bundling native modules
   const { PowerSyncContext } = require('@powersync/react');
   const { db } = require('../lib/powersync');
 
@@ -57,10 +52,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  text: {
-    color: colors.textSecondary,
-    fontSize: fontSize.md,
-    marginTop: spacing.md,
   },
 });

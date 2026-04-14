@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { Condition, CONDITIONS } from '../lib/collection';
-import { colors, spacing, fontSize, borderRadius } from '../constants';
+import { colors, shadows, spacing, fontSize, borderRadius } from '../constants';
 
 type CollectionEntry = {
   id: string;
@@ -48,14 +48,14 @@ function QuantityControl({
           style={styles.quantityButton}
           onPress={() => onChange(Math.max(0, value - 1))}
         >
-          <Ionicons name="remove" size={20} color={colors.text} />
+          <Ionicons name="remove" size={18} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.quantityValue}>{value}</Text>
         <TouchableOpacity
           style={styles.quantityButton}
           onPress={() => onChange(value + 1)}
         >
-          <Ionicons name="add" size={20} color={colors.text} />
+          <Ionicons name="add" size={18} color={colors.text} />
         </TouchableOpacity>
       </View>
     </View>
@@ -156,7 +156,6 @@ export function EditCollectionCardModal({ visible, entry, onClose, onSaved }: Pr
             {entry.setName} #{entry.collectorNumber}
           </Text>
 
-          {/* Condition */}
           <Text style={styles.sectionLabel}>Condition</Text>
           <View style={styles.optionRow}>
             {CONDITIONS.map((c) => (
@@ -180,22 +179,23 @@ export function EditCollectionCardModal({ visible, entry, onClose, onSaved }: Pr
             ))}
           </View>
 
-          {/* Quantities by finish */}
           <Text style={styles.sectionLabel}>Quantities</Text>
           <QuantityControl label="Normal" value={qtyNormal} onChange={setQtyNormal} />
           <QuantityControl label="Foil" value={qtyFoil} onChange={setQtyFoil} />
           <QuantityControl label="Etched" value={qtyEtched} onChange={setQtyEtched} />
 
           {totalQty === 0 && (
-            <Text style={styles.warningText}>
-              Setting all quantities to 0 will remove this card
-            </Text>
+            <View style={styles.warningContainer}>
+              <Ionicons name="warning" size={16} color={colors.warning} />
+              <Text style={styles.warningText}>
+                Setting all to 0 will remove this card
+              </Text>
+            </View>
           )}
 
-          {/* Actions */}
           <View style={styles.actionRow}>
             <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-              <Ionicons name="trash-outline" size={22} color={colors.error} />
+              <Ionicons name="trash-outline" size={20} color={colors.error} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -204,7 +204,7 @@ export function EditCollectionCardModal({ visible, entry, onClose, onSaved }: Pr
               disabled={isLoading || !hasChanges}
             >
               {isLoading ? (
-                <ActivityIndicator color={colors.text} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.saveButtonText}>
                   {totalQty === 0 ? 'Remove' : 'Save Changes'}
@@ -225,7 +225,7 @@ export function EditCollectionCardModal({ visible, entry, onClose, onSaved }: Pr
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -234,11 +234,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: borderRadius.xl,
     padding: spacing.lg,
     paddingBottom: spacing.xxl + 20,
+    ...shadows.lg,
   },
   handleBar: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: colors.borderLight,
+    backgroundColor: colors.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: spacing.lg,
@@ -263,8 +264,8 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: spacing.sm,
@@ -277,15 +278,12 @@ const styles = StyleSheet.create({
   },
   optionButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceSecondary,
   },
   optionButtonSelected: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
   optionText: {
     color: colors.textSecondary,
@@ -293,20 +291,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   optionTextSelected: {
-    color: colors.text,
+    color: '#FFFFFF',
   },
   quantityControl: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
-    padding: spacing.sm,
+    padding: spacing.sm + 2,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
   quantityLabel: {
-    color: colors.textSecondary,
+    color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '500',
   },
@@ -316,9 +314,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   quantityButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -329,14 +327,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
-    minWidth: 30,
+    minWidth: 28,
     textAlign: 'center',
+  },
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: colors.warningLight,
+    borderRadius: borderRadius.sm,
   },
   warningText: {
     color: colors.warning,
     fontSize: fontSize.sm,
-    textAlign: 'center',
-    marginTop: spacing.sm,
+    fontWeight: '500',
   },
   actionRow: {
     flexDirection: 'row',
@@ -347,15 +354,12 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.error,
+    backgroundColor: colors.errorLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveButton: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
@@ -363,10 +367,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   saveButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
   saveButtonText: {
-    color: colors.text,
+    color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '700',
   },

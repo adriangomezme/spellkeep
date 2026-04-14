@@ -1,1 +1,1 @@
-export { colors, spacing, fontSize, borderRadius } from './theme';
+export { colors, shadows, spacing, fontSize, borderRadius } from './theme';

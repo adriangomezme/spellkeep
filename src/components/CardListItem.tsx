@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { ScryfallCard, getCardImageUri, formatPrice } from '../lib/scryfall';
-import { colors, spacing, fontSize, borderRadius } from '../constants';
+import { colors, spacing, fontSize, borderRadius, shadows } from '../constants';
 
 type Props = {
   card: ScryfallCard;
@@ -9,16 +9,16 @@ type Props = {
 };
 
 const MANA_COLORS: Record<string, string> = {
-  W: colors.manaWhite,
-  U: colors.manaBlue,
-  B: colors.manaBlack,
-  R: colors.manaRed,
-  G: colors.manaGreen,
+  W: '#F0E68C',
+  U: colors.primary,
+  B: '#2D2D2D',
+  R: '#D3202A',
+  G: '#00733E',
 };
 
 function ColorDots({ colors: cardColors }: { colors: string[] }) {
   if (!cardColors || cardColors.length === 0) {
-    return <View style={[styles.colorDot, { backgroundColor: colors.manaColorless }]} />;
+    return <View style={[styles.colorDot, { backgroundColor: colors.textMuted }]} />;
   }
 
   return (
@@ -26,7 +26,7 @@ function ColorDots({ colors: cardColors }: { colors: string[] }) {
       {cardColors.map((c) => (
         <View
           key={c}
-          style={[styles.colorDot, { backgroundColor: MANA_COLORS[c] ?? colors.manaColorless }]}
+          style={[styles.colorDot, { backgroundColor: MANA_COLORS[c] ?? colors.textMuted }]}
         />
       ))}
     </View>
@@ -37,13 +37,12 @@ export function CardListItem({ card, onPress }: Props) {
   const imageUri = getCardImageUri(card, 'small');
 
   return (
-    <TouchableOpacity style={styles.container} onPress={() => onPress(card)} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.container} onPress={() => onPress(card)} activeOpacity={0.6}>
       <Image
         source={{ uri: imageUri }}
         style={styles.image}
         contentFit="cover"
         transition={200}
-        placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
       />
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>
@@ -71,16 +70,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    padding: spacing.sm,
+    padding: spacing.sm + 2,
     marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...shadows.sm,
   },
   image: {
-    width: 48,
-    height: 68,
+    width: 46,
+    height: 64,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surfaceSecondary,
   },
   info: {
     flex: 1,
@@ -95,7 +93,7 @@ const styles = StyleSheet.create({
   typeLine: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
-    marginTop: 2,
+    marginTop: 1,
   },
   meta: {
     flexDirection: 'row',
@@ -121,7 +119,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   price: {
-    color: colors.accent,
+    color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '700',
   },

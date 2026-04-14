@@ -11,7 +11,9 @@ type Props = {
 export function ScreenPlaceholder({ title, icon, subtitle }: Props) {
   return (
     <View style={styles.container}>
-      <Ionicons name={icon} size={64} color={colors.textMuted} />
+      <View style={styles.iconContainer}>
+        <Ionicons name={icon} size={48} color={colors.textMuted} />
+      </View>
       <Text style={styles.title}>{title}</Text>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
@@ -26,16 +28,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.lg,
   },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
   title: {
     color: colors.text,
     fontSize: fontSize.xxl,
     fontWeight: '700',
-    marginTop: spacing.md,
   },
   subtitle: {
     color: colors.textSecondary,
     fontSize: fontSize.md,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
 });

@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
 import { formatPrice } from '../../src/lib/scryfall';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
-import { colors, spacing, fontSize, borderRadius } from '../../src/constants';
+import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 type CollectionEntry = {
   id: string;
@@ -77,7 +77,6 @@ export default function CollectionScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get the default collection
       const { data: collection } = await supabase
         .from('collections')
         .select('id')
@@ -87,7 +86,6 @@ export default function CollectionScreen() {
 
       if (!collection) return;
 
-      // Fetch collection cards with card data
       const { data, error } = await supabase
         .from('collection_cards')
         .select(`
@@ -114,7 +112,6 @@ export default function CollectionScreen() {
       const items = (data ?? []) as unknown as CollectionEntry[];
       setEntries(items);
 
-      // Calculate total value
       let value = 0;
       for (const entry of items) {
         const card = entry.cards;
@@ -135,7 +132,6 @@ export default function CollectionScreen() {
     fetchCollection();
   }, [fetchCollection]);
 
-  // Refresh when screen comes into focus
   useEffect(() => {
     const interval = setInterval(fetchCollection, 10000);
     return () => clearInterval(interval);
@@ -198,12 +194,10 @@ export default function CollectionScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Collection</Text>
       </View>
 
-      {/* Stats bar */}
       {entries.length > 0 && (
         <View style={styles.statsBar}>
           <View style={styles.statItem}>
@@ -217,7 +211,7 @@ export default function CollectionScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.accent }]}>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
               ${totalValue.toFixed(2)}
             </Text>
             <Text style={styles.statLabel}>Value</Text>
@@ -241,7 +235,7 @@ export default function CollectionScreen() {
               <TouchableOpacity
                 style={styles.cardRow}
                 onPress={() => handleCardPress(item)}
-                activeOpacity={0.7}
+                activeOpacity={0.6}
               >
                 <Image
                   source={{ uri: card.image_uri_small }}
@@ -272,7 +266,7 @@ export default function CollectionScreen() {
                     onPress={() => handleEditPress(item)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="pencil" size={16} color={colors.textMuted} />
+                    <Ionicons name="pencil" size={14} color={colors.textMuted} />
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
@@ -288,7 +282,9 @@ export default function CollectionScreen() {
           }
           ListEmptyComponent={
             <View style={styles.centered}>
-              <Ionicons name="library-outline" size={64} color={colors.textMuted} />
+              <View style={styles.emptyIcon}>
+                <Ionicons name="library-outline" size={40} color={colors.textMuted} />
+              </View>
               <Text style={styles.emptyTitle}>No cards yet</Text>
               <Text style={styles.emptySubtitle}>
                 Search for cards and add them to your collection
@@ -297,7 +293,7 @@ export default function CollectionScreen() {
                 style={styles.searchButton}
                 onPress={() => router.push('/(tabs)/search')}
               >
-                <Ionicons name="search" size={20} color={colors.text} />
+                <Ionicons name="search" size={18} color="#FFFFFF" />
                 <Text style={styles.searchButtonText}>Search Cards</Text>
               </TouchableOpacity>
             </View>
@@ -340,6 +336,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
+    ...shadows.sm,
   },
   statItem: {
     flex: 1,
@@ -368,16 +365,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    padding: spacing.sm,
+    padding: spacing.sm + 2,
     marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...shadows.sm,
   },
   cardImage: {
-    width: 48,
-    height: 68,
+    width: 46,
+    height: 64,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surfaceSecondary,
   },
   cardInfo: {
     flex: 1,
@@ -391,7 +387,7 @@ const styles = StyleSheet.create({
   cardSet: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
-    marginTop: 2,
+    marginTop: 1,
   },
   cardMeta: {
     color: colors.textMuted,
@@ -403,7 +399,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   cardPrice: {
-    color: colors.accent,
+    color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '700',
   },
@@ -422,11 +418,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 80,
   },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
   emptyTitle: {
     color: colors.text,
     fontSize: fontSize.xxl,
     fontWeight: '700',
-    marginTop: spacing.md,
   },
   emptySubtitle: {
     color: colors.textSecondary,
@@ -446,7 +450,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   searchButtonText: {
-    color: colors.text,
+    color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '600',
   },

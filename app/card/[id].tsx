@@ -10,7 +10,7 @@ import {
   formatPrice,
 } from '../../src/lib/scryfall';
 import { AddToCollectionModal } from '../../src/components/AddToCollectionModal';
-import { colors, spacing, fontSize, borderRadius } from '../../src/constants';
+import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
@@ -38,7 +38,14 @@ function LegalityBadge({ format, status }: { format: string; status: string }) {
         isBanned && styles.legalityBanned,
       ]}
     >
-      <Text style={styles.legalityText}>
+      <Text
+        style={[
+          styles.legalityText,
+          isLegal && { color: '#16A34A' },
+          isRestricted && { color: '#D97706' },
+          isBanned && { color: '#DC2626' },
+        ]}
+      >
         {format.replace('_', ' ')}
       </Text>
     </View>
@@ -78,7 +85,7 @@ export default function CardDetailScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color={colors.text} />
+          <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {card.name}
@@ -92,16 +99,18 @@ export default function CardDetailScreen() {
       >
         {/* Card Image */}
         <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: imageUri }}
-            style={styles.cardImage}
-            contentFit="contain"
-            transition={300}
-          />
+          <View style={styles.imageWrapper}>
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.cardImage}
+              contentFit="contain"
+              transition={300}
+            />
+          </View>
         </View>
 
         {/* Prices */}
-        <View style={styles.priceRow}>
+        <View style={[styles.card, styles.priceRow]}>
           <View style={styles.priceItem}>
             <Text style={styles.priceLabel}>Normal</Text>
             <Text style={styles.priceValue}>{formatPrice(card.prices?.usd)}</Text>
@@ -114,7 +123,7 @@ export default function CardDetailScreen() {
         </View>
 
         {/* Info Section */}
-        <View style={styles.section}>
+        <View style={styles.card}>
           <InfoRow label="Type" value={card.type_line} />
           <InfoRow label="Mana Cost" value={card.mana_cost ?? card.card_faces?.[0]?.mana_cost} />
           <InfoRow label="Mana Value" value={String(card.cmc)} />
@@ -129,7 +138,7 @@ export default function CardDetailScreen() {
 
         {/* Oracle Text */}
         {oracleText && (
-          <View style={styles.section}>
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Oracle Text</Text>
             <Text style={styles.oracleText}>{oracleText}</Text>
           </View>
@@ -137,7 +146,7 @@ export default function CardDetailScreen() {
 
         {/* Double-faced card: show back face */}
         {card.card_faces && card.card_faces.length > 1 && (
-          <View style={styles.section}>
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>
               {card.card_faces[1].name}
             </Text>
@@ -152,7 +161,7 @@ export default function CardDetailScreen() {
 
         {/* Legalities */}
         {legalFormats.length > 0 && (
-          <View style={styles.section}>
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Legalities</Text>
             <View style={styles.legalitiesContainer}>
               {legalFormats.map(([format, status]) => (
@@ -168,17 +177,16 @@ export default function CardDetailScreen() {
             style={styles.actionButton}
             onPress={() => setShowAddModal(true)}
           >
-            <Ionicons name="add-circle-outline" size={22} color={colors.text} />
+            <Ionicons name="add" size={22} color="#FFFFFF" />
             <Text style={styles.actionText}>Add to Collection</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionButtonSecondary}>
             <Ionicons name="layers-outline" size={22} color={colors.text} />
-            <Text style={styles.actionText}>Add to Deck</Text>
+            <Text style={styles.actionTextSecondary}>Add to Deck</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Add to Collection Modal */}
       <AddToCollectionModal
         visible={showAddModal}
         card={card}
@@ -225,20 +233,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
   },
-  cardImage: {
-    width: 280,
-    height: 392,
+  imageWrapper: {
     borderRadius: borderRadius.lg,
+    ...shadows.lg,
+  },
+  cardImage: {
+    width: 260,
+    height: 364,
+    borderRadius: borderRadius.lg,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    marginHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    marginHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
   },
   priceItem: {
     flex: 1,
@@ -249,22 +264,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
   priceValue: {
-    color: colors.accent,
-    fontSize: fontSize.xl,
+    color: colors.text,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
     marginTop: 4,
   },
   priceDivider: {
     width: 1,
-    height: 40,
+    height: 36,
     backgroundColor: colors.border,
-  },
-  section: {
-    backgroundColor: colors.surface,
-    marginHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
   },
   sectionTitle: {
     color: colors.text,
@@ -276,6 +284,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: spacing.xs + 2,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.divider,
   },
   infoLabel: {
     color: colors.textMuted,
@@ -305,29 +315,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   legalityBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 1,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surfaceSecondary,
   },
   legalityLegal: {
-    backgroundColor: '#22c55e22',
-    borderWidth: 1,
-    borderColor: colors.success,
+    backgroundColor: colors.successLight,
   },
   legalityRestricted: {
-    backgroundColor: '#f59e0b22',
-    borderWidth: 1,
-    borderColor: colors.warning,
+    backgroundColor: colors.warningLight,
   },
   legalityBanned: {
-    backgroundColor: '#ef444422',
-    borderWidth: 1,
-    borderColor: colors.error,
+    backgroundColor: colors.errorLight,
   },
   legalityText: {
-    color: colors.text,
+    color: colors.textSecondary,
     fontSize: fontSize.xs,
+    fontWeight: '600',
     textTransform: 'capitalize',
   },
   actions: {
@@ -348,7 +353,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -356,6 +361,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   actionText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+  },
+  actionTextSecondary: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '600',

@@ -52,7 +52,7 @@ export default function SearchScreen() {
 
       {error && (
         <View style={styles.errorContainer}>
-          <Ionicons name="warning" size={20} color={colors.error} />
+          <Ionicons name="warning" size={18} color={colors.error} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
@@ -69,12 +69,16 @@ export default function SearchScreen() {
         ListEmptyComponent={
           !isLoading && query.length >= 2 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="search" size={48} color={colors.textMuted} />
+              <View style={styles.emptyIcon}>
+                <Ionicons name="search" size={32} color={colors.textMuted} />
+              </View>
               <Text style={styles.emptyText}>No cards found</Text>
             </View>
           ) : query.length < 2 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="sparkles-outline" size={48} color={colors.textMuted} />
+              <View style={styles.emptyIcon}>
+                <Ionicons name="sparkles-outline" size={32} color={colors.textMuted} />
+              </View>
               <Text style={styles.emptyText}>Search for any Magic card</Text>
               <Text style={styles.emptyHint}>
                 Try a card name, type, or set
@@ -131,10 +135,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 80,
   },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
   emptyText: {
     color: colors.textSecondary,
     fontSize: fontSize.lg,
-    marginTop: spacing.md,
+    fontWeight: '600',
   },
   emptyHint: {
     color: colors.textMuted,
@@ -144,11 +157,11 @@ const styles = StyleSheet.create({
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.errorLight,
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
     padding: spacing.md,
-    borderRadius: 8,
+    borderRadius: 12,
     gap: spacing.sm,
   },
   errorText: {

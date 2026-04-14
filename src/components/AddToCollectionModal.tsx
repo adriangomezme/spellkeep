@@ -17,7 +17,7 @@ import {
   CONDITIONS,
   FINISHES,
 } from '../lib/collection';
-import { colors, spacing, fontSize, borderRadius } from '../constants';
+import { colors, shadows, spacing, fontSize, borderRadius } from '../constants';
 
 type Props = {
   visible: boolean;
@@ -60,7 +60,6 @@ export function AddToCollectionModal({ visible, card, onClose, onSuccess }: Prop
     try {
       await addToCollection(card, condition, finish, quantity);
       onSuccess();
-      // Reset for next use
       setCondition('NM');
       setFinish('normal');
       setQuantity(1);
@@ -80,17 +79,14 @@ export function AddToCollectionModal({ visible, card, onClose, onSuccess }: Prop
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          {/* Handle bar */}
           <View style={styles.handleBar} />
 
-          {/* Title */}
           <Text style={styles.title}>Add to Collection</Text>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
           <Text style={styles.cardSet}>
             {card.set_name} #{card.collector_number}
           </Text>
 
-          {/* Condition */}
           <Text style={styles.sectionLabel}>Condition</Text>
           <View style={styles.optionRow}>
             {CONDITIONS.map((c) => (
@@ -104,7 +100,6 @@ export function AddToCollectionModal({ visible, card, onClose, onSuccess }: Prop
             ))}
           </View>
 
-          {/* Finish */}
           <Text style={styles.sectionLabel}>Finish</Text>
           <View style={styles.optionRow}>
             {FINISHES.map((f) => (
@@ -118,39 +113,34 @@ export function AddToCollectionModal({ visible, card, onClose, onSuccess }: Prop
             ))}
           </View>
 
-          {/* Quantity */}
           <Text style={styles.sectionLabel}>Quantity</Text>
           <View style={styles.quantityRow}>
             <TouchableOpacity
               style={styles.quantityButton}
               onPress={() => setQuantity((q) => Math.max(1, q - 1))}
             >
-              <Ionicons name="remove" size={24} color={colors.text} />
+              <Ionicons name="remove" size={22} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.quantityText}>{quantity}</Text>
             <TouchableOpacity
               style={styles.quantityButton}
               onPress={() => setQuantity((q) => q + 1)}
             >
-              <Ionicons name="add" size={24} color={colors.text} />
+              <Ionicons name="add" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
 
-          {/* Actions */}
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAdd}
             disabled={isLoading}
           >
             {isLoading ? (
-              <ActivityIndicator color={colors.text} />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <>
-                <Ionicons name="add-circle" size={22} color={colors.text} />
-                <Text style={styles.addButtonText}>
-                  Add {quantity}x {condition} {finish !== 'normal' ? finish : ''}
-                </Text>
-              </>
+              <Text style={styles.addButtonText}>
+                Add {quantity}x {condition} {finish !== 'normal' ? finish : ''}
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -166,7 +156,7 @@ export function AddToCollectionModal({ visible, card, onClose, onSuccess }: Prop
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -175,11 +165,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: borderRadius.xl,
     padding: spacing.lg,
     paddingBottom: spacing.xxl + 20,
+    ...shadows.lg,
   },
   handleBar: {
-    width: 40,
+    width: 36,
     height: 4,
-    backgroundColor: colors.borderLight,
+    backgroundColor: colors.border,
     borderRadius: 2,
     alignSelf: 'center',
     marginBottom: spacing.lg,
@@ -204,8 +195,8 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: spacing.sm,
@@ -218,15 +209,12 @@ const styles = StyleSheet.create({
   },
   optionButton: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceSecondary,
   },
   optionButtonSelected: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
   optionText: {
     color: colors.textSecondary,
@@ -234,21 +222,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   optionTextSelected: {
-    color: colors.text,
+    color: '#FFFFFF',
   },
   quantityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: spacing.xl,
   },
   quantityButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -260,17 +246,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   addButton: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
+    padding: spacing.md + 2,
     marginTop: spacing.xl,
   },
   addButtonText: {
-    color: colors.text,
+    color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '700',
   },

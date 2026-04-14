@@ -18,7 +18,45 @@
       "Bash(npx expo:*)",
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(rm -f /Users/adriangomez/Desktop/DEV/SpellKeep/.git/index.lock)",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__get_project_url",
+      "mcp__supabase__get_publishable_keys",
+      "mcp__supabase__execute_sql",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_darwin_arm64.tar.gz -o /tmp/supabase.tar.gz)",
+      "Bash(tar -xzf /tmp/supabase.tar.gz -C /tmp)",
+      "Read(//tmp/**)",
+      "Bash(sudo mv:*)",
+      "Bash(supabase --version)",
+      "Bash(mkdir -p ~/bin)",
+      "Bash(mv /tmp/supabase ~/bin/supabase)",
+      "Bash(chmod +x ~/bin/supabase)",
+      "Bash(export PATH=\"$HOME/bin:$PATH\")",
+      "Bash(supabase login:*)",
+      "Bash(export SUPABASE_ACCESS_TOKEN=\"sbp_76f8d89460f8e586bb86404d26ebbfa9ed18fba6\")",
+      "Bash(supabase projects:*)",
+      "Bash(supabase link:*)",
+      "Bash(supabase db:*)",
+      "Bash(supabase --help)",
+      "Bash(git reset:*)",
+      "Bash(find /Users/adriangomez/Desktop/DEV/SpellKeep/.git -name \"*.lock\" -exec rm -f {} \\\\;)",
+      "WebFetch(domain:docs.powersync.com)",
+      "WebFetch(domain:api.scryfall.com)",
+      "Bash(git commit:*)",
+      "Bash(curl:*)",
+      "Bash(pkill -f \"expo start\")",
+      "Bash(xcodebuild -version)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python3:*)",
+      "Bash(node:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }
