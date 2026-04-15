@@ -109,13 +109,15 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      {/* Fully opaque backdrop — hides camera completely */}
       <TouchableOpacity
         style={styles.backdrop}
         activeOpacity={1}
         onPress={handleClose}
       />
 
-      <Animated.View style={[styles.sheet, sheetAnimStyle]}>
+      <Animated.View style={[styles.sheetWrapper, sheetAnimStyle]}>
+        <View style={styles.sheet}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
@@ -197,6 +199,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             />
           )}
         </View>
+        </View>
+        {/* Extra fill below sheet to cover gap when keyboard pushes up */}
+        <View style={styles.bottomFill} />
       </Animated.View>
     </Modal>
   );
@@ -205,15 +210,23 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: '#000',
+  },
+  sheetWrapper: {
+    // This wrapper moves with the keyboard
   },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
     ...shadows.lg,
+  },
+  bottomFill: {
+    // Fills the gap between sheet bottom and keyboard top
+    height: 400,
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
