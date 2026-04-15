@@ -412,7 +412,7 @@ export function useScanState() {
     dismissDetection,
 
     trayItems,
-    trayCount: trayItems.length,
+    trayCount: trayItems.reduce((sum, item) => sum + item.quantity, 0),
     trayExpanded,
     setTrayExpanded,
     editTrayItem,

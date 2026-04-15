@@ -66,7 +66,15 @@ export function DetectionBar({
         </TouchableOpacity>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
-          <Text style={styles.cardSet} numberOfLines={1}>{card.set_name} · #{card.collector_number}</Text>
+          <View style={styles.setRow}>
+            <Image
+              source={{ uri: `https://svgs.scryfall.io/sets/${card.set}.svg` }}
+              style={styles.setIcon}
+              contentFit="contain"
+              tintColor={colors.textSecondary}
+            />
+            <Text style={styles.cardSet} numberOfLines={1}>{card.set_name} · #{card.collector_number}</Text>
+          </View>
           <View style={styles.priceRow}>
             {card.prices?.usd && (
               <Text style={styles.cardPrice}>{formatPrice(card.prices.usd)}</Text>
@@ -197,7 +205,17 @@ const styles = StyleSheet.create({
   cardSet: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
+    flex: 1,
+  },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     marginTop: 2,
+  },
+  setIcon: {
+    width: 14,
+    height: 14,
   },
   priceRow: {
     flexDirection: 'row',

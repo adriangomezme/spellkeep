@@ -1,71 +1,128 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRef } from 'react';
+import { View, Text, TouchableOpacity, Animated, PanResponder, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { getCardImageUri, formatPrice } from '../../lib/scryfall';
 import { ScanTrayItem as TrayItemType } from './useScanState';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
+const SWIPE_THRESHOLD = -80;
+const DELETE_WIDTH = 80;
+
 type Props = {
   item: TrayItemType;
   onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
   onCardPress: (item: TrayItemType) => void;
 };
 
-export function ScanTrayItemRow({ item, onEdit, onCardPress }: Props) {
+export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) {
   const { card, condition, quantity } = item;
   const setIconUri = `https://svgs.scryfall.io/sets/${card.set}.svg`;
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 10 && Math.abs(gesture.dy) < 10,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dx < 0) {
+          translateX.setValue(Math.max(gesture.dx, -DELETE_WIDTH));
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx < SWIPE_THRESHOLD) {
+          Animated.spring(translateX, { toValue: -DELETE_WIDTH, useNativeDriver: true }).start();
+        } else {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  function resetSwipe() {
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+  }
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={() => onCardPress(item)} activeOpacity={0.7}>
-        <Image
-          source={{ uri: getCardImageUri(card, 'small') }}
-          style={styles.image}
-          contentFit="cover"
-        />
-      </TouchableOpacity>
-      <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
-          {quantity}x {card.name}
-        </Text>
-        <View style={styles.setRow}>
-          <Image
-            source={{ uri: setIconUri }}
-            style={styles.setIcon}
-            contentFit="contain"
-            tintColor={colors.textSecondary}
-          />
-          <Text style={styles.set} numberOfLines={1}>
-            {card.set_name} · #{card.collector_number}
-          </Text>
-        </View>
-        <View style={styles.metaRow}>
-          <Text style={styles.condition}>{condition}</Text>
-          {item.finish !== 'normal' && (
-            <Text style={styles.finishBadge}>{item.finish === 'foil' ? 'Foil' : 'Etched'}</Text>
-          )}
-        </View>
-        <Text style={styles.price}>{formatPrice(
-          item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
-        )}</Text>
-      </View>
+    <View style={styles.swipeContainer}>
+      {/* Delete button behind the row */}
       <TouchableOpacity
-        style={styles.editBtn}
-        onPress={() => onEdit(item.id)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={styles.deleteAction}
+        onPress={() => { resetSwipe(); onDelete(item.id); }}
       >
-        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+        <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {/* Swipeable row */}
+      <Animated.View
+        style={[styles.container, { transform: [{ translateX }] }]}
+        {...panResponder.panHandlers}
+      >
+        <TouchableOpacity onPress={() => onCardPress(item)} activeOpacity={0.7}>
+          <Image
+            source={{ uri: getCardImageUri(card, 'small') }}
+            style={styles.image}
+            contentFit="cover"
+          />
+        </TouchableOpacity>
+        <View style={styles.info}>
+          <Text style={styles.name} numberOfLines={1}>
+            {quantity}x {card.name}
+          </Text>
+          <View style={styles.setRow}>
+            <Image
+              source={{ uri: setIconUri }}
+              style={styles.setIcon}
+              contentFit="contain"
+              tintColor={colors.textSecondary}
+            />
+            <Text style={styles.set} numberOfLines={1}>
+              {card.set_name} · #{card.collector_number}
+            </Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.condition}>{condition}</Text>
+            {item.finish !== 'normal' && (
+              <Text style={styles.finishBadge}>{item.finish === 'foil' ? 'Foil' : 'Etched'}</Text>
+            )}
+          </View>
+          <Text style={styles.price}>{formatPrice(
+            item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
+          )}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.editBtn}
+          onPress={() => onEdit(item.id)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    overflow: 'hidden',
+  },
+  deleteAction: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: DELETE_WIDTH,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
+    backgroundColor: colors.surface,
     borderBottomWidth: 0.5,
     borderBottomColor: colors.divider,
   },

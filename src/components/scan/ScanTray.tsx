@@ -109,6 +109,7 @@ export function ScanTray({
                     const found = items.find((i) => i.id === id);
                     if (found) setEditingItem(found);
                   }}
+                  onDelete={onDeleteItem}
                   onCardPress={(item) => setDetailCard(item.card)}
                 />
               ))}
