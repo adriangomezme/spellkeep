@@ -94,7 +94,7 @@ export function DetectionBar({
 
         {/* Quantity */}
         <TouchableOpacity
-          style={styles.chip}
+          style={styles.chipQty}
           onPress={onIncrementQty}
           onLongPress={onResetQty}
           delayLongPress={500}
@@ -232,16 +232,28 @@ const styles = StyleSheet.create({
   chipAccent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.primaryLight,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.sm + 2,
     minHeight: 38,
+    minWidth: 72,
   },
   chipAccentText: {
     color: colors.primary,
     fontSize: fontSize.sm,
     fontWeight: '700',
+  },
+  chipQty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 38,
+    minWidth: 62,
   },
   chipLabel: {
     color: colors.textMuted,
@@ -265,23 +277,26 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.xs,
-    minWidth: 70,
-    ...shadows.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+    minWidth: 56,
+    ...shadows.lg,
     zIndex: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   dropdownItem: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
   },
   dropdownItemActive: {
     backgroundColor: colors.primaryLight,
   },
   dropdownText: {
     color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: '500',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   dropdownTextActive: {
     color: colors.primary,
