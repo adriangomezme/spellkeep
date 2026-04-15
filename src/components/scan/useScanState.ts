@@ -66,7 +66,7 @@ export function useScanState() {
 
   const handleOCRText = useCallback((text: string) => {
     if (isProcessingRef.current) return;
-    if (detection.status !== 'scanning') return;
+    if (detection.status === 'searching') return;
 
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;

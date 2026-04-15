@@ -14,8 +14,6 @@ const FINISH_LABELS: Record<Finish, string> = {
   etched: 'Etched',
 };
 
-const CONDITION_LABELS = CONDITIONS.map((c) => c.value);
-
 function formatPrice(price?: string): string {
   if (!price) return '—';
   return `$${parseFloat(price).toFixed(2)}`;
@@ -66,21 +64,22 @@ export function DetectionBar({
         />
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
+          <Text style={styles.cardSet} numberOfLines={1}>{card.set_name} · #{card.collector_number}</Text>
           <Text style={styles.cardPrice}>{formatPrice(price)}</Text>
         </View>
       </View>
 
-      {/* Controls row: [Set #CN] [Finish] [QTY] [Condition] */}
+      {/* Controls row */}
       <View style={styles.controlsRow}>
-        {/* Set + Collector Number → tap opens version picker */}
+        {/* Set + Version */}
         <TouchableOpacity
           style={styles.chip}
           onPress={() => setShowVersionPicker(true)}
         >
-          <Text style={styles.chipTextSmall} numberOfLines={1}>
+          <Text style={styles.chipText} numberOfLines={1}>
             {card.set.toUpperCase()} #{card.collector_number}
           </Text>
-          <Ionicons name="chevron-down" size={12} color={colors.textMuted} />
+          <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
         </TouchableOpacity>
 
         {/* Finish toggle */}
@@ -88,7 +87,7 @@ export function DetectionBar({
           <Text style={styles.chipAccentText}>{FINISH_LABELS[finish]}</Text>
         </TouchableOpacity>
 
-        {/* Quantity: tap +1, long press reset */}
+        {/* Quantity */}
         <TouchableOpacity
           style={styles.chip}
           onPress={onIncrementQty}
@@ -106,30 +105,30 @@ export function DetectionBar({
             onPress={() => setShowConditionDropdown(!showConditionDropdown)}
           >
             <Text style={styles.chipValue}>{condition}</Text>
-            <Ionicons name="chevron-down" size={12} color={colors.textMuted} />
+            <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
           </TouchableOpacity>
 
           {showConditionDropdown && (
             <View style={styles.dropdown}>
-              {CONDITION_LABELS.map((c) => (
+              {CONDITIONS.map((c) => (
                 <TouchableOpacity
-                  key={c}
+                  key={c.value}
                   style={[
                     styles.dropdownItem,
-                    c === condition && styles.dropdownItemActive,
+                    c.value === condition && styles.dropdownItemActive,
                   ]}
                   onPress={() => {
-                    onConditionChange(c as Condition);
+                    onConditionChange(c.value);
                     setShowConditionDropdown(false);
                   }}
                 >
                   <Text
                     style={[
                       styles.dropdownText,
-                      c === condition && styles.dropdownTextActive,
+                      c.value === condition && styles.dropdownTextActive,
                     ]}
                   >
-                    {c}
+                    {c.value}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -138,7 +137,6 @@ export function DetectionBar({
         </View>
       </View>
 
-      {/* Version picker modal */}
       <VersionPicker
         visible={showVersionPicker}
         cardName={card.name}
@@ -162,18 +160,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
     ...shadows.lg,
   },
   dismissButton: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -182,34 +180,39 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     marginRight: spacing.xl,
   },
   cardImage: {
-    width: 42,
-    height: 58,
+    width: 46,
+    height: 64,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
   cardInfo: {
     flex: 1,
-    marginLeft: spacing.sm,
+    marginLeft: spacing.md,
   },
   cardName: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '700',
   },
+  cardSet: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    marginTop: 2,
+  },
   cardPrice: {
     color: colors.primary,
-    fontSize: fontSize.md,
+    fontSize: fontSize.lg,
     fontWeight: '800',
-    marginTop: 2,
+    marginTop: spacing.xs,
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.xs + 2,
+    gap: spacing.sm,
   },
   chip: {
     flexDirection: 'row',
@@ -217,20 +220,22 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs + 3,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 38,
   },
   chipAccent: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.primaryLight,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs + 3,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 38,
   },
   chipAccentText: {
     color: colors.primary,
-    fontSize: fontSize.xs,
+    fontSize: fontSize.sm,
     fontWeight: '700',
   },
   chipLabel: {
@@ -240,14 +245,14 @@ const styles = StyleSheet.create({
   },
   chipValue: {
     color: colors.text,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     fontWeight: '700',
   },
-  chipTextSmall: {
+  chipText: {
     color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    maxWidth: 80,
+    maxWidth: 90,
   },
   dropdown: {
     position: 'absolute',
@@ -257,20 +262,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     paddingVertical: spacing.xs,
     marginBottom: spacing.xs,
-    minWidth: 60,
+    minWidth: 70,
     ...shadows.md,
     zIndex: 10,
   },
   dropdownItem: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
   },
   dropdownItemActive: {
     backgroundColor: colors.primaryLight,
   },
   dropdownText: {
     color: colors.text,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     fontWeight: '500',
   },
   dropdownTextActive: {

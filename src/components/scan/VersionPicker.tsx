@@ -39,7 +39,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     setIsLoading(true);
     setFilter('');
 
-    // Search for all prints of this card
     searchCards(`!"${cardName}" unique:prints`, 1)
       .then((result) => {
         const cards = result?.data ?? [];
@@ -72,9 +71,16 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <View style={styles.handleBar} />
-          <Text style={styles.title}>Select Version</Text>
-          <Text style={styles.subtitle}>{cardName}</Text>
+          {/* Header with X */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.title}>Select Version</Text>
+              <Text style={styles.subtitle}>{cardName}</Text>
+            </View>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <Ionicons name="close" size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
 
           {/* Filter */}
           <View style={styles.filterRow}>
@@ -88,14 +94,16 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             />
           </View>
 
+          {/* Horizontal scroll of versions */}
           {isLoading ? (
             <ActivityIndicator color={colors.primary} style={styles.loader} />
           ) : (
             <FlatList
               data={filtered}
               keyExtractor={(item) => item.id}
-              numColumns={2}
-              columnWrapperStyle={styles.gridRow}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
               renderItem={({ item }) => {
                 const isSelected = item.id === currentId;
                 return (
@@ -121,16 +129,11 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                   </TouchableOpacity>
                 );
               }}
-              style={styles.list}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>No versions found</Text>
               }
             />
           )}
-
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -147,18 +150,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl + 20,
-    maxHeight: '80%',
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     ...shadows.lg,
   },
-  handleBar: {
-    width: 36,
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
   },
   title: {
     color: colors.text,
@@ -167,8 +168,16 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: colors.textSecondary,
-    fontSize: fontSize.md,
-    marginBottom: spacing.md,
+    fontSize: fontSize.sm,
+    marginTop: 2,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterRow: {
     flexDirection: 'row',
@@ -178,6 +187,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: 40,
     gap: spacing.sm,
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
   filterInput: {
@@ -188,18 +198,15 @@ const styles = StyleSheet.create({
   loader: {
     paddingVertical: spacing.xl,
   },
-  list: {
-    maxHeight: 400,
-  },
-  gridRow: {
+  listContent: {
+    paddingHorizontal: spacing.lg,
     gap: spacing.sm,
   },
   versionCard: {
-    flex: 1,
+    width: 130,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
-    marginBottom: spacing.sm,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
@@ -208,8 +215,8 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   versionImage: {
-    width: '100%',
-    aspectRatio: 0.72,
+    width: 110,
+    height: 154,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.border,
     marginBottom: spacing.xs,
@@ -236,14 +243,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     textAlign: 'center',
     paddingVertical: spacing.xl,
-  },
-  cancelButton: {
-    alignItems: 'center',
-    padding: spacing.md,
-    marginTop: spacing.sm,
-  },
-  cancelText: {
-    color: colors.textMuted,
-    fontSize: fontSize.lg,
   },
 });
