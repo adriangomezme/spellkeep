@@ -250,49 +250,77 @@ export function useScanState() {
       });
   }, []);
 
-  // ── Preview edits → sync to tray item ──────────────────
+  // ── Unified edit: always updates BOTH tray item AND preview ──
 
-  /** Updates both detection state AND the corresponding tray item */
-  function syncEdit(
-    detectionUpdates: Partial<DetectionState>,
-    trayUpdates: Partial<ScanTrayItem>
-  ) {
-    setDetection((prev) => ({ ...prev, ...detectionUpdates }));
-    const id = trayItemIdRef.current;
-    if (id) {
-      setTrayItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, ...trayUpdates } : item))
-      );
+  /**
+   * Single function for all edits. Updates the tray item by ID,
+   * and if that item is in the preview, updates detection state too.
+   * Called from preview controls AND tray editor.
+   */
+  function updateItem(id: string, updates: Partial<ScanTrayItem>) {
+    // 1. Update tray
+    setTrayItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+
+    // 2. Update preview if this is the previewed item
+    if (trayItemIdRef.current === id) {
+      const newCard = updates.card;
+      const newAvailable = newCard ? getAvailableFinishes(newCard) : undefined;
+
+      setDetection((prev) => {
+        const merged: Partial<DetectionState> = {};
+        if (newCard) {
+          merged.card = newCard;
+          merged.availableFinishes = newAvailable;
+          currentCardNameRef.current = newCard.name;
+        }
+        if (updates.condition) merged.condition = updates.condition;
+        if (updates.finish) merged.finish = updates.finish;
+        else if (newAvailable) merged.finish = newAvailable[0];
+        if (updates.quantity !== undefined) merged.quantity = updates.quantity;
+        return { ...prev, ...merged };
+      });
     }
   }
 
+  // Preview controls — all route through updateItem
   const setDetectionCondition = useCallback((condition: Condition) => {
-    syncEdit({ condition }, { condition });
+    const id = trayItemIdRef.current;
+    if (id) updateItem(id, { condition });
+    else setDetection((prev) => ({ ...prev, condition }));
   }, []);
 
   const cycleFinish = useCallback(() => {
     const cur = detectionRef.current;
     const idx = cur.availableFinishes.indexOf(cur.finish);
     const next = cur.availableFinishes[(idx + 1) % cur.availableFinishes.length];
-    syncEdit({ finish: next }, { finish: next });
+    const id = trayItemIdRef.current;
+    if (id) updateItem(id, { finish: next });
+    else setDetection((prev) => ({ ...prev, finish: next }));
   }, []);
 
   const incrementQuantity = useCallback(() => {
     const qty = detectionRef.current.quantity + 1;
-    syncEdit({ quantity: qty }, { quantity: qty });
+    const id = trayItemIdRef.current;
+    if (id) updateItem(id, { quantity: qty });
+    else setDetection((prev) => ({ ...prev, quantity: qty }));
   }, []);
 
   const resetQuantity = useCallback(() => {
-    syncEdit({ quantity: 1 }, { quantity: 1 });
+    const id = trayItemIdRef.current;
+    if (id) updateItem(id, { quantity: 1 });
+    else setDetection((prev) => ({ ...prev, quantity: 1 }));
   }, []);
 
   const changeVersion = useCallback((newCard: ScryfallCard) => {
+    const id = trayItemIdRef.current;
     const available = getAvailableFinishes(newCard);
-    currentCardNameRef.current = newCard.name;
-    syncEdit(
-      { card: newCard, finish: available[0], availableFinishes: available },
-      { card: newCard, finish: available[0] }
-    );
+    if (id) updateItem(id, { card: newCard, finish: available[0] });
+    else {
+      currentCardNameRef.current = newCard.name;
+      setDetection((prev) => ({ ...prev, card: newCard, finish: available[0], availableFinishes: available }));
+    }
   }, []);
 
   const dismissDetection = useCallback(() => {
@@ -313,28 +341,9 @@ export function useScanState() {
 
   // ── Tray ──────────────────────────────────────────────
 
+  // editTrayItem uses the same updateItem for consistency
   const editTrayItem = useCallback((id: string, updates: Partial<ScanTrayItem>) => {
-    setTrayItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
-
-    // If the edited item is currently shown in the preview, sync detection
-    if (trayItemIdRef.current === id) {
-      const newCard = updates.card;
-      const newAvailable = newCard ? getAvailableFinishes(newCard) : undefined;
-      const newFinish = updates.finish ?? (newAvailable ? newAvailable[0] : undefined);
-
-      setDetection((prev) => ({
-        ...prev,
-        ...(newCard && { card: newCard, availableFinishes: newAvailable }),
-        ...(updates.condition && { condition: updates.condition }),
-        ...(newFinish && { finish: newFinish }),
-        ...(updates.quantity !== undefined && { quantity: updates.quantity }),
-      }));
-      if (newCard) {
-        currentCardNameRef.current = newCard.name;
-      }
-    }
+    updateItem(id, updates);
   }, []);
 
   const removeTrayItem = useCallback((id: string) => {
