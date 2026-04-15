@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,16 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
+  LayoutAnimation,
+  Platform,
+  UIManager,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
+
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -192,7 +199,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               <Text style={styles.subtitle}>{cardName}</Text>
             </View>
             <View style={styles.headerButtons}>
-              <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(false)}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setFullscreen(false); }}>
                 <Ionicons name="contract-outline" size={18} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
@@ -270,7 +277,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 <Text style={styles.subtitle}>{cardName}</Text>
               </View>
               <View style={styles.headerButtons}>
-                <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(true)}>
+                <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setFullscreen(true); }}>
                   <Ionicons name="expand-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.headerBtn} onPress={onClose}>

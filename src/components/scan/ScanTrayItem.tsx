@@ -33,10 +33,10 @@ export function ScanTrayItemRow({ item, onEdit, onDelete }: Props) {
           {item.finish !== 'normal' && (
             <Text style={styles.finishBadge}>{item.finish === 'foil' ? 'Foil' : 'Etched'}</Text>
           )}
-          <Text style={styles.price}>{formatPrice(
-            item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
-          )}</Text>
         </View>
+        <Text style={styles.price}>{formatPrice(
+          item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
+        )}</Text>
       </View>
       <View style={styles.actions}>
         <TouchableOpacity
