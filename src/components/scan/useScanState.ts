@@ -126,6 +126,10 @@ export function useScanState() {
   /** Set by ScanCamera to pause OCR when tray/version picker is open */
   const pausedRef = useRef(false);
 
+  // Keep a ref of the full detection state for reading in callbacks
+  const detectionRef = useRef(detection);
+  detectionRef.current = detection;
+
   function updateDetection(newState: DetectionState) {
     statusRef.current = newState.status;
     trayItemIdRef.current = newState.trayItemId;
@@ -268,36 +272,15 @@ export function useScanState() {
   }, []);
 
   const cycleFinish = useCallback(() => {
-    // Read current detection to compute next finish
-    setDetection((prev) => {
-      const idx = prev.availableFinishes.indexOf(prev.finish);
-      const next = prev.availableFinishes[(idx + 1) % prev.availableFinishes.length];
-      // Schedule tray update outside of this updater
-      setTimeout(() => {
-        const id = trayItemIdRef.current;
-        if (id) {
-          setTrayItems((items) =>
-            items.map((item) => (item.id === id ? { ...item, finish: next } : item))
-          );
-        }
-      }, 0);
-      return { ...prev, finish: next };
-    });
+    const cur = detectionRef.current;
+    const idx = cur.availableFinishes.indexOf(cur.finish);
+    const next = cur.availableFinishes[(idx + 1) % cur.availableFinishes.length];
+    syncEdit({ finish: next }, { finish: next });
   }, []);
 
   const incrementQuantity = useCallback(() => {
-    setDetection((prev) => {
-      const qty = prev.quantity + 1;
-      setTimeout(() => {
-        const id = trayItemIdRef.current;
-        if (id) {
-          setTrayItems((items) =>
-            items.map((item) => (item.id === id ? { ...item, quantity: qty } : item))
-          );
-        }
-      }, 0);
-      return { ...prev, quantity: qty };
-    });
+    const qty = detectionRef.current.quantity + 1;
+    syncEdit({ quantity: qty }, { quantity: qty });
   }, []);
 
   const resetQuantity = useCallback(() => {
