@@ -180,7 +180,10 @@ export function ScanCamera({ isActive }: Props) {
         isSaving={isSaving}
         onEdit={(id) => removeTrayItem(id)}
         onDelete={removeTrayItem}
-        onCardPress={(item: any) => navigateToCard(item.card)}
+        onCardPress={(item: any) => {
+          setTrayExpanded(false);
+          setTimeout(() => navigateToCard(item.card), 300);
+        }}
         onClear={clearTray}
         onAddTo={openDestinationPicker}
       />
