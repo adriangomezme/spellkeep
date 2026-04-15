@@ -76,6 +76,7 @@ export function useScanState() {
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const trayLoadedRef = useRef(false);
+  const [successCount, setSuccessCount] = useState(0);
 
   const TRAY_STORAGE_KEY = 'spellkeep_scan_tray';
 
@@ -217,6 +218,7 @@ export function useScanState() {
             quantity: 1,
           };
           updateDetection(newState);
+          setSuccessCount((c) => c + 1);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
           // If we already have a card in preview, keep showing it
@@ -390,6 +392,7 @@ export function useScanState() {
 
   return {
     detection,
+    successCount,
     pausedRef,
     handleOCRText,
     setDetectionCondition,

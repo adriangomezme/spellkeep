@@ -46,6 +46,7 @@ export function ScanCamera({ isActive }: Props) {
 
   const {
     detection,
+    successCount,
     pausedRef,
     handleOCRText,
     setDetectionCondition,
@@ -137,7 +138,7 @@ export function ScanCamera({ isActive }: Props) {
       </View>
 
       {/* Guide overlay — always visible */}
-      <ScanOverlay status={detection.status} />
+      <ScanOverlay status={detection.status} successFlash={successCount > 0} key={successCount} />
 
       {/* Dark overlay when version picker or tray is open */}
       {(showVersionPicker || trayExpanded) && <View style={styles.cameraOverlay} />}
