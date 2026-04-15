@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { ScryfallCard } from '../../lib/scryfall';
-import { matchCard, validateMTGLayout, extractCardName } from '../../lib/card-matcher';
+import { matchCard, validateMTGLayout } from '../../lib/card-matcher';
 import { addToCollection, Condition, Finish } from '../../lib/collection';
 
 export type ScanTrayItem = {
