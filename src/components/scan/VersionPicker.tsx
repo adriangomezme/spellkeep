@@ -59,23 +59,55 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const pageRef = useRef(1);
 
   useEffect(() => {
     if (!visible || !cardName) return;
     setIsLoading(true);
     setFilter('');
     setFullscreen(false);
+    pageRef.current = 1;
     searchCards(`!"${cardName}" unique:prints`, 1)
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
         setFiltered(cards);
+        setHasMore(result?.has_more ?? false);
       })
-      .catch(() => { setVersions([]); setFiltered([]); })
+      .catch(() => { setVersions([]); setFiltered([]); setHasMore(false); })
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
+
+  function loadMore() {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    const nextPage = pageRef.current + 1;
+    searchCards(`!"${cardName}" unique:prints`, nextPage)
+      .then((result) => {
+        const cards = result?.data ?? [];
+        pageRef.current = nextPage;
+        setVersions((prev) => {
+          const updated = [...prev, ...cards];
+          // Re-apply filter
+          if (filter) {
+            const lower = filter.toLowerCase();
+            setFiltered(updated.filter((v) =>
+              v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
+            ));
+          } else {
+            setFiltered(updated);
+          }
+          return updated;
+        });
+        setHasMore(result?.has_more ?? false);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingMore(false));
+  }
 
   // Auto-scroll to selected in horizontal mode
   useEffect(() => {
@@ -168,11 +200,14 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={styles.gridContent}
               renderItem={({ item }) => renderCard(item, false)}
+              onEndReached={loadMore}
+              onEndReachedThreshold={0.3}
               ListEmptyComponent={
                 <View style={styles.centeredContent}>
                   <Text style={styles.emptyText}>{filter ? 'No matching sets' : 'No versions found'}</Text>
                 </View>
               }
+              ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /> : null}
             />
           )}
         </View>
@@ -230,6 +265,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                   }, 200);
                 }}
                 renderItem={({ item }) => renderCard(item, true)}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ marginLeft: spacing.md }} /> : null}
               />
             )}
           </View>
