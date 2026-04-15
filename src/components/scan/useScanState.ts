@@ -19,7 +19,6 @@ export type DetectionState = {
   status: DetectionStatus;
   card: ScryfallCard | null;
   candidates: ScryfallCard[];
-  /** ID of the tray item this detection is editing */
   trayItemId: string | null;
   condition: Condition;
   finish: Finish;
@@ -42,6 +41,12 @@ export function getPriceForFinish(card: ScryfallCard, finish: Finish): string | 
 
 let trayIdCounter = 0;
 
+/**
+ * Cooldown period after a card is detected before allowing another scan.
+ * Prevents the same card from being re-scanned while user edits the preview.
+ */
+const SCAN_COOLDOWN_MS = 3000;
+
 export function useScanState() {
   const [detection, setDetection] = useState<DetectionState>({
     status: 'scanning',
@@ -60,7 +65,9 @@ export function useScanState() {
   const [isSaving, setIsSaving] = useState(false);
 
   const isProcessingRef = useRef(false);
-  const lastMatchedNameRef = useRef('');
+  /** Stores the Scryfall ID of the last matched card to prevent re-scanning */
+  const lastMatchedIdRef = useRef('');
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Detection (auto-adds to tray) ─────────────────────
 
@@ -70,7 +77,6 @@ export function useScanState() {
 
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;
-    if (validation.regions.name === lastMatchedNameRef.current) return;
 
     isProcessingRef.current = true;
     setDetection((prev) => ({ ...prev, status: 'searching' }));
@@ -79,34 +85,68 @@ export function useScanState() {
       .then((matches) => {
         if (matches.length > 0) {
           const card = matches[0];
+
+          // Fix #1: Don't re-scan the same card (compare by Scryfall ID)
+          if (card.id === lastMatchedIdRef.current) {
+            setDetection((prev) => ({
+              ...prev,
+              status: prev.trayItemId ? 'detected' : 'scanning',
+            }));
+            return;
+          }
+
           const available = getAvailableFinishes(card);
           const finish = available[0];
-          lastMatchedNameRef.current = card.name;
+          lastMatchedIdRef.current = card.id;
 
-          // Auto-add to tray
-          const newId = `tray-${++trayIdCounter}`;
-          const newItem: ScanTrayItem = {
-            id: newId,
-            card,
-            condition: 'NM',
-            finish,
-            quantity: 1,
-            addedAt: Date.now(),
-          };
+          // Fix #2: Check for duplicate in tray (same scryfall ID)
+          let trayItemId: string;
+          setTrayItems((prev) => {
+            const existingIndex = prev.findIndex((item) => item.card.id === card.id);
 
-          setTrayItems((prev) => [newItem, ...prev]);
+            if (existingIndex >= 0) {
+              // Increment quantity of existing item
+              const updated = [...prev];
+              updated[existingIndex] = {
+                ...updated[existingIndex],
+                quantity: updated[existingIndex].quantity + 1,
+              };
+              trayItemId = updated[existingIndex].id;
+              return updated;
+            }
 
-          // Show in preview (editing this tray item)
+            // New item
+            trayItemId = `tray-${++trayIdCounter}`;
+            return [
+              {
+                id: trayItemId,
+                card,
+                condition: 'NM' as Condition,
+                finish,
+                quantity: 1,
+                addedAt: Date.now(),
+              },
+              ...prev,
+            ];
+          });
+
+          // Show in preview
           setDetection({
             status: 'detected',
             card,
             candidates: matches,
-            trayItemId: newId,
+            trayItemId: trayItemId!,
             condition: 'NM',
             finish,
             availableFinishes: available,
             quantity: 1,
           });
+
+          // Start cooldown — don't re-scan for a few seconds
+          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+          cooldownTimerRef.current = setTimeout(() => {
+            lastMatchedIdRef.current = '';
+          }, SCAN_COOLDOWN_MS);
         } else {
           setDetection((prev) => ({ ...prev, status: 'no_match' }));
           setTimeout(() => {
@@ -126,7 +166,6 @@ export function useScanState() {
 
   // ── Preview edits → update tray item ──────────────────
 
-  /** Sync detection edits back to the tray item */
   function updateCurrentTrayItem(updates: Partial<ScanTrayItem>) {
     const id = detection.trayItemId;
     if (!id) return;
@@ -164,9 +203,9 @@ export function useScanState() {
     });
   }, [detection.trayItemId]);
 
-  /** Change the version/print of the detected card */
   const changeVersion = useCallback((newCard: ScryfallCard) => {
     const available = getAvailableFinishes(newCard);
+    lastMatchedIdRef.current = newCard.id;
     setDetection((prev) => ({
       ...prev,
       card: newCard,
@@ -177,7 +216,8 @@ export function useScanState() {
   }, [detection.trayItemId]);
 
   const dismissDetection = useCallback(() => {
-    lastMatchedNameRef.current = '';
+    lastMatchedIdRef.current = '';
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
     setDetection({
       status: 'scanning',
       card: null,
@@ -200,7 +240,6 @@ export function useScanState() {
 
   const removeTrayItem = useCallback((id: string) => {
     setTrayItems((prev) => prev.filter((item) => item.id !== id));
-    // If removing the currently previewed item, dismiss detection
     if (detection.trayItemId === id) {
       dismissDetection();
     }
