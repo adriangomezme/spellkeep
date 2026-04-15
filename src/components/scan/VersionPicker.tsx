@@ -9,7 +9,6 @@ import {
   Keyboard,
   ActivityIndicator,
   StyleSheet,
-  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,11 +31,8 @@ type Props = {
 const CARD_WIDTH = 150;
 const IMAGE_WIDTH = CARD_WIDTH - spacing.sm * 2;
 const IMAGE_HEIGHT = Math.round(IMAGE_WIDTH * (88 / 63));
-// Total sheet content height: header + filter + card list + padding
-const SHEET_CONTENT_HEIGHT = IMAGE_HEIGHT + 180;
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
-  const { height: screenHeight } = useWindowDimensions();
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
@@ -44,36 +40,24 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   useEffect(() => {
     if (!visible || !cardName) return;
-
     setIsLoading(true);
     setFilter('');
-
     searchCards(`!"${cardName}" unique:prints`, 1)
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
         setFiltered(cards);
       })
-      .catch(() => {
-        setVersions([]);
-        setFiltered([]);
-      })
+      .catch(() => { setVersions([]); setFiltered([]); })
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
 
   useEffect(() => {
-    if (!filter) {
-      setFiltered(versions);
-      return;
-    }
+    if (!filter) { setFiltered(versions); return; }
     const lower = filter.toLowerCase();
-    setFiltered(
-      versions.filter(
-        (v) =>
-          v.set_name.toLowerCase().includes(lower) ||
-          v.set.toLowerCase().includes(lower)
-      )
-    );
+    setFiltered(versions.filter((v) =>
+      v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
+    ));
   }, [filter, versions]);
 
   function handleClose() {
@@ -83,96 +67,82 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      {/* Tap to dismiss area */}
-      <TouchableOpacity
-        style={styles.dismissArea}
-        activeOpacity={1}
-        onPress={handleClose}
-      />
+      <View style={styles.root}>
+        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={handleClose} />
 
-      {/* Sheet — tall enough that keyboard covers the bottom part,
-          but the content stays visible above the keyboard */}
-      <View style={[styles.sheet, { height: SHEET_CONTENT_HEIGHT + screenHeight * 0.4 }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerInfo}>
-            <Text style={styles.title}>Select Version</Text>
-            <Text style={styles.subtitle}>{cardName}</Text>
-          </View>
-          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-            <Ionicons name="close" size={20} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Filter */}
-        <View style={styles.filterRow}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
-          <TextInput
-            style={styles.filterInput}
-            value={filter}
-            onChangeText={setFilter}
-            placeholder="Filter sets..."
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            returnKeyType="done"
-            onSubmitEditing={() => Keyboard.dismiss()}
-          />
-          {filter.length > 0 && (
-            <TouchableOpacity onPress={() => setFilter('')}>
-              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+        <View style={styles.sheet}>
+          <View style={styles.header}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.title}>Select Version</Text>
+              <Text style={styles.subtitle}>{cardName}</Text>
+            </View>
+            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+              <Ionicons name="close" size={20} color={colors.text} />
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
 
-        {/* Versions */}
-        <View style={styles.listContainer}>
-          {isLoading ? (
-            <View style={styles.centeredContent}>
-              <ActivityIndicator color={colors.primary} size="large" />
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={styles.centeredContent}>
-              <Ionicons name="search" size={24} color={colors.textMuted} />
-              <Text style={styles.emptyText}>
-                {filter ? 'No matching sets' : 'No versions found'}
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.listContent}
-              keyboardShouldPersistTaps="handled"
-              onScrollBeginDrag={() => Keyboard.dismiss()}
-              renderItem={({ item }) => {
-                const isSelected = item.id === currentId;
-                return (
-                  <TouchableOpacity
-                    style={[styles.versionCard, isSelected && styles.versionCardSelected]}
-                    onPress={() => onSelect(item)}
-                    activeOpacity={0.6}
-                  >
-                    <Image
-                      source={{ uri: getCardImageUri(item, 'normal') }}
-                      style={styles.versionImage}
-                      contentFit="cover"
-                    />
-                    <Text style={styles.versionSet} numberOfLines={2}>
-                      {item.set_name}
-                    </Text>
-                    <Text style={styles.versionNumber}>
-                      #{item.collector_number}
-                    </Text>
-                    <Text style={styles.versionPrice}>
-                      {formatPrice(item.prices?.usd)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
+          <View style={styles.filterRow}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <TextInput
+              style={styles.filterInput}
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="Filter sets..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
-          )}
+            {filter.length > 0 && (
+              <TouchableOpacity onPress={() => setFilter('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.listContainer}>
+            {isLoading ? (
+              <View style={styles.centeredContent}>
+                <ActivityIndicator color={colors.primary} size="large" />
+              </View>
+            ) : filtered.length === 0 ? (
+              <View style={styles.centeredContent}>
+                <Ionicons name="search" size={24} color={colors.textMuted} />
+                <Text style={styles.emptyText}>
+                  {filter ? 'No matching sets' : 'No versions found'}
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.listContent}
+                keyboardShouldPersistTaps="handled"
+                onScrollBeginDrag={() => Keyboard.dismiss()}
+                renderItem={({ item }) => {
+                  const isSelected = item.id === currentId;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.versionCard, isSelected && styles.versionCardSelected]}
+                      onPress={() => onSelect(item)}
+                      activeOpacity={0.6}
+                    >
+                      <Image
+                        source={{ uri: getCardImageUri(item, 'normal') }}
+                        style={styles.versionImage}
+                        contentFit="cover"
+                      />
+                      <Text style={styles.versionSet} numberOfLines={2}>{item.set_name}</Text>
+                      <Text style={styles.versionNumber}>#{item.collector_number}</Text>
+                      <Text style={styles.versionPrice}>{formatPrice(item.prices?.usd)}</Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
         </View>
       </View>
     </Modal>
@@ -180,6 +150,10 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   dismissArea: {
     flex: 1,
   },
@@ -188,6 +162,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
     ...shadows.lg,
   },
   header: {
@@ -197,9 +172,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
   },
-  headerInfo: {
-    flex: 1,
-  },
+  headerInfo: { flex: 1 },
   title: {
     color: colors.text,
     fontSize: fontSize.xl,
