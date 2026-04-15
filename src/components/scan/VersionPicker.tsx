@@ -163,6 +163,8 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
           source={{ uri: getCardImageUri(item, 'normal') }}
           style={imageStyle}
           contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={item.id}
         />
         <Text style={styles.versionSet} numberOfLines={2}>{item.set_name}</Text>
         <Text style={styles.versionNumber}>#{item.collector_number}</Text>
