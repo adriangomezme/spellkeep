@@ -22,6 +22,7 @@ type Props = {
   isSaving: boolean;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onCardPress: (item: any) => void;
   onClear: () => void;
   onAddTo: () => void;
 };
@@ -33,6 +34,7 @@ export function ScanTray({
   isSaving,
   onEdit,
   onDelete,
+  onCardPress,
   onClear,
   onAddTo,
 }: Props) {
@@ -98,6 +100,7 @@ export function ScanTray({
                   item={item}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onCardPress={onCardPress}
                 />
               ))}
             </ScrollView>

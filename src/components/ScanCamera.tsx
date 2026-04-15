@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ScryfallCard } from '../lib/scryfall';
 import {
   Camera,
   useCameraDevice,
@@ -40,6 +42,7 @@ type Props = {
 
 export function ScanCamera({ isActive }: Props) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const { textRecognition } = useTextRecognition({ language: 'LATIN' });
@@ -75,6 +78,13 @@ export function ScanCamera({ isActive }: Props) {
 
   // Pause OCR when tray or version picker is open
   pausedRef.current = !isActive || trayExpanded || showVersionPicker;
+
+  const navigateToCard = useCallback((card: ScryfallCard) => {
+    router.push({
+      pathname: '/card/[id]',
+      params: { id: card.id, cardJson: JSON.stringify(card) },
+    });
+  }, [router]);
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -155,6 +165,7 @@ export function ScanCamera({ isActive }: Props) {
           onIncrementQty={incrementQuantity}
           onResetQty={resetQuantity}
           onVersionChange={changeVersion}
+          onCardPress={() => detection.card && navigateToCard(detection.card)}
           showVersionPicker={showVersionPicker}
           onOpenVersionPicker={() => setShowVersionPicker(true)}
           onCloseVersionPicker={() => setShowVersionPicker(false)}
@@ -169,6 +180,7 @@ export function ScanCamera({ isActive }: Props) {
         isSaving={isSaving}
         onEdit={(id) => removeTrayItem(id)}
         onDelete={removeTrayItem}
+        onCardPress={(item: any) => navigateToCard(item.card)}
         onClear={clearTray}
         onAddTo={openDestinationPicker}
       />

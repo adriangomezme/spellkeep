@@ -29,6 +29,7 @@ type Props = {
   onIncrementQty: () => void;
   onResetQty: () => void;
   onVersionChange: (card: ScryfallCard) => void;
+  onCardPress: () => void;
   showVersionPicker: boolean;
   onOpenVersionPicker: () => void;
   onCloseVersionPicker: () => void;
@@ -44,6 +45,7 @@ export function DetectionBar({
   onIncrementQty,
   onResetQty,
   onVersionChange,
+  onCardPress,
   showVersionPicker,
   onOpenVersionPicker,
   onCloseVersionPicker,
@@ -55,11 +57,13 @@ export function DetectionBar({
     <View style={styles.container}>
       {/* Card info row */}
       <View style={styles.cardRow}>
-        <Image
-          source={{ uri: getCardImageUri(card, 'small') }}
-          style={styles.cardImage}
-          contentFit="cover"
-        />
+        <TouchableOpacity onPress={onCardPress} activeOpacity={0.7}>
+          <Image
+            source={{ uri: getCardImageUri(card, 'small') }}
+            style={styles.cardImage}
+            contentFit="cover"
+          />
+        </TouchableOpacity>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
           <Text style={styles.cardSet} numberOfLines={1}>{card.set_name} · #{card.collector_number}</Text>

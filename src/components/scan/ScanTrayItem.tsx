@@ -9,25 +9,37 @@ type Props = {
   item: TrayItemType;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onCardPress: (item: TrayItemType) => void;
 };
 
-export function ScanTrayItemRow({ item, onEdit, onDelete }: Props) {
+export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) {
   const { card, condition, quantity } = item;
+  const setIconUri = `https://svgs.scryfall.io/sets/${card.set}.svg`;
 
   return (
     <View style={styles.container}>
-      <Image
-        source={{ uri: getCardImageUri(card, 'small') }}
-        style={styles.image}
-        contentFit="cover"
-      />
+      <TouchableOpacity onPress={() => onCardPress(item)} activeOpacity={0.7}>
+        <Image
+          source={{ uri: getCardImageUri(card, 'small') }}
+          style={styles.image}
+          contentFit="cover"
+        />
+      </TouchableOpacity>
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>
           {quantity}x {card.name}
         </Text>
-        <Text style={styles.set} numberOfLines={1}>
-          {card.set_name} · #{card.collector_number}
-        </Text>
+        <View style={styles.setRow}>
+          <Image
+            source={{ uri: setIconUri }}
+            style={styles.setIcon}
+            contentFit="contain"
+            tintColor={colors.textSecondary}
+          />
+          <Text style={styles.set} numberOfLines={1}>
+            {card.set_name} · #{card.collector_number}
+          </Text>
+        </View>
         <View style={styles.metaRow}>
           <Text style={styles.condition}>{condition}</Text>
           {item.finish !== 'normal' && (
@@ -82,16 +94,26 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
   },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: 3,
+  },
+  setIcon: {
+    width: 14,
+    height: 14,
+  },
   set: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
-    marginTop: 1,
+    flex: 1,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: 2,
+    marginTop: spacing.xs,
   },
   condition: {
     color: colors.textMuted,
@@ -117,6 +139,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSize.sm,
     fontWeight: '700',
+    marginTop: 2,
   },
   actions: {
     flexDirection: 'row',

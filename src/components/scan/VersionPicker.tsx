@@ -199,7 +199,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               <Text style={styles.subtitle}>{cardName}</Text>
             </View>
             <View style={styles.headerButtons}>
-              <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setFullscreen(false); }}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext({ duration: 200, update: { type: LayoutAnimation.Types.easeInEaseOut } }); setFullscreen(false); }}>
                 <Ionicons name="contract-outline" size={18} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
@@ -277,7 +277,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 <Text style={styles.subtitle}>{cardName}</Text>
               </View>
               <View style={styles.headerButtons}>
-                <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setFullscreen(true); }}>
+                <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext({ duration: 200, update: { type: LayoutAnimation.Types.easeInEaseOut } }); setFullscreen(true); }}>
                   <Ionicons name="expand-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
