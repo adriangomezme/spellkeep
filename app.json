@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.spellkeep.app"
+      "bundleIdentifier": "com.spellkeep.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SpellKeep needs camera access to scan Magic cards"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +34,8 @@
     },
     "plugins": [
       "expo-router",
-      "@journeyapps/react-native-quick-sqlite"
+      "@journeyapps/react-native-quick-sqlite",
+      "react-native-vision-camera"
     ]
   }
 }
