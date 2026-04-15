@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
+  ScrollView,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
@@ -62,6 +63,11 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [showSetPicker, setShowSetPicker] = useState(false);
+  const [selectedSets, setSelectedSets] = useState<string[]>([]);
+  const [setFilteredVersions, setSetFilteredVersions] = useState<ScryfallCard[]>([]);
+  const [isLoadingSets, setIsLoadingSets] = useState(false);
+  const [allSets, setAllSets] = useState<{ code: string; name: string }[]>([]);
   const listRef = useRef<FlatList>(null);
   const pageRef = useRef(1);
 
@@ -120,6 +126,45 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     }
   }, [isLoading, versions, currentId, fullscreen]);
 
+  // Fetch all sets when set picker is opened
+  useEffect(() => {
+    if (!showSetPicker || allSets.length > 0) return;
+    fetch('https://api.scryfall.com/sets')
+      .then((r) => r.json())
+      .then((data) => {
+        const sets = (data.data ?? [])
+          .filter((s: any) => s.card_count > 0)
+          .map((s: any) => ({ code: s.code, name: s.name }));
+        setAllSets(sets);
+      })
+      .catch(() => {});
+  }, [showSetPicker]);
+
+  // When selected sets change, fetch versions for those sets
+  useEffect(() => {
+    if (selectedSets.length === 0) {
+      setSetFilteredVersions([]);
+      return;
+    }
+    setIsLoadingSets(true);
+    const setQuery = selectedSets.map((s) => `set:${s}`).join(' OR ');
+    searchCards(`!"${cardName}" (${setQuery})`, 1)
+      .then((result) => {
+        setSetFilteredVersions(result?.data ?? []);
+      })
+      .catch(() => setSetFilteredVersions([]))
+      .finally(() => setIsLoadingSets(false));
+  }, [selectedSets, cardName]);
+
+  function toggleSet(code: string) {
+    setSelectedSets((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  }
+
+  // In fullscreen, if sets are selected use those results, otherwise use text-filtered
+  const fullscreenData = selectedSets.length > 0 ? setFilteredVersions : filtered;
+
   useEffect(() => {
     if (!filter) { setFiltered(versions); return; }
     const lower = filter.toLowerCase();
@@ -171,30 +216,86 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             </View>
           </View>
 
-          <View style={styles.filterRow}>
-            <Ionicons name="search" size={16} color={colors.textMuted} />
-            <TextInput
-              style={styles.filterInput}
-              value={filter}
-              onChangeText={setFilter}
-              placeholder="Filter sets..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-            />
-            {filter.length > 0 && (
-              <TouchableOpacity onPress={() => setFilter('')}>
-                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
+          {/* Search + set filter toggle */}
+          <View style={styles.filterContainer}>
+            <View style={styles.filterRow}>
+              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <TextInput
+                style={styles.filterInput}
+                value={filter}
+                onChangeText={setFilter}
+                placeholder="Filter sets..."
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+              />
+              {filter.length > 0 && (
+                <TouchableOpacity onPress={() => setFilter('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.setFilterBtn, showSetPicker && styles.setFilterBtnActive]}
+              onPress={() => setShowSetPicker(!showSetPicker)}
+            >
+              <Ionicons name="funnel" size={16} color={showSetPicker ? '#FFFFFF' : colors.textMuted} />
+              {selectedSets.length > 0 && (
+                <View style={styles.setFilterBadge}>
+                  <Text style={styles.setFilterBadgeText}>{selectedSets.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
 
-          {isLoading ? (
+          {/* Set picker chips */}
+          {showSetPicker && (
+            <View style={styles.setPickerContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.setChipsContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {selectedSets.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.clearSetsChip}
+                    onPress={() => setSelectedSets([])}
+                  >
+                    <Text style={styles.clearSetsText}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+                {allSets.length === 0 ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  allSets.map((s) => {
+                    const selected = selectedSets.includes(s.code);
+                    return (
+                      <TouchableOpacity
+                        key={s.code}
+                        style={[styles.setChip, selected && styles.setChipSelected]}
+                        onPress={() => toggleSet(s.code)}
+                      >
+                        <Text
+                          style={[styles.setChipText, selected && styles.setChipTextSelected]}
+                          numberOfLines={1}
+                        >
+                          {s.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          )}
+
+          {isLoading || isLoadingSets ? (
             <View style={styles.centeredContent}>
               <ActivityIndicator color={colors.primary} size="large" />
             </View>
           ) : (
             <FlatList
-              data={filtered}
+              data={fullscreenData}
               keyExtractor={(item) => item.id}
               numColumns={2}
               columnWrapperStyle={styles.gridRow}
@@ -347,7 +448,14 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     marginBottom: spacing.sm,
   },
+  filterContainer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
   filterRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
@@ -355,11 +463,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: 44,
     gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
     ...shadows.sm,
   },
   filterInput: { flex: 1, color: colors.text, fontSize: fontSize.md },
+  setFilterBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setFilterBtnActive: {
+    backgroundColor: colors.primary,
+  },
+  setFilterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  setFilterBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  setPickerContainer: {
+    marginBottom: spacing.sm,
+  },
+  setChipsContent: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
+  },
+  setChip: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  setChipSelected: {
+    backgroundColor: colors.primary,
+  },
+  setChipText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  setChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  clearSetsChip: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.errorLight,
+  },
+  clearSetsText: {
+    color: colors.error,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
   gridContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   gridRow: { gap: spacing.sm, marginBottom: spacing.sm },
 
