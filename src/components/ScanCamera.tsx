@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -71,12 +71,10 @@ export function ScanCamera({ isActive }: Props) {
 
   const onTextDetected = useRunOnJS(handleOCRText, [handleOCRText]);
 
-  // Pause when: not active, searching, tray expanded, or version picker open
-  const shouldProcess =
-    isActive &&
-    detection.status !== 'searching' &&
-    !trayExpanded &&
-    !showVersionPicker;
+  // Use a ref so the frame processor checks pause state without
+  // swapping the frameProcessor prop (which causes camera flicker)
+  const pausedRef = useRef(false);
+  pausedRef.current = !isActive || detection.status === 'searching' || trayExpanded || showVersionPicker;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -124,7 +122,7 @@ export function ScanCamera({ isActive }: Props) {
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={isActive}
-        frameProcessor={shouldProcess ? frameProcessor : undefined}
+        frameProcessor={frameProcessor}
       />
 
       {/* Top bar */}
