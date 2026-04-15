@@ -1,0 +1,206 @@
+import { useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ScanTrayItem as TrayItemType } from './useScanState';
+import { ScanTrayItemRow } from './ScanTrayItem';
+import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
+
+type Props = {
+  items: TrayItemType[];
+  isSaving: boolean;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
+  onAddTo: () => void;
+  bottomInset: number;
+};
+
+export function ScanTray({
+  items,
+  isSaving,
+  onEdit,
+  onDelete,
+  onClear,
+  onAddTo,
+  bottomInset,
+}: Props) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (items.length === 0) return null;
+
+  return (
+    <View
+      style={[
+        styles.container,
+        expanded && styles.containerExpanded,
+        { paddingBottom: bottomInset + 90 },
+      ]}
+    >
+      {/* Header — always visible */}
+      <TouchableOpacity
+        style={styles.header}
+        onPress={() => setExpanded(!expanded)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.handleBar} />
+        <View style={styles.headerRow}>
+          <Ionicons
+            name={expanded ? 'chevron-down' : 'chevron-up'}
+            size={18}
+            color={colors.textMuted}
+          />
+          <Text style={styles.headerText}>
+            {items.length} card{items.length !== 1 ? 's' : ''} scanned
+          </Text>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{items.length}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Expanded content */}
+      {expanded && (
+        <>
+          <ScrollView
+            style={styles.list}
+            showsVerticalScrollIndicator={false}
+          >
+            {items.map((item) => (
+              <ScanTrayItemRow
+                key={item.id}
+                item={item}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+          </ScrollView>
+
+          {/* Footer actions */}
+          <View style={styles.footer}>
+            <TouchableOpacity style={styles.clearButton} onPress={onClear}>
+              <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.clearText}>Clear</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={onAddTo}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                  <Text style={styles.addText}>Add to...</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    ...shadows.lg,
+  },
+  containerExpanded: {
+    maxHeight: '60%',
+  },
+  header: {
+    alignItems: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  handleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    marginBottom: spacing.sm,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  headerText: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    flex: 1,
+  },
+  headerBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  headerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  list: {
+    maxHeight: 300,
+  },
+  footer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 0.5,
+    borderTopColor: colors.divider,
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.xs,
+  },
+  clearText: {
+    color: colors.textMuted,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  addButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2,
+    gap: spacing.xs,
+  },
+  addText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '700',
+  },
+});

@@ -97,22 +97,24 @@ async function getDefaultCollectionId(): Promise<string> {
 }
 
 /**
- * Add a card to the user's collection.
+ * Add a card to a collection, binder, or list.
+ * If collectionId is omitted, uses the user's default collection.
  */
 export async function addToCollection(
   card: ScryfallCard,
   condition: Condition,
   finish: Finish,
-  quantity: number
+  quantity: number,
+  collectionId?: string
 ): Promise<void> {
   const cardId = await ensureCardExists(card);
-  const collectionId = await getDefaultCollectionId();
+  const targetId = collectionId ?? await getDefaultCollectionId();
 
   // Check if entry already exists for this card + condition
   const { data: existing } = await supabase
     .from('collection_cards')
     .select('id, quantity_normal, quantity_foil, quantity_etched')
-    .eq('collection_id', collectionId)
+    .eq('collection_id', targetId)
     .eq('card_id', cardId)
     .eq('condition', condition)
     .single();
@@ -135,7 +137,7 @@ export async function addToCollection(
     const { error } = await supabase
       .from('collection_cards')
       .insert({
-        collection_id: collectionId,
+        collection_id: targetId,
         card_id: cardId,
         condition,
         quantity_normal: finish === 'normal' ? quantity : 0,
