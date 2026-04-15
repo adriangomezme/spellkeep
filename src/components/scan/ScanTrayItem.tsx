@@ -1,13 +1,10 @@
-import { useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated, PanResponder, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
 import { getCardImageUri, formatPrice } from '../../lib/scryfall';
 import { ScanTrayItem as TrayItemType } from './useScanState';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
-
-const SWIPE_THRESHOLD = -80;
-const DELETE_WIDTH = 80;
 
 type Props = {
   item: TrayItemType;
@@ -16,49 +13,24 @@ type Props = {
   onCardPress: (item: TrayItemType) => void;
 };
 
+function renderRightActions(onDelete: () => void) {
+  return (
+    <TouchableOpacity style={styles.deleteAction} onPress={onDelete}>
+      <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
+}
+
 export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) {
   const { card, condition, quantity } = item;
   const setIconUri = `https://svgs.scryfall.io/sets/${card.set}.svg`;
-  const translateX = useRef(new Animated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        Math.abs(gesture.dx) > 10 && Math.abs(gesture.dy) < 10,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dx < 0) {
-          translateX.setValue(Math.max(gesture.dx, -DELETE_WIDTH));
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx < SWIPE_THRESHOLD) {
-          Animated.spring(translateX, { toValue: -DELETE_WIDTH, useNativeDriver: true }).start();
-        } else {
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
-
-  function resetSwipe() {
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-  }
 
   return (
-    <View style={styles.swipeContainer}>
-      {/* Delete button behind the row */}
-      <TouchableOpacity
-        style={styles.deleteAction}
-        onPress={() => { resetSwipe(); onDelete(item.id); }}
-      >
-        <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
-      </TouchableOpacity>
-
-      {/* Swipeable row */}
-      <Animated.View
-        style={[styles.container, { transform: [{ translateX }] }]}
-        {...panResponder.panHandlers}
-      >
+    <Swipeable
+      renderRightActions={() => renderRightActions(() => onDelete(item.id))}
+      overshootRight={false}
+    >
+      <View style={styles.container}>
         <TouchableOpacity onPress={() => onCardPress(item)} activeOpacity={0.7}>
           <Image
             source={{ uri: getCardImageUri(card, 'small') }}
@@ -98,21 +70,14 @@ export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) 
         >
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
         </TouchableOpacity>
-      </Animated.View>
-    </View>
+      </View>
+    </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
-  swipeContainer: {
-    overflow: 'hidden',
-  },
   deleteAction: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: DELETE_WIDTH,
+    width: 80,
     backgroundColor: colors.error,
     alignItems: 'center',
     justifyContent: 'center',

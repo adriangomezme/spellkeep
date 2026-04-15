@@ -251,13 +251,10 @@ export function useScanState() {
   }, []);
 
   // ── Unified edit: always updates BOTH tray item AND preview ──
+  // Stored as a ref so useCallbacks always call the latest version.
 
-  /**
-   * Single function for all edits. Updates the tray item by ID,
-   * and if that item is in the preview, updates detection state too.
-   * Called from preview controls AND tray editor.
-   */
-  function updateItem(id: string, updates: Partial<ScanTrayItem>) {
+  const updateItemRef = useRef((id: string, updates: Partial<ScanTrayItem>) => {});
+  updateItemRef.current = (id: string, updates: Partial<ScanTrayItem>) => {
     // 1. Update tray
     setTrayItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
@@ -282,12 +279,12 @@ export function useScanState() {
         return { ...prev, ...merged };
       });
     }
-  }
+  };
 
-  // Preview controls — all route through updateItem
+  // Preview controls — all route through updateItemRef.current
   const setDetectionCondition = useCallback((condition: Condition) => {
     const id = trayItemIdRef.current;
-    if (id) updateItem(id, { condition });
+    if (id) updateItemRef.current(id, { condition });
     else setDetection((prev) => ({ ...prev, condition }));
   }, []);
 
@@ -296,27 +293,27 @@ export function useScanState() {
     const idx = cur.availableFinishes.indexOf(cur.finish);
     const next = cur.availableFinishes[(idx + 1) % cur.availableFinishes.length];
     const id = trayItemIdRef.current;
-    if (id) updateItem(id, { finish: next });
+    if (id) updateItemRef.current(id, { finish: next });
     else setDetection((prev) => ({ ...prev, finish: next }));
   }, []);
 
   const incrementQuantity = useCallback(() => {
     const qty = detectionRef.current.quantity + 1;
     const id = trayItemIdRef.current;
-    if (id) updateItem(id, { quantity: qty });
+    if (id) updateItemRef.current(id, { quantity: qty });
     else setDetection((prev) => ({ ...prev, quantity: qty }));
   }, []);
 
   const resetQuantity = useCallback(() => {
     const id = trayItemIdRef.current;
-    if (id) updateItem(id, { quantity: 1 });
+    if (id) updateItemRef.current(id, { quantity: 1 });
     else setDetection((prev) => ({ ...prev, quantity: 1 }));
   }, []);
 
   const changeVersion = useCallback((newCard: ScryfallCard) => {
     const id = trayItemIdRef.current;
     const available = getAvailableFinishes(newCard);
-    if (id) updateItem(id, { card: newCard, finish: available[0] });
+    if (id) updateItemRef.current(id, { card: newCard, finish: available[0] });
     else {
       currentCardNameRef.current = newCard.name;
       setDetection((prev) => ({ ...prev, card: newCard, finish: available[0], availableFinishes: available }));
@@ -343,7 +340,7 @@ export function useScanState() {
 
   // editTrayItem uses the same updateItem for consistency
   const editTrayItem = useCallback((id: string, updates: Partial<ScanTrayItem>) => {
-    updateItem(id, updates);
+    updateItemRef.current(id, updates);
   }, []);
 
   const removeTrayItem = useCallback((id: string) => {

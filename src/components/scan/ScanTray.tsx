@@ -4,11 +4,11 @@ import {
   Text,
   Modal,
   TouchableOpacity,
-  ScrollView,
   TextInput,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { ScrollView, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ScanTrayItem as TrayItemType } from './useScanState';
@@ -53,6 +53,7 @@ export function ScanTray({
       {detailCard ? (
         <TrayCardDetail card={detailCard} onBack={() => setDetailCard(null)} />
       ) : (
+      <GestureHandlerRootView style={{ flex: 1 }}>
       <>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
       <View style={styles.container}>
@@ -60,7 +61,7 @@ export function ScanTray({
         <View style={styles.header}>
           <View style={styles.headerInfo}>
             <Text style={styles.title}>
-              {items.length} card{items.length !== 1 ? 's' : ''} scanned
+              {items.reduce((sum, i) => sum + i.quantity, 0)} card{items.reduce((sum, i) => sum + i.quantity, 0) !== 1 ? 's' : ''} scanned
             </Text>
           </View>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
@@ -140,6 +141,7 @@ export function ScanTray({
         )}
       </View>
       </>
+      </GestureHandlerRootView>
       )}
 
       <TrayItemEditor

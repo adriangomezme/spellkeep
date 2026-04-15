@@ -223,7 +223,7 @@ export function TrayItemEditor({ visible, item, onSave, onDelete, onClose }: Pro
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'flex-end',
   },
   editor: {
