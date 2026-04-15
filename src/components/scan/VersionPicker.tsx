@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
+  Keyboard,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -29,10 +29,10 @@ type Props = {
 };
 
 const CARD_WIDTH = 150;
-const CARD_IMAGE_HEIGHT = Math.round((CARD_WIDTH - spacing.sm * 2) * (88 / 63));
+const IMAGE_WIDTH = CARD_WIDTH - spacing.sm * 2;
+const IMAGE_HEIGHT = Math.round(IMAGE_WIDTH * (88 / 63));
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
-  const insets = useSafeAreaInsets();
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
@@ -72,17 +72,29 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     );
   }, [filter, versions]);
 
+  function handleClose() {
+    Keyboard.dismiss();
+    onClose();
+  }
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
-        {/* Header */}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      {/* Opaque backdrop */}
+      <TouchableOpacity
+        style={styles.backdrop}
+        activeOpacity={1}
+        onPress={handleClose}
+      />
+
+      <View style={styles.sheet}>
+        {/* Header with X */}
         <View style={styles.header}>
-          <View style={styles.headerText}>
+          <View style={styles.headerInfo}>
             <Text style={styles.title}>Select Version</Text>
             <Text style={styles.subtitle}>{cardName}</Text>
           </View>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Ionicons name="close" size={22} color={colors.text} />
+          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+            <Ionicons name="close" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -96,6 +108,8 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             placeholder="Filter sets..."
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
           {filter.length > 0 && (
             <TouchableOpacity onPress={() => setFilter('')}>
@@ -104,7 +118,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
           )}
         </View>
 
-        {/* Versions list */}
+        {/* Versions horizontal scroll */}
         <View style={styles.listContainer}>
           {isLoading ? (
             <View style={styles.centeredContent}>
@@ -112,7 +126,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             </View>
           ) : filtered.length === 0 ? (
             <View style={styles.centeredContent}>
-              <Ionicons name="search" size={28} color={colors.textMuted} />
+              <Ionicons name="search" size={24} color={colors.textMuted} />
               <Text style={styles.emptyText}>
                 {filter ? 'No matching sets' : 'No versions found'}
               </Text>
@@ -124,6 +138,8 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              onScrollBeginDrag={() => Keyboard.dismiss()}
               renderItem={({ item }) => {
                 const isSelected = item.id === currentId;
                 return (
@@ -158,34 +174,42 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 }
 
 const styles = StyleSheet.create({
-  container: {
+  backdrop: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    ...shadows.lg,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
-  headerText: {
+  headerInfo: {
     flex: 1,
   },
   title: {
     color: colors.text,
-    fontSize: fontSize.xxl,
+    fontSize: fontSize.xl,
     fontWeight: '800',
   },
   subtitle: {
     color: colors.textSecondary,
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     marginTop: 2,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -193,22 +217,21 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
-    height: 44,
+    height: 40,
     gap: spacing.sm,
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    ...shadows.sm,
+    marginBottom: spacing.md,
   },
   filterInput: {
     flex: 1,
     color: colors.text,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.md,
   },
   listContainer: {
-    flex: 1,
+    height: IMAGE_HEIGHT + 90,
   },
   centeredContent: {
     flex: 1,
@@ -218,27 +241,25 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
   versionCard: {
     width: CARD_WIDTH,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
-    ...shadows.sm,
   },
   versionCardSelected: {
     borderColor: colors.primary,
   },
   versionImage: {
-    width: CARD_WIDTH - spacing.sm * 2,
-    height: CARD_IMAGE_HEIGHT,
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: colors.border,
     marginBottom: spacing.xs,
   },
   versionSet: {
@@ -260,6 +281,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: colors.textMuted,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.md,
   },
 });
