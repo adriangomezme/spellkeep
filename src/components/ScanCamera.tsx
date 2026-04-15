@@ -137,7 +137,7 @@ export function ScanCamera({ isActive }: Props) {
       </View>
 
       {/* Guide overlay — always visible */}
-      <ScanOverlay status={detection.card ? 'detected' : detection.status} />
+      <ScanOverlay status={detection.status} />
 
       {/* Dark overlay when version picker or tray is open */}
       {(showVersionPicker || trayExpanded) && <View style={styles.cameraOverlay} />}

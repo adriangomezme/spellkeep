@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { ScryfallCard } from '../../lib/scryfall';
 import { matchCard, validateMTGLayout, extractCardName } from '../../lib/card-matcher';
@@ -70,10 +71,52 @@ export function useScanState() {
     quantity: 1,
   });
 
-  const [trayItems, setTrayItems] = useState<ScanTrayItem[]>([]);
+  const [trayItems, setTrayItemsRaw] = useState<ScanTrayItem[]>([]);
   const [trayExpanded, setTrayExpanded] = useState(false);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const trayLoadedRef = useRef(false);
+
+  const TRAY_STORAGE_KEY = 'spellkeep_scan_tray';
+
+  // Wrap setTrayItems to persist on every change
+  function setTrayItems(updater: ScanTrayItem[] | ((prev: ScanTrayItem[]) => ScanTrayItem[])) {
+    setTrayItemsRaw((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      AsyncStorage.setItem(TRAY_STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }
+
+  // Load tray from storage on mount
+  useEffect(() => {
+    AsyncStorage.getItem(TRAY_STORAGE_KEY).then((data) => {
+      if (data) {
+        try {
+          const parsed = JSON.parse(data) as ScanTrayItem[];
+          if (parsed.length > 0) {
+            setTrayItemsRaw(parsed);
+            // Restore the last card as preview
+            const last = parsed[0];
+            statusRef.current = 'detected';
+            trayItemIdRef.current = last.id;
+            currentCardNameRef.current = last.card.name;
+            setDetection({
+              status: 'detected',
+              card: last.card,
+              candidates: [],
+              trayItemId: last.id,
+              condition: last.condition,
+              finish: last.finish,
+              availableFinishes: getAvailableFinishes(last.card),
+              quantity: last.quantity,
+            });
+          }
+        } catch {}
+      }
+      trayLoadedRef.current = true;
+    });
+  }, []);
 
   const isProcessingRef = useRef(false);
   const statusRef = useRef<DetectionStatus>('scanning');

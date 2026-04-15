@@ -13,11 +13,10 @@ export function ScanOverlay({ status }: Props) {
         style={[
           styles.guideFrame,
           status === 'searching' && styles.guideFrameSearching,
-          status === 'detected' && styles.guideFrameDetected,
           status === 'no_match' && styles.guideFrameError,
         ]}
       />
-      {status === 'scanning' && (
+      {(status === 'scanning' || status === 'detected') && (
         <Text style={styles.guideText}>Point camera at a Magic card</Text>
       )}
       {status === 'searching' && (
@@ -49,10 +48,6 @@ const styles = StyleSheet.create({
   },
   guideFrameSearching: {
     borderColor: colors.primary,
-    borderStyle: 'solid',
-  },
-  guideFrameDetected: {
-    borderColor: 'rgba(34,197,94,0.6)',
     borderStyle: 'solid',
   },
   guideFrameError: {

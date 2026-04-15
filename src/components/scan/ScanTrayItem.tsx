@@ -68,8 +68,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.divider,
   },
   image: {
-    width: 52,
-    height: 73,
+    width: 65,
+    height: 91,
     borderRadius: 3,
     backgroundColor: colors.surfaceSecondary,
   },
