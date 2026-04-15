@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +13,8 @@ import { colors, shadows, spacing, fontSize, borderRadius } from '../../constant
 
 type Props = {
   items: TrayItemType[];
+  expanded: boolean;
+  onToggleExpand: () => void;
   isSaving: boolean;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -24,6 +25,8 @@ type Props = {
 
 export function ScanTray({
   items,
+  expanded,
+  onToggleExpand,
   isSaving,
   onEdit,
   onDelete,
@@ -31,8 +34,6 @@ export function ScanTray({
   onAddTo,
   bottomInset,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
   if (items.length === 0) return null;
 
   return (
@@ -43,10 +44,10 @@ export function ScanTray({
         { paddingBottom: bottomInset + 90 },
       ]}
     >
-      {/* Header — always visible */}
+      {/* Header */}
       <TouchableOpacity
         style={styles.header}
-        onPress={() => setExpanded(!expanded)}
+        onPress={onToggleExpand}
         activeOpacity={0.7}
       >
         <View style={styles.handleBar} />
@@ -82,7 +83,6 @@ export function ScanTray({
             ))}
           </ScrollView>
 
-          {/* Footer actions */}
           <View style={styles.footer}>
             <TouchableOpacity style={styles.clearButton} onPress={onClear}>
               <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   containerExpanded: {
-    maxHeight: '60%',
+    maxHeight: '70%',
   },
   header: {
     alignItems: 'center',

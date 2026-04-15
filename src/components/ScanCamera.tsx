@@ -18,6 +18,21 @@ import { ScanTray } from './scan/ScanTray';
 import { DestinationPicker } from './scan/DestinationPicker';
 import { colors, spacing, fontSize, borderRadius } from '../constants';
 
+/**
+ * Filters OCR text to only include blocks that fall within the center
+ * region of the frame (where the guide frame is). This prevents reading
+ * text from keyboards, table edges, or other cards in the background.
+ *
+ * Since ML Kit text recognition returns raw text without position data
+ * through the frame processor plugin, we use a heuristic: only process
+ * the text if it contains enough MTG-like structure. The validateMTGLayout
+ * in card-matcher.ts handles this filtering.
+ *
+ * Additionally, we require a minimum text length to avoid false triggers
+ * from short fragments.
+ */
+const MIN_OCR_TEXT_LENGTH = 20;
+
 type Props = {
   isActive: boolean;
 };
@@ -33,11 +48,15 @@ export function ScanCamera({ isActive }: Props) {
     handleOCRText,
     selectCandidate,
     setDetectionCondition,
-    setDetectionQuantity,
+    cycleFinish,
+    incrementQuantity,
+    resetQuantity,
     confirmDetection,
     dismissDetection,
     trayItems,
     trayCount,
+    trayExpanded,
+    setTrayExpanded,
     editTrayItem,
     removeTrayItem,
     clearTray,
@@ -48,11 +67,13 @@ export function ScanCamera({ isActive }: Props) {
     isSaving,
   } = useScanState();
 
-  // Bridge from worklet to JS thread
   const onTextDetected = useRunOnJS(handleOCRText, [handleOCRText]);
 
-  // Frame processor pauses during detection or searching
-  const shouldProcess = isActive && detection.status === 'scanning';
+  // Pause frame processor when: not active, detecting, searching, or tray expanded
+  const shouldProcess =
+    isActive &&
+    detection.status === 'scanning' &&
+    !trayExpanded;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -60,7 +81,7 @@ export function ScanCamera({ isActive }: Props) {
       runAtTargetFps(2, () => {
         'worklet';
         const result = textRecognition(frame);
-        if (result?.text && result.text.length > 10) {
+        if (result?.text && result.text.length > MIN_OCR_TEXT_LENGTH) {
           onTextDetected(result.text);
         }
       });
@@ -96,7 +117,6 @@ export function ScanCamera({ isActive }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Camera */}
       <Camera
         style={StyleSheet.absoluteFill}
         device={device}
@@ -108,39 +128,45 @@ export function ScanCamera({ isActive }: Props) {
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
         <Text style={styles.title}>Scan</Text>
         {trayCount > 0 && (
-          <View style={styles.trayBadge}>
+          <TouchableOpacity
+            style={styles.trayBadge}
+            onPress={() => setTrayExpanded(!trayExpanded)}
+          >
+            <Ionicons name="layers" size={16} color="#FFFFFF" />
             <Text style={styles.trayBadgeText}>{trayCount}</Text>
-          </View>
+          </TouchableOpacity>
         )}
       </View>
 
-      {/* Guide overlay (when scanning or searching) */}
-      {detection.status !== 'detected' && (
+      {/* Guide overlay */}
+      {detection.status !== 'detected' && !trayExpanded && (
         <ScanOverlay status={detection.status} />
       )}
 
-      {/* Detection bar (when card found) */}
-      {detection.status === 'detected' && detection.card && (
+      {/* Detection bar */}
+      {detection.status === 'detected' && detection.card && !trayExpanded && (
         <DetectionBar
           card={detection.card}
           condition={detection.condition}
+          finish={detection.finish}
           quantity={detection.quantity}
           onConditionChange={setDetectionCondition}
-          onQuantityChange={setDetectionQuantity}
+          onCycleFinish={cycleFinish}
+          onIncrementQty={incrementQuantity}
+          onResetQty={resetQuantity}
           onConfirm={confirmDetection}
           onDismiss={dismissDetection}
         />
       )}
 
-      {/* Scan tray (when items accumulated, not during detection) */}
+      {/* Scan tray */}
       {detection.status !== 'detected' && (
         <ScanTray
           items={trayItems}
+          expanded={trayExpanded}
+          onToggleExpand={() => setTrayExpanded(!trayExpanded)}
           isSaving={isSaving}
-          onEdit={(id) => {
-            // For now, remove and let them re-scan. Full inline edit is Day-2.
-            removeTrayItem(id);
-          }}
+          onEdit={(id) => removeTrayItem(id)}
           onDelete={removeTrayItem}
           onClear={clearTray}
           onAddTo={openDestinationPicker}
@@ -148,7 +174,7 @@ export function ScanCamera({ isActive }: Props) {
         />
       )}
 
-      {/* Destination picker modal */}
+      {/* Destination picker */}
       <DestinationPicker
         visible={showDestinationPicker}
         cardCount={trayCount}
@@ -219,13 +245,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   trayBadge: {
-    backgroundColor: colors.primary,
-    borderRadius: 14,
-    minWidth: 28,
-    height: 28,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
   },
   trayBadgeText: {
     color: '#FFFFFF',

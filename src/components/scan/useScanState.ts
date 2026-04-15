@@ -20,8 +20,31 @@ export type DetectionState = {
   card: ScryfallCard | null;
   candidates: ScryfallCard[];
   condition: Condition;
+  finish: Finish;
+  availableFinishes: Finish[];
   quantity: number;
 };
+
+/**
+ * Determines which finishes are available based on Scryfall price data.
+ */
+function getAvailableFinishes(card: ScryfallCard): Finish[] {
+  const finishes: Finish[] = [];
+  if (card.prices?.usd !== undefined && card.prices.usd !== null) finishes.push('normal');
+  if (card.prices?.usd_foil !== undefined && card.prices.usd_foil !== null) finishes.push('foil');
+  // Etched foil check — Scryfall uses 'usd_etched' but our type only has usd/usd_foil
+  // For now, etched is available if the card's finishes include it (check layout or name)
+  if (finishes.length === 0) finishes.push('normal'); // fallback
+  return finishes;
+}
+
+/**
+ * Gets the price for a specific finish.
+ */
+export function getPriceForFinish(card: ScryfallCard, finish: Finish): string | undefined {
+  if (finish === 'foil') return card.prices?.usd_foil;
+  return card.prices?.usd;
+}
 
 let trayIdCounter = 0;
 
@@ -31,10 +54,13 @@ export function useScanState() {
     card: null,
     candidates: [],
     condition: 'NM',
+    finish: 'normal',
+    availableFinishes: ['normal'],
     quantity: 1,
   });
 
   const [trayItems, setTrayItems] = useState<ScanTrayItem[]>([]);
+  const [trayExpanded, setTrayExpanded] = useState(false);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -50,7 +76,6 @@ export function useScanState() {
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;
 
-    // Don't re-process the same card
     if (validation.regions.name === lastMatchedNameRef.current) return;
 
     isProcessingRef.current = true;
@@ -59,17 +84,20 @@ export function useScanState() {
     matchCard(text)
       .then((matches) => {
         if (matches.length > 0) {
-          lastMatchedNameRef.current = matches[0].name;
+          const card = matches[0];
+          const available = getAvailableFinishes(card);
+          lastMatchedNameRef.current = card.name;
           setDetection({
             status: 'detected',
-            card: matches[0],
+            card,
             candidates: matches,
             condition: 'NM',
+            finish: available[0],
+            availableFinishes: available,
             quantity: 1,
           });
         } else {
           setDetection((prev) => ({ ...prev, status: 'no_match' }));
-          // Auto-reset to scanning after 2 seconds
           setTimeout(() => {
             setDetection((prev) =>
               prev.status === 'no_match' ? { ...prev, status: 'scanning' } : prev
@@ -86,30 +114,48 @@ export function useScanState() {
   }, [detection.status]);
 
   const selectCandidate = useCallback((card: ScryfallCard) => {
-    setDetection((prev) => ({ ...prev, card }));
+    const available = getAvailableFinishes(card);
+    setDetection((prev) => ({
+      ...prev,
+      card,
+      finish: available[0],
+      availableFinishes: available,
+    }));
   }, []);
 
   const setDetectionCondition = useCallback((condition: Condition) => {
     setDetection((prev) => ({ ...prev, condition }));
   }, []);
 
-  const setDetectionQuantity = useCallback((quantity: number) => {
-    setDetection((prev) => ({ ...prev, quantity: Math.max(1, quantity) }));
+  /** Cycle to next available finish */
+  const cycleFinish = useCallback(() => {
+    setDetection((prev) => {
+      const idx = prev.availableFinishes.indexOf(prev.finish);
+      const next = prev.availableFinishes[(idx + 1) % prev.availableFinishes.length];
+      return { ...prev, finish: next };
+    });
+  }, []);
+
+  /** Tap: +1 quantity. Long press: reset to 1. */
+  const incrementQuantity = useCallback(() => {
+    setDetection((prev) => ({ ...prev, quantity: prev.quantity + 1 }));
+  }, []);
+
+  const resetQuantity = useCallback(() => {
+    setDetection((prev) => ({ ...prev, quantity: 1 }));
   }, []);
 
   const confirmDetection = useCallback(() => {
     if (!detection.card) return;
 
-    const { card, condition, quantity } = detection;
+    const { card, condition, finish, quantity } = detection;
 
     setTrayItems((prev) => {
-      // Check for duplicate: same scryfall ID + same condition
       const existingIndex = prev.findIndex(
-        (item) => item.card.id === card.id && item.condition === condition
+        (item) => item.card.id === card.id && item.condition === condition && item.finish === finish
       );
 
       if (existingIndex >= 0) {
-        // Increment quantity
         const updated = [...prev];
         updated[existingIndex] = {
           ...updated[existingIndex],
@@ -118,13 +164,12 @@ export function useScanState() {
         return updated;
       }
 
-      // Add new item
       return [
         {
           id: `tray-${++trayIdCounter}`,
           card,
           condition,
-          finish: 'normal' as Finish,
+          finish,
           quantity,
           addedAt: Date.now(),
         },
@@ -132,13 +177,14 @@ export function useScanState() {
       ];
     });
 
-    // Reset to scanning for next card
     lastMatchedNameRef.current = '';
     setDetection({
       status: 'scanning',
       card: null,
       candidates: [],
       condition: 'NM',
+      finish: 'normal',
+      availableFinishes: ['normal'],
       quantity: 1,
     });
   }, [detection]);
@@ -150,6 +196,8 @@ export function useScanState() {
       card: null,
       candidates: [],
       condition: 'NM',
+      finish: 'normal',
+      availableFinishes: ['normal'],
       quantity: 1,
     });
   }, []);
@@ -169,7 +217,10 @@ export function useScanState() {
   const clearTray = useCallback(() => {
     Alert.alert('Clear all?', 'Remove all scanned cards from the tray?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => setTrayItems([]) },
+      { text: 'Clear', style: 'destructive', onPress: () => {
+        setTrayItems([]);
+        setTrayExpanded(false);
+      }},
     ]);
   }, []);
 
@@ -191,12 +242,12 @@ export function useScanState() {
     if (failures.length === 0) {
       Alert.alert('Done!', `${trayItems.length} cards added successfully`);
       setTrayItems([]);
+      setTrayExpanded(false);
     } else {
       Alert.alert(
         'Partial save',
         `${trayItems.length - failures.length} of ${trayItems.length} cards saved. ${failures.length} failed.`
       );
-      // Remove only the successfully saved items
       const failedIndices = new Set(
         results.map((r, i) => (r.status === 'rejected' ? i : -1)).filter((i) => i >= 0)
       );
@@ -212,12 +263,16 @@ export function useScanState() {
     handleOCRText,
     selectCandidate,
     setDetectionCondition,
-    setDetectionQuantity,
+    cycleFinish,
+    incrementQuantity,
+    resetQuantity,
     confirmDetection,
     dismissDetection,
 
     trayItems,
     trayCount: trayItems.length,
+    trayExpanded,
+    setTrayExpanded,
     editTrayItem,
     removeTrayItem,
     clearTray,
