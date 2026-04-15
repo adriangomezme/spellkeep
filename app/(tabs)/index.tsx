@@ -118,7 +118,9 @@ export default function CollectionScreen() {
         const card = entry.cards;
         if (card?.price_usd) value += card.price_usd * entry.quantity_normal;
         if (card?.price_usd_foil) value += card.price_usd_foil * entry.quantity_foil;
-        if (card?.price_usd) value += card.price_usd * entry.quantity_etched;
+        // Etched foil uses foil price if available, otherwise normal
+        const etchedPrice = card?.price_usd_foil ?? card?.price_usd;
+        if (etchedPrice) value += etchedPrice * entry.quantity_etched;
       }
       setTotalValue(value);
     } catch (err) {

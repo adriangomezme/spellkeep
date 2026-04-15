@@ -57,9 +57,8 @@ function isSameCardName(ocrName: string, knownName: string): boolean {
   return a.substring(0, checkLen) === b.substring(0, checkLen);
 }
 
-let trayIdCounter = 0;
-
 export function useScanState() {
+  const trayIdCounterRef = useRef(0);
   const [detection, setDetection] = useState<DetectionState>({
     status: 'scanning',
     card: null,
@@ -197,7 +196,7 @@ export function useScanState() {
               return updated;
             }
 
-            newTrayId = `tray-${++trayIdCounter}`;
+            newTrayId = `tray-${++trayIdCounterRef.current}`;
             return [
               {
                 id: newTrayId,
@@ -320,6 +319,30 @@ export function useScanState() {
     );
   }, []);
 
+  /** Load a tray item into the preview for editing */
+  const loadTrayItemForEdit = useCallback((id: string) => {
+    const item = trayItems.find((i) => i.id === id);
+    if (!item) return;
+
+    const available = getAvailableFinishes(item.card);
+    trayItemIdRef.current = id;
+    currentCardNameRef.current = item.card.name;
+    statusRef.current = 'detected';
+
+    setDetection({
+      status: 'detected',
+      card: item.card,
+      candidates: [],
+      trayItemId: id,
+      condition: item.condition,
+      finish: item.finish,
+      availableFinishes: available,
+      quantity: item.quantity,
+    });
+
+    setTrayExpanded(false);
+  }, [trayItems]);
+
   const removeTrayItem = useCallback((id: string) => {
     setTrayItems((prev) => prev.filter((item) => item.id !== id));
     if (trayItemIdRef.current === id) {
@@ -366,7 +389,7 @@ export function useScanState() {
       const failedIndices = new Set(
         results.map((r, i) => (r.status === 'rejected' ? i : -1)).filter((i) => i >= 0)
       );
-      setTrayItems((prev) => prev.filter((_, i) => failedIndices.has(i)));
+      setTrayItems((prev) => prev.filter((_, i) => !failedIndices.has(i)));
     }
 
     setIsSaving(false);
@@ -390,6 +413,7 @@ export function useScanState() {
     trayExpanded,
     setTrayExpanded,
     editTrayItem,
+    loadTrayItemForEdit,
     removeTrayItem,
     clearTray,
 

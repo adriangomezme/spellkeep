@@ -57,7 +57,6 @@ const priceStyles = StyleSheet.create({
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
-  const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -80,10 +79,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
-        setFiltered(cards);
         setHasMore(result?.has_more ?? false);
       })
-      .catch(() => { setVersions([]); setFiltered([]); setHasMore(false); })
+      .catch(() => { setVersions([]); setHasMore(false); })
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
 
@@ -95,19 +93,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .then((result) => {
         const cards = result?.data ?? [];
         pageRef.current = nextPage;
-        setVersions((prev) => {
-          const updated = [...prev, ...cards];
-          // Re-apply filter
-          if (filter) {
-            const lower = filter.toLowerCase();
-            setFiltered(updated.filter((v) =>
-              v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
-            ));
-          } else {
-            setFiltered(updated);
-          }
-          return updated;
-        });
+        setVersions((prev) => [...prev, ...cards]);
         setHasMore(result?.has_more ?? false);
       })
       .catch(() => {})
@@ -131,15 +117,15 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .finally(() => setIsLoadingSet(false));
   }, [selectedSet, cardName]);
 
-  const fullscreenData = selectedSet ? setFilteredVersions : filtered;
+  // Derive filtered from versions + filter text (no separate state needed)
+  const filtered = filter
+    ? versions.filter((v) => {
+        const lower = filter.toLowerCase();
+        return v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower);
+      })
+    : versions;
 
-  useEffect(() => {
-    if (!filter) { setFiltered(versions); return; }
-    const lower = filter.toLowerCase();
-    setFiltered(versions.filter((v) =>
-      v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
-    ));
-  }, [filter, versions]);
+  const fullscreenData = selectedSet ? setFilteredVersions : filtered;
 
   function renderCard(item: ScryfallCard, isHorizontal: boolean) {
     const isSelected = item.id === currentId;
