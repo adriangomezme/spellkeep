@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { ScryfallCard } from '../../lib/scryfall';
 import { matchCard, validateMTGLayout, extractCardName } from '../../lib/card-matcher';
 import { addToCollection, Condition, Finish } from '../../lib/collection';
@@ -173,6 +174,7 @@ export function useScanState() {
             quantity: 1,
           };
           updateDetection(newState);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
           // If we already have a card in preview, keep showing it
           if (hadPreviousCard) {
