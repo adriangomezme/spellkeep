@@ -10,7 +10,6 @@ import {
   Platform,
   ActivityIndicator,
   StyleSheet,
-  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,7 +43,8 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const keyboardOffset = useSharedValue(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const translateY = useSharedValue(0);
 
   useEffect(() => {
     if (!visible || !cardName) return;
@@ -65,16 +65,17 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
 
-  // Listen to keyboard show/hide to move the sheet up
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
-      keyboardOffset.value = withTiming(-e.endCoordinates.height, { duration: 250 });
+      setKeyboardVisible(true);
+      translateY.value = withTiming(-e.endCoordinates.height, { duration: 250 });
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
-      keyboardOffset.value = withTiming(0, { duration: 250 });
+      setKeyboardVisible(false);
+      translateY.value = withTiming(0, { duration: 250 });
     });
 
     return () => {
@@ -104,20 +105,24 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   }
 
   const sheetAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: keyboardOffset.value }],
+    transform: [{ translateY: translateY.value }],
   }));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      {/* Fully opaque backdrop — hides camera completely */}
       <TouchableOpacity
         style={styles.backdrop}
         activeOpacity={1}
         onPress={handleClose}
       />
 
-      <Animated.View style={[styles.sheetWrapper, sheetAnimStyle]}>
-        <View style={styles.sheet}>
+      <Animated.View
+        style={[
+          styles.sheet,
+          keyboardVisible && styles.sheetKeyboardOpen,
+          sheetAnimStyle,
+        ]}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
@@ -199,9 +204,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             />
           )}
         </View>
-        </View>
-        {/* Extra fill below sheet to cover gap when keyboard pushes up */}
-        <View style={styles.bottomFill} />
       </Animated.View>
     </Modal>
   );
@@ -210,23 +212,22 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: '#000',
-  },
-  sheetWrapper: {
-    // This wrapper moves with the keyboard
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xl,
     ...shadows.lg,
   },
-  bottomFill: {
-    // Fills the gap between sheet bottom and keyboard top
-    height: 400,
-    backgroundColor: colors.surface,
+  sheetKeyboardOpen: {
+    // Remove rounded corners when keyboard is open so there's
+    // no gap/camera visible at the edges between sheet and keyboard
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',
