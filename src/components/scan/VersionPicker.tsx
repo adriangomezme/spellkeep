@@ -122,7 +122,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   }
 
   const selectedIndex = versions.findIndex((v) => v.id === currentId);
-  const initialIndex = selectedIndex > 0 ? selectedIndex : undefined;
 
   // When a set is selected, fetch versions for that set
   useEffect(() => {
@@ -289,14 +288,13 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 </View>
               ) : (
                 <FlatList
-                  key={fullscreen ? 'fs' : 'bs'}
                   ref={listRef}
                   data={versions}
                   keyExtractor={(item) => item.id}
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.listContentH}
-                  initialScrollIndex={initialIndex}
+                  initialScrollIndex={selectedIndex > 0 ? selectedIndex : undefined}
                   getItemLayout={(_, index) => ({
                     length: CARD_WIDTH_H + CARD_GAP,
                     offset: (CARD_WIDTH_H + CARD_GAP) * index,
