@@ -15,6 +15,7 @@ import { ScanTrayItem as TrayItemType } from './useScanState';
 import { ScanTrayItemRow } from './ScanTrayItem';
 import { TrayCardDetail } from './TrayCardDetail';
 import { TrayItemEditor } from './TrayItemEditor';
+import { DestinationPicker } from './DestinationPicker';
 import { ScryfallCard } from '../../lib/scryfall';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
@@ -26,7 +27,10 @@ type Props = {
   onSaveItem: (id: string, updates: Partial<TrayItemType>) => void;
   onDeleteItem: (id: string) => void;
   onClear: () => void;
-  onAddTo: () => void;
+  showDestinationPicker: boolean;
+  onOpenDestinationPicker: () => void;
+  onCloseDestinationPicker: () => void;
+  onAddAllToDestination: (collectionId: string) => Promise<void>;
 };
 
 export function ScanTray({
@@ -37,7 +41,10 @@ export function ScanTray({
   onSaveItem,
   onDeleteItem,
   onClear,
-  onAddTo,
+  showDestinationPicker,
+  onOpenDestinationPicker,
+  onCloseDestinationPicker,
+  onAddAllToDestination,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
@@ -124,7 +131,7 @@ export function ScanTray({
 
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={onAddTo}
+                onPress={onOpenDestinationPicker}
                 disabled={isSaving}
               >
                 {isSaving ? (
@@ -150,6 +157,13 @@ export function ScanTray({
         onSave={onSaveItem}
         onDelete={onDeleteItem}
         onClose={() => setEditingItem(null)}
+      />
+
+      <DestinationPicker
+        visible={showDestinationPicker}
+        cardCount={items.reduce((sum, i) => sum + i.quantity, 0)}
+        onSelect={onAddAllToDestination}
+        onClose={onCloseDestinationPicker}
       />
     </Modal>
   );

@@ -18,7 +18,6 @@ import { useScanState } from './scan/useScanState';
 import { ScanOverlay } from './scan/ScanOverlay';
 import { DetectionBar } from './scan/DetectionBar';
 import { ScanTray } from './scan/ScanTray';
-import { DestinationPicker } from './scan/DestinationPicker';
 import { colors, spacing, fontSize, borderRadius } from '../constants';
 
 /**
@@ -181,15 +180,10 @@ export function ScanCamera({ isActive }: Props) {
         onSaveItem={(id, updates) => editTrayItem(id, updates)}
         onDeleteItem={removeTrayItem}
         onClear={clearTray}
-        onAddTo={openDestinationPicker}
-      />
-
-      {/* Destination picker */}
-      <DestinationPicker
-        visible={showDestinationPicker}
-        cardCount={trayCount}
-        onSelect={addAllToDestination}
-        onClose={closeDestinationPicker}
+        showDestinationPicker={showDestinationPicker}
+        onOpenDestinationPicker={openDestinationPicker}
+        onCloseDestinationPicker={closeDestinationPicker}
+        onAddAllToDestination={addAllToDestination}
       />
     </View>
   );
