@@ -46,7 +46,7 @@ export function ScanTray({
     <View
       style={[
         styles.container,
-        { paddingBottom: bottomInset + 90 },
+        { paddingBottom: expanded ? bottomInset + 8 : bottomInset + 90 },
       ]}
     >
       {/* Header */}
