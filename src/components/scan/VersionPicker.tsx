@@ -163,8 +163,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
           source={{ uri: getCardImageUri(item, 'normal') }}
           style={imageStyle}
           contentFit="cover"
-          cachePolicy="memory-disk"
-          recyclingKey={item.id}
         />
         <Text style={styles.versionSet} numberOfLines={2}>{item.set_name}</Text>
         <Text style={styles.versionNumber}>#{item.collector_number}</Text>
@@ -175,7 +173,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   // ── Single Modal — switches layout based on state ──
   return (
-    <Modal visible={visible} transparent={!fullscreen} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       {/* Set filter sub-screen */}
       {showSetFilter ? (
         <SetFilterScreen
