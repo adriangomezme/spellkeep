@@ -291,16 +291,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.listContentH}
-                initialScrollIndex={selectedIndex > 0 ? selectedIndex : undefined}
-                getItemLayout={(_, index) => ({
-                  length: CARD_WIDTH_H + CARD_GAP,
-                  offset: (CARD_WIDTH_H + CARD_GAP) * index,
-                  index,
-                })}
-                onScrollToIndexFailed={(info) => {
-                  setTimeout(() => {
-                    listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
-                  }, 200);
+                contentOffset={{
+                  x: selectedIndex > 0 ? (CARD_WIDTH_H + CARD_GAP) * selectedIndex - CARD_WIDTH_H : 0,
+                  y: 0,
                 }}
                 renderItem={({ item }) => renderCard(item, true)}
                 onEndReached={loadMore}
