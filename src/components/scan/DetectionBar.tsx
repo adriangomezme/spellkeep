@@ -222,11 +222,11 @@ const styles = StyleSheet.create({
   },
   cardPrice: {
     color: colors.text,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
   },
   cardPriceFoil: {
     color: colors.textSecondary,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
   },
   controlsRow: {
     flexDirection: 'row',

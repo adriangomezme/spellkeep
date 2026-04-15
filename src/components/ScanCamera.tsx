@@ -71,12 +71,12 @@ export function ScanCamera({ isActive }: Props) {
 
   const onTextDetected = useRunOnJS(handleOCRText, [handleOCRText]);
 
-  // Pause only when: not active, actively searching, or tray expanded
-  // Camera keeps scanning while preview is showing (detected state)
+  // Pause when: not active, searching, tray expanded, or version picker open
   const shouldProcess =
     isActive &&
     detection.status !== 'searching' &&
-    !trayExpanded;
+    !trayExpanded &&
+    !showVersionPicker;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
