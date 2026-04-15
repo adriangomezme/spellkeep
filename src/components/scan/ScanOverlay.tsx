@@ -3,6 +3,10 @@ import { View, Text, ActivityIndicator, Animated, StyleSheet } from 'react-nativ
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 import { DetectionStatus } from './useScanState';
 
+// 5% smaller than 300x419
+const FRAME_W = 285;
+const FRAME_H = 398;
+
 type Props = {
   status: DetectionStatus;
   successFlash?: boolean;
@@ -24,23 +28,23 @@ export function ScanOverlay({ status, successFlash }: Props) {
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Base guide frame */}
-      <View
-        style={[
-          styles.guideFrame,
-          status === 'searching' && styles.guideFrameSearching,
-          status === 'no_match' && styles.guideFrameError,
-        ]}
-      />
-      {/* Green flash overlay on success */}
-      <Animated.View
-        style={[
-          styles.guideFrame,
-          styles.guideFrameSuccess,
-          styles.flashOverlay,
-          { opacity: flashOpacity },
-        ]}
-      />
+      {/* Frame wrapper — both frames positioned here */}
+      <View style={styles.frameWrapper}>
+        <View
+          style={[
+            styles.guideFrame,
+            status === 'searching' && styles.guideFrameSearching,
+            status === 'no_match' && styles.guideFrameError,
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.guideFrame,
+            styles.guideFrameSuccess,
+            { position: 'absolute', top: 0, left: 0, opacity: flashOpacity },
+          ]}
+        />
+      </View>
 
       {status === 'searching' && (
         <ActivityIndicator size="large" color="#FFFFFF" style={styles.spinner} />
@@ -64,9 +68,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  frameWrapper: {
+    width: FRAME_W,
+    height: FRAME_H,
+  },
   guideFrame: {
-    width: 300,
-    height: 419,
+    width: FRAME_W,
+    height: FRAME_H,
     borderRadius: borderRadius.md,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.3)',
@@ -83,9 +91,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(34,197,94,0.8)',
     borderStyle: 'solid',
     borderWidth: 3,
-  },
-  flashOverlay: {
-    position: 'absolute',
   },
   spinner: {
     position: 'absolute',
