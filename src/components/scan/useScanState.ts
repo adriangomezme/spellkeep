@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 import { ScryfallCard } from '../../lib/scryfall';
-import { matchCard, validateMTGLayout } from '../../lib/card-matcher';
+import { matchCard, validateMTGLayout, extractCardName } from '../../lib/card-matcher';
 import { addToCollection, Condition, Finish } from '../../lib/collection';
 
 export type ScanTrayItem = {
@@ -39,9 +39,23 @@ export function getPriceForFinish(card: ScryfallCard, finish: Finish): string | 
   return card.prices?.usd;
 }
 
-let trayIdCounter = 0;
+/**
+ * Check if two card names are similar enough to be the same card.
+ * Handles OCR variations like missing letters, extra spaces, etc.
+ */
+function isSameCardName(ocrName: string, knownName: string): boolean {
+  const a = ocrName.toLowerCase().replace(/[^a-z]/g, '');
+  const b = knownName.toLowerCase().replace(/[^a-z]/g, '');
+  if (a === b) return true;
+  if (a.length < 3 || b.length < 3) return false;
+  // Check if one contains the other (handles partial OCR reads)
+  if (a.includes(b) || b.includes(a)) return true;
+  // Check first N characters match (handles trailing OCR noise)
+  const checkLen = Math.min(a.length, b.length, 8);
+  return a.substring(0, checkLen) === b.substring(0, checkLen);
+}
 
-const SCAN_COOLDOWN_MS = 4000;
+let trayIdCounter = 0;
 
 export function useScanState() {
   const [detection, setDetection] = useState<DetectionState>({
@@ -60,68 +74,56 @@ export function useScanState() {
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ALL guards use refs so handleOCRText never needs to be recreated
   const isProcessingRef = useRef(false);
   const statusRef = useRef<DetectionStatus>('scanning');
-  const lastMatchedIdRef = useRef('');
-  const cooldownActiveRef = useRef(false);
-  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The Scryfall card name of the currently detected card */
+  const currentCardNameRef = useRef('');
   const trayItemIdRef = useRef<string | null>(null);
 
-  // Keep refs in sync with state
   function updateDetection(newState: DetectionState) {
     statusRef.current = newState.status;
     trayItemIdRef.current = newState.trayItemId;
+    if (newState.card) {
+      currentCardNameRef.current = newState.card.name;
+    }
     setDetection(newState);
   }
 
   // ── Detection ─────────────────────────────────────────
-  // handleOCRText has NO dependencies — uses only refs for guards.
-  // This ensures the worklet bridge always calls the same function.
+  // ZERO dependencies — stable function reference for worklet bridge.
 
   const handleOCRText = useCallback((text: string) => {
-    // Guard: already processing
     if (isProcessingRef.current) return;
-    // Guard: currently searching
     if (statusRef.current === 'searching') return;
-    // Guard: in cooldown (just scanned a card)
-    if (cooldownActiveRef.current) return;
 
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;
 
+    // Smart duplicate prevention: compare OCR name with current card name.
+    // If they look like the same card, skip the API call entirely.
+    const ocrName = validation.regions.name;
+    if (currentCardNameRef.current && isSameCardName(ocrName, currentCardNameRef.current)) {
+      return;
+    }
+
     isProcessingRef.current = true;
-    updateDetection({
-      ...detection,
-      status: 'searching',
-    });
     statusRef.current = 'searching';
+    setDetection((prev) => ({ ...prev, status: 'searching' }));
 
     matchCard(text)
       .then((matches) => {
         if (matches.length > 0) {
           const card = matches[0];
 
-          // Same card as last time — skip
-          if (card.id === lastMatchedIdRef.current) {
+          // Double check: API result is same card as current
+          if (currentCardNameRef.current && card.name === currentCardNameRef.current) {
             statusRef.current = trayItemIdRef.current ? 'detected' : 'scanning';
-            setDetection((prev) => ({
-              ...prev,
-              status: statusRef.current,
-            }));
+            setDetection((prev) => ({ ...prev, status: statusRef.current }));
             return;
           }
 
           const available = getAvailableFinishes(card);
           const finish = available[0];
-          lastMatchedIdRef.current = card.id;
-
-          // Activate cooldown
-          cooldownActiveRef.current = true;
-          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-          cooldownTimerRef.current = setTimeout(() => {
-            cooldownActiveRef.current = false;
-          }, SCAN_COOLDOWN_MS);
 
           // Add to tray (or increment if duplicate)
           let newTrayId = '';
@@ -181,7 +183,7 @@ export function useScanState() {
       .finally(() => {
         isProcessingRef.current = false;
       });
-  }, []); // NO dependencies — stable function reference
+  }, []);
 
   // ── Preview edits ─────────────────────────────────────
 
@@ -224,7 +226,7 @@ export function useScanState() {
 
   const changeVersion = useCallback((newCard: ScryfallCard) => {
     const available = getAvailableFinishes(newCard);
-    lastMatchedIdRef.current = newCard.id;
+    currentCardNameRef.current = newCard.name;
     setDetection((prev) => ({
       ...prev,
       card: newCard,
@@ -235,9 +237,7 @@ export function useScanState() {
   }, []);
 
   const dismissDetection = useCallback(() => {
-    lastMatchedIdRef.current = '';
-    cooldownActiveRef.current = false;
-    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    currentCardNameRef.current = '';
     statusRef.current = 'scanning';
     trayItemIdRef.current = null;
     setDetection({
