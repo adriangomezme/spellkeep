@@ -305,7 +305,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 renderItem={({ item }) => renderCard(item, true)}
                 onEndReached={loadMore}
                 onEndReachedThreshold={0.5}
-                ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ marginLeft: spacing.md }} /> : null}
               />
             )}
           </View>
