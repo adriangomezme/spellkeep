@@ -7,11 +7,18 @@ import {
   FlatList,
   TextInput,
   Keyboard,
+  Platform,
   ActivityIndicator,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   ScryfallCard,
   searchCards,
@@ -37,6 +44,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const keyboardOffset = useSharedValue(0);
 
   useEffect(() => {
     if (!visible || !cardName) return;
@@ -56,6 +64,24 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       })
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
+
+  // Listen to keyboard show/hide to move the sheet up
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      keyboardOffset.value = withTiming(-e.endCoordinates.height, { duration: 250 });
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardOffset.value = withTiming(0, { duration: 250 });
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!filter) {
@@ -77,17 +103,20 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     onClose();
   }
 
+  const sheetAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboardOffset.value }],
+  }));
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      {/* Opaque backdrop */}
       <TouchableOpacity
         style={styles.backdrop}
         activeOpacity={1}
         onPress={handleClose}
       />
 
-      <View style={styles.sheet}>
-        {/* Header with X */}
+      <Animated.View style={[styles.sheet, sheetAnimStyle]}>
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
             <Text style={styles.title}>Select Version</Text>
@@ -118,7 +147,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
           )}
         </View>
 
-        {/* Versions horizontal scroll */}
+        {/* Versions */}
         <View style={styles.listContainer}>
           {isLoading ? (
             <View style={styles.centeredContent}>
@@ -168,7 +197,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             />
           )}
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
