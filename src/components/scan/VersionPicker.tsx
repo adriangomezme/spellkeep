@@ -30,7 +30,8 @@ type Props = {
 };
 
 const CARD_WIDTH = 162;
-const CARD_IMAGE_HEIGHT = Math.round(CARD_WIDTH * 1.4);
+// MTG card ratio is 63:88 ≈ 1:1.397
+const CARD_IMAGE_HEIGHT = Math.round((CARD_WIDTH - spacing.sm * 2) * (88 / 63));
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
@@ -74,6 +75,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.backdrop} />
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -162,9 +164,12 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 }
 
 const styles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-end',
   },
   sheet: {

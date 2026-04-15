@@ -41,11 +41,7 @@ export function getPriceForFinish(card: ScryfallCard, finish: Finish): string | 
 
 let trayIdCounter = 0;
 
-/**
- * Cooldown period after a card is detected before allowing another scan.
- * Prevents the same card from being re-scanned while user edits the preview.
- */
-const SCAN_COOLDOWN_MS = 3000;
+const SCAN_COOLDOWN_MS = 4000;
 
 export function useScanState() {
   const [detection, setDetection] = useState<DetectionState>({
@@ -64,33 +60,54 @@ export function useScanState() {
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ALL guards use refs so handleOCRText never needs to be recreated
   const isProcessingRef = useRef(false);
-  /** Stores the Scryfall ID of the last matched card to prevent re-scanning */
+  const statusRef = useRef<DetectionStatus>('scanning');
   const lastMatchedIdRef = useRef('');
+  const cooldownActiveRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trayItemIdRef = useRef<string | null>(null);
 
-  // ── Detection (auto-adds to tray) ─────────────────────
+  // Keep refs in sync with state
+  function updateDetection(newState: DetectionState) {
+    statusRef.current = newState.status;
+    trayItemIdRef.current = newState.trayItemId;
+    setDetection(newState);
+  }
+
+  // ── Detection ─────────────────────────────────────────
+  // handleOCRText has NO dependencies — uses only refs for guards.
+  // This ensures the worklet bridge always calls the same function.
 
   const handleOCRText = useCallback((text: string) => {
+    // Guard: already processing
     if (isProcessingRef.current) return;
-    if (detection.status === 'searching') return;
+    // Guard: currently searching
+    if (statusRef.current === 'searching') return;
+    // Guard: in cooldown (just scanned a card)
+    if (cooldownActiveRef.current) return;
 
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;
 
     isProcessingRef.current = true;
-    setDetection((prev) => ({ ...prev, status: 'searching' }));
+    updateDetection({
+      ...detection,
+      status: 'searching',
+    });
+    statusRef.current = 'searching';
 
     matchCard(text)
       .then((matches) => {
         if (matches.length > 0) {
           const card = matches[0];
 
-          // Fix #1: Don't re-scan the same card (compare by Scryfall ID)
+          // Same card as last time — skip
           if (card.id === lastMatchedIdRef.current) {
+            statusRef.current = trayItemIdRef.current ? 'detected' : 'scanning';
             setDetection((prev) => ({
               ...prev,
-              status: prev.trayItemId ? 'detected' : 'scanning',
+              status: statusRef.current,
             }));
             return;
           }
@@ -99,27 +116,32 @@ export function useScanState() {
           const finish = available[0];
           lastMatchedIdRef.current = card.id;
 
-          // Fix #2: Check for duplicate in tray (same scryfall ID)
-          let trayItemId: string;
+          // Activate cooldown
+          cooldownActiveRef.current = true;
+          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+          cooldownTimerRef.current = setTimeout(() => {
+            cooldownActiveRef.current = false;
+          }, SCAN_COOLDOWN_MS);
+
+          // Add to tray (or increment if duplicate)
+          let newTrayId = '';
           setTrayItems((prev) => {
             const existingIndex = prev.findIndex((item) => item.card.id === card.id);
 
             if (existingIndex >= 0) {
-              // Increment quantity of existing item
               const updated = [...prev];
               updated[existingIndex] = {
                 ...updated[existingIndex],
                 quantity: updated[existingIndex].quantity + 1,
               };
-              trayItemId = updated[existingIndex].id;
+              newTrayId = updated[existingIndex].id;
               return updated;
             }
 
-            // New item
-            trayItemId = `tray-${++trayIdCounter}`;
+            newTrayId = `tray-${++trayIdCounter}`;
             return [
               {
-                id: trayItemId,
+                id: newTrayId,
                 card,
                 condition: 'NM' as Condition,
                 finish,
@@ -130,44 +152,41 @@ export function useScanState() {
             ];
           });
 
-          // Show in preview
-          setDetection({
+          const newState: DetectionState = {
             status: 'detected',
             card,
             candidates: matches,
-            trayItemId: trayItemId!,
+            trayItemId: newTrayId,
             condition: 'NM',
             finish,
             availableFinishes: available,
             quantity: 1,
-          });
-
-          // Start cooldown — don't re-scan for a few seconds
-          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-          cooldownTimerRef.current = setTimeout(() => {
-            lastMatchedIdRef.current = '';
-          }, SCAN_COOLDOWN_MS);
+          };
+          updateDetection(newState);
         } else {
+          statusRef.current = 'no_match';
           setDetection((prev) => ({ ...prev, status: 'no_match' }));
           setTimeout(() => {
-            setDetection((prev) =>
-              prev.status === 'no_match' ? { ...prev, status: 'scanning' } : prev
-            );
+            if (statusRef.current === 'no_match') {
+              statusRef.current = 'scanning';
+              setDetection((prev) => ({ ...prev, status: 'scanning' }));
+            }
           }, 2000);
         }
       })
       .catch(() => {
+        statusRef.current = 'scanning';
         setDetection((prev) => ({ ...prev, status: 'scanning' }));
       })
       .finally(() => {
         isProcessingRef.current = false;
       });
-  }, [detection.status]);
+  }, []); // NO dependencies — stable function reference
 
-  // ── Preview edits → update tray item ──────────────────
+  // ── Preview edits ─────────────────────────────────────
 
   function updateCurrentTrayItem(updates: Partial<ScanTrayItem>) {
-    const id = detection.trayItemId;
+    const id = trayItemIdRef.current;
     if (!id) return;
     setTrayItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
@@ -177,7 +196,7 @@ export function useScanState() {
   const setDetectionCondition = useCallback((condition: Condition) => {
     setDetection((prev) => ({ ...prev, condition }));
     updateCurrentTrayItem({ condition });
-  }, [detection.trayItemId]);
+  }, []);
 
   const cycleFinish = useCallback(() => {
     setDetection((prev) => {
@@ -186,7 +205,7 @@ export function useScanState() {
       updateCurrentTrayItem({ finish: next });
       return { ...prev, finish: next };
     });
-  }, [detection.trayItemId]);
+  }, []);
 
   const incrementQuantity = useCallback(() => {
     setDetection((prev) => {
@@ -194,14 +213,14 @@ export function useScanState() {
       updateCurrentTrayItem({ quantity: qty });
       return { ...prev, quantity: qty };
     });
-  }, [detection.trayItemId]);
+  }, []);
 
   const resetQuantity = useCallback(() => {
     setDetection((prev) => {
       updateCurrentTrayItem({ quantity: 1 });
       return { ...prev, quantity: 1 };
     });
-  }, [detection.trayItemId]);
+  }, []);
 
   const changeVersion = useCallback((newCard: ScryfallCard) => {
     const available = getAvailableFinishes(newCard);
@@ -213,11 +232,14 @@ export function useScanState() {
       availableFinishes: available,
     }));
     updateCurrentTrayItem({ card: newCard, finish: available[0] });
-  }, [detection.trayItemId]);
+  }, []);
 
   const dismissDetection = useCallback(() => {
     lastMatchedIdRef.current = '';
+    cooldownActiveRef.current = false;
     if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    statusRef.current = 'scanning';
+    trayItemIdRef.current = null;
     setDetection({
       status: 'scanning',
       card: null,
@@ -230,7 +252,7 @@ export function useScanState() {
     });
   }, []);
 
-  // ── Tray ───────────────────────────────────────────────
+  // ── Tray ──────────────────────────────────────────────
 
   const editTrayItem = useCallback((id: string, updates: Partial<Pick<ScanTrayItem, 'condition' | 'finish' | 'quantity'>>) => {
     setTrayItems((prev) =>
@@ -240,10 +262,10 @@ export function useScanState() {
 
   const removeTrayItem = useCallback((id: string) => {
     setTrayItems((prev) => prev.filter((item) => item.id !== id));
-    if (detection.trayItemId === id) {
+    if (trayItemIdRef.current === id) {
       dismissDetection();
     }
-  }, [detection.trayItemId, dismissDetection]);
+  }, [dismissDetection]);
 
   const clearTray = useCallback(() => {
     Alert.alert('Clear all?', 'Remove all scanned cards from the tray?', [
@@ -256,7 +278,7 @@ export function useScanState() {
     ]);
   }, [dismissDetection]);
 
-  // ── Destination ────────────────────────────────────────
+  // ── Destination ───────────────────────────────────────
 
   const addAllToDestination = useCallback(async (collectionId: string) => {
     if (trayItems.length === 0) return;
