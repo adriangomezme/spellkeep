@@ -13,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ScanTrayItem as TrayItemType } from './useScanState';
 import { ScanTrayItemRow } from './ScanTrayItem';
+import { TrayCardDetail } from './TrayCardDetail';
+import { ScryfallCard } from '../../lib/scryfall';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
 type Props = {
@@ -22,7 +24,6 @@ type Props = {
   isSaving: boolean;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-  onCardPress: (item: any) => void;
   onClear: () => void;
   onAddTo: () => void;
 };
@@ -34,19 +35,23 @@ export function ScanTray({
   isSaving,
   onEdit,
   onDelete,
-  onCardPress,
   onClear,
   onAddTo,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
+  const [detailCard, setDetailCard] = useState<ScryfallCard | null>(null);
 
   const filtered = search
     ? items.filter((item) => item.card.name.toLowerCase().includes(search.toLowerCase()))
     : items;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent={!detailCard} animationType="slide" onRequestClose={detailCard ? () => setDetailCard(null) : onClose}>
+      {detailCard ? (
+        <TrayCardDetail card={detailCard} onBack={() => setDetailCard(null)} />
+      ) : (
+      <>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
       <View style={styles.container}>
         {/* Header */}
@@ -100,7 +105,7 @@ export function ScanTray({
                   item={item}
                   onEdit={onEdit}
                   onDelete={onDelete}
-                  onCardPress={onCardPress}
+                  onCardPress={(item) => setDetailCard(item.card)}
                 />
               ))}
             </ScrollView>
@@ -129,6 +134,8 @@ export function ScanTray({
           </>
         )}
       </View>
+      </>
+      )}
     </Modal>
   );
 }
