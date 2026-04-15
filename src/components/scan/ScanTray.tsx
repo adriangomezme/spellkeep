@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   containerExpanded: {
-    maxHeight: '70%',
+    maxHeight: '85%',
   },
   header: {
     alignItems: 'center',
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   list: {
-    maxHeight: 300,
+    flex: 1,
   },
   footer: {
     flexDirection: 'row',

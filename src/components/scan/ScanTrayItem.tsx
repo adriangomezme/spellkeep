@@ -30,7 +30,12 @@ export function ScanTrayItemRow({ item, onEdit, onDelete }: Props) {
         </Text>
         <View style={styles.metaRow}>
           <Text style={styles.condition}>{condition}</Text>
-          <Text style={styles.price}>{formatPrice(card.prices?.usd)}</Text>
+          {item.finish !== 'normal' && (
+            <Text style={styles.finishBadge}>{item.finish === 'foil' ? 'Foil' : 'Etched'}</Text>
+          )}
+          <Text style={styles.price}>{formatPrice(
+            item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
+          )}</Text>
         </View>
       </View>
       <View style={styles.actions}>
@@ -93,6 +98,16 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '600',
     backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  finishBadge: {
+    color: colors.primary,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    backgroundColor: colors.primaryLight,
     paddingHorizontal: spacing.xs + 2,
     paddingVertical: 1,
     borderRadius: 4,

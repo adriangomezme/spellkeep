@@ -185,26 +185,20 @@ export function useScanState() {
       });
   }, []);
 
-  // ── Preview edits ─────────────────────────────────────
-
-  function updateCurrentTrayItem(updates: Partial<ScanTrayItem>) {
-    const id = trayItemIdRef.current;
-    if (!id) return;
-    setTrayItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
-    );
-  }
+  // ── Preview edits → sync to tray item ──────────────────
 
   const setDetectionCondition = useCallback((condition: Condition) => {
     setDetection((prev) => ({ ...prev, condition }));
-    updateCurrentTrayItem({ condition });
+    const id = trayItemIdRef.current;
+    if (id) setTrayItems((prev) => prev.map((item) => item.id === id ? { ...item, condition } : item));
   }, []);
 
   const cycleFinish = useCallback(() => {
     setDetection((prev) => {
       const idx = prev.availableFinishes.indexOf(prev.finish);
       const next = prev.availableFinishes[(idx + 1) % prev.availableFinishes.length];
-      updateCurrentTrayItem({ finish: next });
+      const id = trayItemIdRef.current;
+      if (id) setTrayItems((items) => items.map((item) => item.id === id ? { ...item, finish: next } : item));
       return { ...prev, finish: next };
     });
   }, []);
@@ -212,28 +206,29 @@ export function useScanState() {
   const incrementQuantity = useCallback(() => {
     setDetection((prev) => {
       const qty = prev.quantity + 1;
-      updateCurrentTrayItem({ quantity: qty });
+      const id = trayItemIdRef.current;
+      if (id) setTrayItems((items) => items.map((item) => item.id === id ? { ...item, quantity: qty } : item));
       return { ...prev, quantity: qty };
     });
   }, []);
 
   const resetQuantity = useCallback(() => {
-    setDetection((prev) => {
-      updateCurrentTrayItem({ quantity: 1 });
-      return { ...prev, quantity: 1 };
-    });
+    const id = trayItemIdRef.current;
+    if (id) setTrayItems((items) => items.map((item) => item.id === id ? { ...item, quantity: 1 } : item));
+    setDetection((prev) => ({ ...prev, quantity: 1 }));
   }, []);
 
   const changeVersion = useCallback((newCard: ScryfallCard) => {
     const available = getAvailableFinishes(newCard);
     currentCardNameRef.current = newCard.name;
+    const id = trayItemIdRef.current;
+    if (id) setTrayItems((items) => items.map((item) => item.id === id ? { ...item, card: newCard, finish: available[0] } : item));
     setDetection((prev) => ({
       ...prev,
       card: newCard,
       finish: available[0],
       availableFinishes: available,
     }));
-    updateCurrentTrayItem({ card: newCard, finish: available[0] });
   }, []);
 
   const dismissDetection = useCallback(() => {
