@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { ScryfallCard, getCardImageUri } from '../../lib/scryfall';
 import { Condition, Finish, CONDITIONS } from '../../lib/collection';
 import { getPriceForFinish } from './useScanState';
+import { VersionPicker } from './VersionPicker';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
 const FINISH_LABELS: Record<Finish, string> = {
@@ -11,6 +13,8 @@ const FINISH_LABELS: Record<Finish, string> = {
   foil: 'Foil',
   etched: 'Etched',
 };
+
+const CONDITION_LABELS = CONDITIONS.map((c) => c.value);
 
 function formatPrice(price?: string): string {
   if (!price) return '—';
@@ -26,7 +30,7 @@ type Props = {
   onCycleFinish: () => void;
   onIncrementQty: () => void;
   onResetQty: () => void;
-  onConfirm: () => void;
+  onVersionChange: (card: ScryfallCard) => void;
   onDismiss: () => void;
 };
 
@@ -39,18 +43,21 @@ export function DetectionBar({
   onCycleFinish,
   onIncrementQty,
   onResetQty,
-  onConfirm,
+  onVersionChange,
   onDismiss,
 }: Props) {
+  const [showConditionDropdown, setShowConditionDropdown] = useState(false);
+  const [showVersionPicker, setShowVersionPicker] = useState(false);
   const price = getPriceForFinish(card, finish);
 
   return (
     <View style={styles.container}>
+      {/* Dismiss */}
       <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
-        <Ionicons name="close" size={18} color={colors.textMuted} />
+        <Ionicons name="close" size={16} color={colors.textMuted} />
       </TouchableOpacity>
 
-      {/* Card info */}
+      {/* Card info row */}
       <View style={styles.cardRow}>
         <Image
           source={{ uri: getCardImageUri(card, 'small') }}
@@ -59,61 +66,89 @@ export function DetectionBar({
         />
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
-          <Text style={styles.cardSet} numberOfLines={1}>
-            {card.set_name} · #{card.collector_number}
-          </Text>
           <Text style={styles.cardPrice}>{formatPrice(price)}</Text>
         </View>
       </View>
 
-      {/* Condition pills + Finish toggle */}
+      {/* Controls row: [Set #CN] [Finish] [QTY] [Condition] */}
       <View style={styles.controlsRow}>
-        <View style={styles.conditionRow}>
-          {CONDITIONS.map((c) => (
-            <TouchableOpacity
-              key={c.value}
-              style={[
-                styles.conditionPill,
-                condition === c.value && styles.conditionPillActive,
-              ]}
-              onPress={() => onConditionChange(c.value)}
-            >
-              <Text
-                style={[
-                  styles.conditionText,
-                  condition === c.value && styles.conditionTextActive,
-                ]}
-              >
-                {c.value}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Finish toggle — tap to cycle */}
-        <TouchableOpacity style={styles.finishToggle} onPress={onCycleFinish}>
-          <Text style={styles.finishText}>{FINISH_LABELS[finish]}</Text>
-          <Ionicons name="swap-horizontal" size={14} color={colors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Quantity (tap +1, long press reset) + Confirm */}
-      <View style={styles.actionRow}>
+        {/* Set + Collector Number → tap opens version picker */}
         <TouchableOpacity
-          style={styles.qtyButton}
+          style={styles.chip}
+          onPress={() => setShowVersionPicker(true)}
+        >
+          <Text style={styles.chipTextSmall} numberOfLines={1}>
+            {card.set.toUpperCase()} #{card.collector_number}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        {/* Finish toggle */}
+        <TouchableOpacity style={styles.chipAccent} onPress={onCycleFinish}>
+          <Text style={styles.chipAccentText}>{FINISH_LABELS[finish]}</Text>
+        </TouchableOpacity>
+
+        {/* Quantity: tap +1, long press reset */}
+        <TouchableOpacity
+          style={styles.chip}
           onPress={onIncrementQty}
           onLongPress={onResetQty}
           delayLongPress={500}
         >
-          <Text style={styles.qtyLabel}>QTY</Text>
-          <Text style={styles.qtyValue}>{quantity}</Text>
+          <Text style={styles.chipLabel}>QTY</Text>
+          <Text style={styles.chipValue}>{quantity}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.confirmButton} onPress={onConfirm}>
-          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-          <Text style={styles.confirmText}>Add to Tray</Text>
-        </TouchableOpacity>
+        {/* Condition dropdown */}
+        <View>
+          <TouchableOpacity
+            style={styles.chip}
+            onPress={() => setShowConditionDropdown(!showConditionDropdown)}
+          >
+            <Text style={styles.chipValue}>{condition}</Text>
+            <Ionicons name="chevron-down" size={12} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          {showConditionDropdown && (
+            <View style={styles.dropdown}>
+              {CONDITION_LABELS.map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  style={[
+                    styles.dropdownItem,
+                    c === condition && styles.dropdownItemActive,
+                  ]}
+                  onPress={() => {
+                    onConditionChange(c as Condition);
+                    setShowConditionDropdown(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownText,
+                      c === condition && styles.dropdownTextActive,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
       </View>
+
+      {/* Version picker modal */}
+      <VersionPicker
+        visible={showVersionPicker}
+        cardName={card.name}
+        currentId={card.id}
+        onSelect={(newCard) => {
+          onVersionChange(newCard);
+          setShowVersionPicker(false);
+        }}
+        onClose={() => setShowVersionPicker(false)}
+      />
     </View>
   );
 }
@@ -127,17 +162,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     ...shadows.lg,
   },
   dismissButton: {
     position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -146,116 +182,99 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
+    marginRight: spacing.xl,
   },
   cardImage: {
-    width: 50,
-    height: 70,
+    width: 42,
+    height: 58,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
   cardInfo: {
     flex: 1,
-    marginLeft: spacing.md,
+    marginLeft: spacing.sm,
   },
   cardName: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '700',
   },
-  cardSet: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    marginTop: 1,
-  },
   cardPrice: {
     color: colors.primary,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.md,
     fontWeight: '800',
-    marginTop: spacing.xs,
+    marginTop: 2,
   },
   controlsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  conditionRow: {
-    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: spacing.xs + 2,
-    flex: 1,
   },
-  conditionPill: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center',
-  },
-  conditionPillActive: {
-    backgroundColor: colors.primary,
-  },
-  conditionText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-  },
-  conditionTextActive: {
-    color: '#FFFFFF',
-  },
-  finishToggle: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 3,
   },
-  finishText: {
+  chipAccent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 3,
+  },
+  chipAccentText: {
     color: colors.primary,
     fontSize: fontSize.xs,
     fontWeight: '700',
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  qtyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-  },
-  qtyLabel: {
+  chipLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  qtyValue: {
+  chipValue: {
     color: colors.text,
-    fontSize: fontSize.xl,
-    fontWeight: '800',
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
-  confirmButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
+  chipTextSmall: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    maxWidth: 80,
+  },
+  dropdown: {
+    position: 'absolute',
+    bottom: '100%',
+    right: 0,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm + 4,
-    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xs,
+    minWidth: 60,
+    ...shadows.md,
+    zIndex: 10,
   },
-  confirmText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
+  dropdownItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dropdownItemActive: {
+    backgroundColor: colors.primaryLight,
+  },
+  dropdownText: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
+  dropdownTextActive: {
+    color: colors.primary,
     fontWeight: '700',
   },
 });

@@ -46,12 +46,11 @@ export function ScanCamera({ isActive }: Props) {
   const {
     detection,
     handleOCRText,
-    selectCandidate,
     setDetectionCondition,
     cycleFinish,
     incrementQuantity,
     resetQuantity,
-    confirmDetection,
+    changeVersion,
     dismissDetection,
     trayItems,
     trayCount,
@@ -154,7 +153,7 @@ export function ScanCamera({ isActive }: Props) {
           onCycleFinish={cycleFinish}
           onIncrementQty={incrementQuantity}
           onResetQty={resetQuantity}
-          onConfirm={confirmDetection}
+          onVersionChange={changeVersion}
           onDismiss={dismissDetection}
         />
       )}
