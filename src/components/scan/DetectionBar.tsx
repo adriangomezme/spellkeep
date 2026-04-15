@@ -29,7 +29,6 @@ type Props = {
   onIncrementQty: () => void;
   onResetQty: () => void;
   onVersionChange: (card: ScryfallCard) => void;
-  onDismiss: () => void;
   showVersionPicker: boolean;
   onOpenVersionPicker: () => void;
   onCloseVersionPicker: () => void;
@@ -45,7 +44,6 @@ export function DetectionBar({
   onIncrementQty,
   onResetQty,
   onVersionChange,
-  onDismiss,
   showVersionPicker,
   onOpenVersionPicker,
   onCloseVersionPicker,
@@ -55,11 +53,6 @@ export function DetectionBar({
 
   return (
     <View style={styles.container}>
-      {/* Dismiss */}
-      <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
-        <Ionicons name="close" size={16} color={colors.textMuted} />
-      </TouchableOpacity>
-
       {/* Card info row */}
       <View style={styles.cardRow}>
         <Image
@@ -177,23 +170,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     ...shadows.lg,
   },
-  dismissButton: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.md,
-    marginRight: spacing.xl,
   },
   cardImage: {
     width: 46,

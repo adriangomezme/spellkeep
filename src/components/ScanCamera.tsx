@@ -139,16 +139,16 @@ export function ScanCamera({ isActive }: Props) {
         )}
       </View>
 
-      {/* Guide overlay */}
-      {detection.status !== 'detected' && !trayExpanded && (
+      {/* Guide overlay (only before first scan) */}
+      {detection.status !== 'detected' && (
         <ScanOverlay status={detection.status} />
       )}
 
       {/* Dark overlay when version picker is open */}
       {showVersionPicker && <View style={styles.cameraOverlay} />}
 
-      {/* Detection bar */}
-      {detection.status === 'detected' && detection.card && !trayExpanded && (
+      {/* Detection bar — always visible after first card scanned */}
+      {detection.status === 'detected' && detection.card && (
         <DetectionBar
           card={detection.card}
           condition={detection.condition}
@@ -159,27 +159,23 @@ export function ScanCamera({ isActive }: Props) {
           onIncrementQty={incrementQuantity}
           onResetQty={resetQuantity}
           onVersionChange={changeVersion}
-          onDismiss={dismissDetection}
           showVersionPicker={showVersionPicker}
           onOpenVersionPicker={() => setShowVersionPicker(true)}
           onCloseVersionPicker={() => setShowVersionPicker(false)}
         />
       )}
 
-      {/* Scan tray */}
-      {detection.status !== 'detected' && (
-        <ScanTray
-          items={trayItems}
-          expanded={trayExpanded}
-          onToggleExpand={() => setTrayExpanded(!trayExpanded)}
-          isSaving={isSaving}
-          onEdit={(id) => removeTrayItem(id)}
-          onDelete={removeTrayItem}
-          onClear={clearTray}
-          onAddTo={openDestinationPicker}
-          bottomInset={insets.bottom}
-        />
-      )}
+      {/* Scan tray — full screen modal triggered by badge button */}
+      <ScanTray
+        items={trayItems}
+        visible={trayExpanded}
+        onClose={() => setTrayExpanded(false)}
+        isSaving={isSaving}
+        onEdit={(id) => removeTrayItem(id)}
+        onDelete={removeTrayItem}
+        onClear={clearTray}
+        onAddTo={openDestinationPicker}
+      />
 
       {/* Destination picker */}
       <DestinationPicker
