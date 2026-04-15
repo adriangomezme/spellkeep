@@ -121,16 +121,24 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .finally(() => setIsLoadingMore(false));
   }
 
-  // Auto-scroll to selected in horizontal mode
+  // Auto-scroll to selected only once when data first loads
+  const hasScrolledRef = useRef(false);
   useEffect(() => {
     if (isLoading || versions.length === 0 || fullscreen) return;
+    if (hasScrolledRef.current) return;
     const idx = versions.findIndex((v) => v.id === currentId);
     if (idx > 0 && listRef.current) {
+      hasScrolledRef.current = true;
       setTimeout(() => {
         listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.5 });
       }, 100);
     }
   }, [isLoading, versions, currentId, fullscreen]);
+
+  // Reset scroll flag when modal reopens
+  useEffect(() => {
+    if (visible) hasScrolledRef.current = false;
+  }, [visible]);
 
   // When a set is selected, fetch versions for that set
   useEffect(() => {
