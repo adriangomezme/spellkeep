@@ -128,15 +128,13 @@ export function ScanCamera({ isActive }: Props) {
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]}>
         <Text style={styles.title}>Scan</Text>
-        {trayCount > 0 && (
-          <TouchableOpacity
-            style={styles.trayBadge}
-            onPress={() => setTrayExpanded(!trayExpanded)}
-          >
-            <Ionicons name="layers" size={16} color="#FFFFFF" />
-            <Text style={styles.trayBadgeText}>{trayCount}</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={styles.trayBadge}
+          onPress={() => setTrayExpanded(true)}
+        >
+          <Ionicons name="layers" size={16} color="#FFFFFF" />
+          {trayCount > 0 && <Text style={styles.trayBadgeText}>{trayCount}</Text>}
+        </TouchableOpacity>
       </View>
 
       {/* Guide overlay (only before first scan) */}

@@ -37,8 +37,9 @@ export function ScanTray({
   const insets = useSafeAreaInsets();
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+      <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
@@ -51,60 +52,75 @@ export function ScanTray({
           </TouchableOpacity>
         </View>
 
-        {/* Card list */}
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {items.map((item) => (
-            <ScanTrayItemRow
-              key={item.id}
-              item={item}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-          ))}
-        </ScrollView>
+        {items.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="layers-outline" size={48} color={colors.textMuted} />
+            <Text style={styles.emptyTitle}>Tray is empty</Text>
+            <Text style={styles.emptySubtitle}>Scanned cards will appear here</Text>
+          </View>
+        ) : (
+          <>
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {items.map((item) => (
+                <ScanTrayItemRow
+                  key={item.id}
+                  item={item}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+              ))}
+            </ScrollView>
 
-        {/* Footer */}
-        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
-          <TouchableOpacity style={styles.clearButton} onPress={onClear}>
-            <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-            <Text style={styles.clearText}>Clear</Text>
-          </TouchableOpacity>
+            <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
+              <TouchableOpacity style={styles.clearButton} onPress={onClear}>
+                <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                <Text style={styles.clearText}>Clear</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={onAddTo}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Ionicons name="add" size={18} color="#FFFFFF" />
-                <Text style={styles.addText}>Add to...</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={onAddTo}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.addText}>Add to...</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  backdrop: {
     flex: 1,
-    backgroundColor: colors.background,
+  },
+  container: {
+    height: '80%',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    ...shadows.lg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   headerInfo: {
     flex: 1,
@@ -121,6 +137,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    color: colors.textMuted,
+    fontSize: fontSize.md,
   },
   list: {
     flex: 1,
