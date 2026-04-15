@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ScanTrayItem as TrayItemType } from './useScanState';
 import { ScanTrayItemRow } from './ScanTrayItem';
 import { TrayCardDetail } from './TrayCardDetail';
+import { TrayItemEditor } from './TrayItemEditor';
 import { ScryfallCard } from '../../lib/scryfall';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
@@ -22,8 +23,8 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   isSaving: boolean;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  onSaveItem: (id: string, updates: Partial<TrayItemType>) => void;
+  onDeleteItem: (id: string) => void;
   onClear: () => void;
   onAddTo: () => void;
 };
@@ -33,14 +34,15 @@ export function ScanTray({
   visible,
   onClose,
   isSaving,
-  onEdit,
-  onDelete,
+  onSaveItem,
+  onDeleteItem,
   onClear,
   onAddTo,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [detailCard, setDetailCard] = useState<ScryfallCard | null>(null);
+  const [editingItem, setEditingItem] = useState<TrayItemType | null>(null);
 
   const filtered = search
     ? items.filter((item) => item.card.name.toLowerCase().includes(search.toLowerCase()))
@@ -103,8 +105,10 @@ export function ScanTray({
                 <ScanTrayItemRow
                   key={item.id}
                   item={item}
-                  onEdit={onEdit}
-                  onDelete={onDelete}
+                  onEdit={(id) => {
+                    const found = items.find((i) => i.id === id);
+                    if (found) setEditingItem(found);
+                  }}
                   onCardPress={(item) => setDetailCard(item.card)}
                 />
               ))}
@@ -136,6 +140,14 @@ export function ScanTray({
       </View>
       </>
       )}
+
+      <TrayItemEditor
+        visible={editingItem !== null}
+        item={editingItem}
+        onSave={onSaveItem}
+        onDelete={onDeleteItem}
+        onClose={() => setEditingItem(null)}
+      />
     </Modal>
   );
 }

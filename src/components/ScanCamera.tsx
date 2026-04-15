@@ -63,7 +63,6 @@ export function ScanCamera({ isActive }: Props) {
     trayExpanded,
     setTrayExpanded,
     editTrayItem,
-    loadTrayItemForEdit,
     removeTrayItem,
     clearTray,
     showDestinationPicker,
@@ -179,8 +178,8 @@ export function ScanCamera({ isActive }: Props) {
         visible={trayExpanded}
         onClose={() => setTrayExpanded(false)}
         isSaving={isSaving}
-        onEdit={loadTrayItemForEdit}
-        onDelete={removeTrayItem}
+        onSaveItem={(id, updates) => editTrayItem(id, updates)}
+        onDeleteItem={removeTrayItem}
         onClear={clearTray}
         onAddTo={openDestinationPicker}
       />

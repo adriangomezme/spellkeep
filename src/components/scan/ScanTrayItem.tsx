@@ -8,11 +8,10 @@ import { colors, spacing, fontSize, borderRadius } from '../../constants';
 type Props = {
   item: TrayItemType;
   onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
   onCardPress: (item: TrayItemType) => void;
 };
 
-export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) {
+export function ScanTrayItemRow({ item, onEdit, onCardPress }: Props) {
   const { card, condition, quantity } = item;
   const setIconUri = `https://svgs.scryfall.io/sets/${card.set}.svg`;
 
@@ -50,22 +49,13 @@ export function ScanTrayItemRow({ item, onEdit, onDelete, onCardPress }: Props) 
           item.finish === 'foil' ? card.prices?.usd_foil : card.prices?.usd
         )}</Text>
       </View>
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onEdit(item.id)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="pencil" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => onDelete(item.id)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="trash-outline" size={16} color={colors.error} />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={styles.editBtn}
+        onPress={() => onEdit(item.id)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -141,11 +131,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  actionButton: {
-    padding: spacing.xs,
+  editBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

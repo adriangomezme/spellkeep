@@ -313,35 +313,11 @@ export function useScanState() {
 
   // ── Tray ──────────────────────────────────────────────
 
-  const editTrayItem = useCallback((id: string, updates: Partial<Pick<ScanTrayItem, 'condition' | 'finish' | 'quantity'>>) => {
+  const editTrayItem = useCallback((id: string, updates: Partial<ScanTrayItem>) => {
     setTrayItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
   }, []);
-
-  /** Load a tray item into the preview for editing */
-  const loadTrayItemForEdit = useCallback((id: string) => {
-    const item = trayItems.find((i) => i.id === id);
-    if (!item) return;
-
-    const available = getAvailableFinishes(item.card);
-    trayItemIdRef.current = id;
-    currentCardNameRef.current = item.card.name;
-    statusRef.current = 'detected';
-
-    setDetection({
-      status: 'detected',
-      card: item.card,
-      candidates: [],
-      trayItemId: id,
-      condition: item.condition,
-      finish: item.finish,
-      availableFinishes: available,
-      quantity: item.quantity,
-    });
-
-    setTrayExpanded(false);
-  }, [trayItems]);
 
   const removeTrayItem = useCallback((id: string) => {
     setTrayItems((prev) => prev.filter((item) => item.id !== id));
@@ -413,7 +389,6 @@ export function useScanState() {
     trayExpanded,
     setTrayExpanded,
     editTrayItem,
-    loadTrayItemForEdit,
     removeTrayItem,
     clearTray,
 
