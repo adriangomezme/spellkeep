@@ -5,9 +5,11 @@ import {
   Modal,
   TouchableOpacity,
   FlatList,
+  TextInput,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -26,43 +28,159 @@ type Props = {
   onClose: () => void;
 };
 
-const CARD_WIDTH = 150;
+const CARD_WIDTH_H = 150;
+const IMAGE_WIDTH_H = CARD_WIDTH_H - spacing.sm * 2;
+const IMAGE_HEIGHT_H = Math.round(IMAGE_WIDTH_H * (88 / 63));
 const CARD_GAP = spacing.sm;
-const IMAGE_WIDTH = CARD_WIDTH - spacing.sm * 2;
-const IMAGE_HEIGHT = Math.round(IMAGE_WIDTH * (88 / 63));
+
+function PriceLabels({ card }: { card: ScryfallCard }) {
+  const prices: string[] = [];
+  if (card.prices?.usd) prices.push(`$${parseFloat(card.prices.usd).toFixed(2)}`);
+  if (card.prices?.usd_foil) prices.push(`Foil $${parseFloat(card.prices.usd_foil).toFixed(2)}`);
+  if (prices.length === 0) prices.push('—');
+
+  return (
+    <View style={priceStyles.row}>
+      {prices.map((p, i) => (
+        <Text key={i} style={priceStyles.text}>{p}</Text>
+      ))}
+    </View>
+  );
+}
+
+const priceStyles = StyleSheet.create({
+  row: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
+  text: { color: colors.primary, fontSize: fontSize.xs, fontWeight: '600' },
+});
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
+  const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
+  const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (!visible || !cardName) return;
     setIsLoading(true);
+    setFilter('');
+    setFullscreen(false);
     searchCards(`!"${cardName}" unique:prints`, 1)
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
+        setFiltered(cards);
       })
-      .catch(() => setVersions([]))
+      .catch(() => { setVersions([]); setFiltered([]); })
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
 
-  // Scroll to selected card when data loads
+  // Auto-scroll to selected in horizontal mode
   useEffect(() => {
-    if (isLoading || versions.length === 0) return;
+    if (isLoading || versions.length === 0 || fullscreen) return;
     const idx = versions.findIndex((v) => v.id === currentId);
     if (idx > 0 && listRef.current) {
       setTimeout(() => {
-        listRef.current?.scrollToIndex({
-          index: idx,
-          animated: false,
-          viewPosition: 0.5,
-        });
+        listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.5 });
       }, 100);
     }
-  }, [isLoading, versions, currentId]);
+  }, [isLoading, versions, currentId, fullscreen]);
 
+  useEffect(() => {
+    if (!filter) { setFiltered(versions); return; }
+    const lower = filter.toLowerCase();
+    setFiltered(versions.filter((v) =>
+      v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
+    ));
+  }, [filter, versions]);
+
+  function renderCard(item: ScryfallCard, isHorizontal: boolean) {
+    const isSelected = item.id === currentId;
+    const cardStyle = isHorizontal ? styles.versionCardH : styles.versionCardV;
+    const imageStyle = isHorizontal ? styles.versionImageH : styles.versionImageV;
+
+    return (
+      <TouchableOpacity
+        style={[cardStyle, isSelected && styles.versionCardSelected]}
+        onPress={() => onSelect(item)}
+        activeOpacity={0.6}
+      >
+        <Image
+          source={{ uri: getCardImageUri(item, 'normal') }}
+          style={imageStyle}
+          contentFit="cover"
+        />
+        <Text style={styles.versionSet} numberOfLines={2}>{item.set_name}</Text>
+        <Text style={styles.versionNumber}>#{item.collector_number}</Text>
+        <PriceLabels card={item} />
+      </TouchableOpacity>
+    );
+  }
+
+  // ── Fullscreen mode ──
+  if (fullscreen) {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+        <View style={[styles.fullContainer, { paddingTop: insets.top }]}>
+          <View style={styles.fullHeader}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.title}>Select Version</Text>
+              <Text style={styles.subtitle}>{cardName}</Text>
+            </View>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(false)}>
+                <Ionicons name="contract-outline" size={18} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.filterRow}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <TextInput
+              style={styles.filterInput}
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="Filter sets..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+            />
+            {filter.length > 0 && (
+              <TouchableOpacity onPress={() => setFilter('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {isLoading ? (
+            <View style={styles.centeredContent}>
+              <ActivityIndicator color={colors.primary} size="large" />
+            </View>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.gridRow}
+              contentContainerStyle={styles.gridContent}
+              renderItem={({ item }) => renderCard(item, false)}
+              ListEmptyComponent={
+                <View style={styles.centeredContent}>
+                  <Text style={styles.emptyText}>{filter ? 'No matching sets' : 'No versions found'}</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+      </Modal>
+    );
+  }
+
+  // ── Bottom sheet mode ──
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
@@ -74,12 +192,17 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               <Text style={styles.title}>Select Version</Text>
               <Text style={styles.subtitle}>{cardName}</Text>
             </View>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Ionicons name="close" size={20} color={colors.text} />
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(true)}>
+                <Ionicons name="expand-outline" size={18} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.listContainer}>
+          <View style={styles.listContainerH}>
             {isLoading ? (
               <View style={styles.centeredContent}>
                 <ActivityIndicator color={colors.primary} size="large" />
@@ -95,40 +218,18 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 keyExtractor={(item) => item.id}
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.listContent}
+                contentContainerStyle={styles.listContentH}
                 getItemLayout={(_, index) => ({
-                  length: CARD_WIDTH + CARD_GAP,
-                  offset: (CARD_WIDTH + CARD_GAP) * index,
+                  length: CARD_WIDTH_H + CARD_GAP,
+                  offset: (CARD_WIDTH_H + CARD_GAP) * index,
                   index,
                 })}
                 onScrollToIndexFailed={(info) => {
                   setTimeout(() => {
-                    listRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: false,
-                      viewPosition: 0.5,
-                    });
+                    listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
                   }, 200);
                 }}
-                renderItem={({ item }) => {
-                  const isSelected = item.id === currentId;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.versionCard, isSelected && styles.versionCardSelected]}
-                      onPress={() => onSelect(item)}
-                      activeOpacity={0.6}
-                    >
-                      <Image
-                        source={{ uri: getCardImageUri(item, 'normal') }}
-                        style={styles.versionImage}
-                        contentFit="cover"
-                      />
-                      <Text style={styles.versionSet} numberOfLines={2}>{item.set_name}</Text>
-                      <Text style={styles.versionNumber}>#{item.collector_number}</Text>
-                      <Text style={styles.versionPrice}>{formatPrice(item.prices?.usd)}</Text>
-                    </TouchableOpacity>
-                  );
-                }}
+                renderItem={({ item }) => renderCard(item, true)}
               />
             )}
           </View>
@@ -139,13 +240,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
+  // ── Bottom sheet mode ──
+  root: { flex: 1, justifyContent: 'flex-end' },
+  dismissArea: { flex: 1 },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
@@ -162,17 +259,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   headerInfo: { flex: 1 },
-  title: {
-    color: colors.text,
-    fontSize: fontSize.xl,
-    fontWeight: '800',
+  headerButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    marginTop: 2,
-  },
-  closeButton: {
+  headerBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -180,21 +271,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContainer: {
-    height: IMAGE_HEIGHT + 90,
-  },
-  centeredContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  listContent: {
-    paddingHorizontal: spacing.lg,
-    gap: CARD_GAP,
-  },
-  versionCard: {
-    width: CARD_WIDTH,
+  title: { color: colors.text, fontSize: fontSize.xl, fontWeight: '800' },
+  subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 2 },
+  listContainerH: { height: IMAGE_HEIGHT_H + 100 },
+  listContentH: { paddingHorizontal: spacing.lg, gap: CARD_GAP },
+  centeredContent: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  emptyText: { color: colors.textMuted, fontSize: fontSize.md },
+
+  // ── Horizontal cards ──
+  versionCardH: {
+    width: CARD_WIDTH_H,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
@@ -202,35 +288,59 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  versionCardSelected: {
-    borderColor: colors.primary,
-  },
-  versionImage: {
-    width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT,
-    borderRadius: borderRadius.sm,
+  versionImageH: {
+    width: IMAGE_WIDTH_H,
+    height: IMAGE_HEIGHT_H,
+    borderRadius: 4,
     backgroundColor: colors.border,
     marginBottom: spacing.xs,
   },
-  versionSet: {
-    color: colors.text,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    textAlign: 'center',
+  versionCardSelected: { borderColor: colors.primary },
+  versionSet: { color: colors.text, fontSize: fontSize.xs, fontWeight: '600', textAlign: 'center' },
+  versionNumber: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 1 },
+
+  // ── Fullscreen mode ──
+  fullContainer: { flex: 1, backgroundColor: colors.background },
+  fullHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    marginBottom: spacing.sm,
   },
-  versionNumber: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    marginTop: 1,
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.sm,
   },
-  versionPrice: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    marginTop: 2,
+  filterInput: { flex: 1, color: colors.text, fontSize: fontSize.md },
+  gridContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  gridRow: { gap: spacing.sm, marginBottom: spacing.sm },
+
+  // ── Vertical grid cards ──
+  versionCardV: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    ...shadows.sm,
   },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
+  versionImageV: {
+    width: '100%',
+    aspectRatio: 63 / 88,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+    marginBottom: spacing.xs,
   },
 });

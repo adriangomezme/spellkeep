@@ -70,7 +70,14 @@ export function DetectionBar({
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
           <Text style={styles.cardSet} numberOfLines={1}>{card.set_name} · #{card.collector_number}</Text>
-          <Text style={styles.cardPrice}>{formatPrice(price)}</Text>
+          <View style={styles.priceRow}>
+            {card.prices?.usd && (
+              <Text style={styles.cardPrice}>{formatPrice(card.prices.usd)}</Text>
+            )}
+            {card.prices?.usd_foil && (
+              <Text style={styles.cardPriceFoil}>Foil {formatPrice(card.prices.usd_foil)}</Text>
+            )}
+          </View>
         </View>
       </View>
 
@@ -191,7 +198,7 @@ const styles = StyleSheet.create({
   cardImage: {
     width: 46,
     height: 64,
-    borderRadius: borderRadius.sm,
+    borderRadius: 4,
     backgroundColor: colors.surfaceSecondary,
   },
   cardInfo: {
@@ -208,11 +215,18 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     marginTop: 2,
   },
-  cardPrice: {
-    color: colors.primary,
-    fontSize: fontSize.lg,
-    fontWeight: '800',
+  priceRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginTop: spacing.xs,
+  },
+  cardPrice: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+  },
+  cardPriceFoil: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   controlsRow: {
     flexDirection: 'row',
