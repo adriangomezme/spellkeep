@@ -320,15 +320,19 @@ export function useScanState() {
 
     // If the edited item is currently shown in the preview, sync detection
     if (trayItemIdRef.current === id) {
+      const newCard = updates.card;
+      const newAvailable = newCard ? getAvailableFinishes(newCard) : undefined;
+      const newFinish = updates.finish ?? (newAvailable ? newAvailable[0] : undefined);
+
       setDetection((prev) => ({
         ...prev,
-        ...(updates.card && { card: updates.card }),
+        ...(newCard && { card: newCard, availableFinishes: newAvailable }),
         ...(updates.condition && { condition: updates.condition }),
-        ...(updates.finish && { finish: updates.finish }),
+        ...(newFinish && { finish: newFinish }),
         ...(updates.quantity !== undefined && { quantity: updates.quantity }),
       }));
-      if (updates.card) {
-        currentCardNameRef.current = updates.card.name;
+      if (newCard) {
+        currentCardNameRef.current = newCard.name;
       }
     }
   }, []);
