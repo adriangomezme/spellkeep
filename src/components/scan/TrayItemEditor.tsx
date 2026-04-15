@@ -51,9 +51,11 @@ export function TrayItemEditor({ visible, item, onSave, onDelete, onClose }: Pro
   const [quantity, setQuantity] = useState(1);
   const [showVersionPicker, setShowVersionPicker] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [loadedItemId, setLoadedItemId] = useState<string | null>(null);
 
-  // Load item data when it changes
-  if (item && card?.id !== item.card.id) {
+  // Load item data only when a different tray item is opened
+  if (item && item.id !== loadedItemId) {
+    setLoadedItemId(item.id);
     setCard(item.card);
     setCondition(item.condition);
     setFinish(item.finish);
@@ -84,11 +86,13 @@ export function TrayItemEditor({ visible, item, onSave, onDelete, onClose }: Pro
 
   function handleSave() {
     onSave(item!.id, { card: card!, condition, finish, quantity });
+    setLoadedItemId(null);
     onClose();
   }
 
   function handleDelete() {
     onDelete(item!.id);
+    setLoadedItemId(null);
     onClose();
   }
 
