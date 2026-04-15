@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -128,14 +129,11 @@ export default function CollectionScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCollection();
-  }, [fetchCollection]);
-
-  useEffect(() => {
-    const interval = setInterval(fetchCollection, 10000);
-    return () => clearInterval(interval);
-  }, [fetchCollection]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchCollection();
+    }, [fetchCollection])
+  );
 
   function handleRefresh() {
     setIsRefreshing(true);

@@ -7,7 +7,6 @@ type AuthState = {
   user: User | null;
   isAnonymous: boolean;
   isLoading: boolean;
-  isReady: boolean;
 };
 
 export function useAuth() {
@@ -16,67 +15,42 @@ export function useAuth() {
     user: null,
     isAnonymous: true,
     isLoading: true,
-    isReady: false,
   });
 
   useEffect(() => {
-    // Listen for auth state changes
+    // 1. Set up listener FIRST so we don't miss any events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setState((prev) => ({
-          ...prev,
+        setState({
           session,
           user: session?.user ?? null,
           isAnonymous: session?.user?.is_anonymous ?? true,
           isLoading: false,
-          isReady: true,
-        }));
+        });
       }
     );
 
-    // Check for existing session, if none → sign in anonymously
-    initAuth();
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  async function initAuth() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-
+    // 2. THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         setState({
           session,
           user: session.user,
           isAnonymous: session.user.is_anonymous ?? true,
           isLoading: false,
-          isReady: true,
         });
-        return;
+      } else {
+        // No session → create anonymous user
+        supabase.auth.signInAnonymously().catch((err) => {
+          console.error('Anonymous sign-in error:', err);
+          setState((prev) => ({ ...prev, isLoading: false }));
+        });
+        // The onAuthStateChange listener will handle the state update
       }
+    });
 
-      // No session → create anonymous user
-      const { data, error } = await supabase.auth.signInAnonymously();
-
-      if (error) {
-        console.error('Anonymous sign-in error:', error);
-        // App still works, just without sync
-        setState((prev) => ({ ...prev, isLoading: false, isReady: true }));
-        return;
-      }
-
-      setState({
-        session: data.session,
-        user: data.session?.user ?? null,
-        isAnonymous: true,
-        isLoading: false,
-        isReady: true,
-      });
-    } catch (err) {
-      console.error('Auth init error:', err);
-      setState((prev) => ({ ...prev, isLoading: false, isReady: true }));
-    }
-  }
+    return () => subscription.unsubscribe();
+  }, []);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -84,6 +58,7 @@ export function useAuth() {
 
   return {
     ...state,
+    isReady: !state.isLoading,
     signOut,
   };
 }

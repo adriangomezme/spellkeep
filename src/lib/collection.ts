@@ -20,10 +20,11 @@ export const FINISHES: { value: Finish; label: string }[] = [
 
 /**
  * Ensures a card exists in the cards table before adding to collection.
- * If the card came from Scryfall search, it might not be in our DB yet.
+ * Uses the ensure-card Edge Function which inserts with service_role
+ * (users cannot insert into cards directly via RLS).
  */
 async function ensureCardExists(card: ScryfallCard): Promise<string> {
-  // Check if card already exists
+  // Check if card already exists locally first
   const { data: existing } = await supabase
     .from('cards')
     .select('id')
@@ -32,49 +33,49 @@ async function ensureCardExists(card: ScryfallCard): Promise<string> {
 
   if (existing) return existing.id;
 
-  // Insert the card
+  // Card not in DB — call Edge Function to insert it with service_role
   const mainFace = card.card_faces?.[0] ?? card;
-  const { data: inserted, error } = await supabase
-    .from('cards')
-    .insert({
-      scryfall_id: card.id,
-      oracle_id: card.oracle_id,
-      name: card.name,
-      mana_cost: mainFace.mana_cost ?? card.mana_cost,
-      cmc: card.cmc ?? 0,
-      type_line: card.type_line ?? mainFace.type_line,
-      oracle_text: mainFace.oracle_text ?? card.oracle_text,
-      colors: card.colors ?? [],
-      color_identity: card.color_identity ?? [],
-      keywords: card.keywords ?? [],
-      power: card.power,
-      toughness: card.toughness,
-      loyalty: card.loyalty,
-      rarity: card.rarity,
-      set_code: card.set,
-      set_name: card.set_name,
-      collector_number: card.collector_number,
-      image_uri_small: card.image_uris?.small ?? card.card_faces?.[0]?.image_uris?.small,
-      image_uri_normal: card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal,
-      image_uri_large: card.image_uris?.large ?? card.card_faces?.[0]?.image_uris?.large,
-      image_uri_art_crop: card.image_uris?.art_crop ?? card.card_faces?.[0]?.image_uris?.art_crop,
-      price_usd: card.prices?.usd ? parseFloat(card.prices.usd) : null,
-      price_usd_foil: card.prices?.usd_foil ? parseFloat(card.prices.usd_foil) : null,
-      price_eur: card.prices?.eur ? parseFloat(card.prices.eur) : null,
-      price_eur_foil: card.prices?.eur_foil ? parseFloat(card.prices.eur_foil) : null,
-      legalities: card.legalities ?? {},
-      released_at: card.released_at,
-      artist: card.artist,
-      is_legendary: (card.type_line ?? '').includes('Legendary'),
-      produced_mana: card.produced_mana ?? [],
-      layout: card.layout,
-      card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
-    })
-    .select('id')
-    .single();
+  const cardData = {
+    oracle_id: card.oracle_id,
+    name: card.name,
+    mana_cost: mainFace.mana_cost ?? card.mana_cost,
+    cmc: card.cmc ?? 0,
+    type_line: card.type_line ?? mainFace.type_line,
+    oracle_text: mainFace.oracle_text ?? card.oracle_text,
+    colors: card.colors ?? [],
+    color_identity: card.color_identity ?? [],
+    keywords: card.keywords ?? [],
+    power: card.power,
+    toughness: card.toughness,
+    loyalty: card.loyalty,
+    rarity: card.rarity,
+    set_code: card.set,
+    set_name: card.set_name,
+    collector_number: card.collector_number,
+    image_uri_small: card.image_uris?.small ?? card.card_faces?.[0]?.image_uris?.small,
+    image_uri_normal: card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal,
+    image_uri_large: card.image_uris?.large ?? card.card_faces?.[0]?.image_uris?.large,
+    image_uri_art_crop: card.image_uris?.art_crop ?? card.card_faces?.[0]?.image_uris?.art_crop,
+    price_usd: card.prices?.usd ? parseFloat(card.prices.usd) : null,
+    price_usd_foil: card.prices?.usd_foil ? parseFloat(card.prices.usd_foil) : null,
+    price_eur: card.prices?.eur ? parseFloat(card.prices.eur) : null,
+    price_eur_foil: card.prices?.eur_foil ? parseFloat(card.prices.eur_foil) : null,
+    legalities: card.legalities ?? {},
+    released_at: card.released_at,
+    artist: card.artist,
+    is_legendary: (card.type_line ?? '').includes('Legendary'),
+    produced_mana: card.produced_mana ?? [],
+    layout: card.layout,
+    card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
+  };
 
-  if (error) throw new Error(`Failed to insert card: ${error.message}`);
-  return inserted!.id;
+  const { data, error } = await supabase.functions.invoke('ensure-card', {
+    body: { scryfall_id: card.id, card_data: cardData },
+  });
+
+  if (error) throw new Error(`Failed to ensure card: ${error.message}`);
+  if (!data?.card_id) throw new Error('No card_id returned from ensure-card');
+  return data.card_id;
 }
 
 /**

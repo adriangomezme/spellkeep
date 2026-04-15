@@ -240,14 +240,8 @@ async function syncPrices(page: number): Promise<CardPage> {
 
 Deno.serve(async (req: Request) => {
   try {
-    // Verify authorization
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    // JWT validation is handled by Supabase Edge Functions runtime (verify_jwt: true).
+    // Only service_role or valid authenticated tokens reach this point.
 
     const url = new URL(req.url);
     const mode = url.searchParams.get("mode") ?? "sets";
