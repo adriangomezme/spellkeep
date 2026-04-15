@@ -7,30 +7,27 @@ type Props = {
 };
 
 export function ScanOverlay({ status }: Props) {
-  if (status === 'detected') return null;
-
   return (
-    <View style={styles.container}>
+    <View style={styles.container} pointerEvents="none">
+      <View
+        style={[
+          styles.guideFrame,
+          status === 'searching' && styles.guideFrameSearching,
+          status === 'detected' && styles.guideFrameDetected,
+          status === 'no_match' && styles.guideFrameError,
+        ]}
+      />
       {status === 'scanning' && (
-        <>
-          <View style={styles.guideFrame} />
-          <Text style={styles.guideText}>Point camera at a Magic card</Text>
-        </>
+        <Text style={styles.guideText}>Point camera at a Magic card</Text>
       )}
-
       {status === 'searching' && (
         <>
-          <View style={[styles.guideFrame, styles.guideFrameActive]} />
           <ActivityIndicator size="large" color="#FFFFFF" style={styles.spinner} />
           <Text style={styles.guideText}>Identifying card...</Text>
         </>
       )}
-
       {status === 'no_match' && (
-        <>
-          <View style={[styles.guideFrame, styles.guideFrameError]} />
-          <Text style={styles.guideText}>Card not recognized — adjusting...</Text>
-        </>
+        <Text style={styles.guideText}>Card not recognized</Text>
       )}
     </View>
   );
@@ -38,24 +35,28 @@ export function ScanOverlay({ status }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guideFrame: {
     width: 260,
     height: 364,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: 'rgba(255,255,255,0.3)',
     borderStyle: 'dashed',
   },
-  guideFrameActive: {
+  guideFrameSearching: {
     borderColor: colors.primary,
     borderStyle: 'solid',
   },
+  guideFrameDetected: {
+    borderColor: 'rgba(34,197,94,0.6)',
+    borderStyle: 'solid',
+  },
   guideFrameError: {
-    borderColor: 'rgba(239,68,68,0.6)',
+    borderColor: 'rgba(239,68,68,0.5)',
   },
   spinner: {
     position: 'absolute',

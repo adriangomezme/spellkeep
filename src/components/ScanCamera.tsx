@@ -136,10 +136,8 @@ export function ScanCamera({ isActive }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Guide overlay (only before first card detected) */}
-      {!detection.card && (
-        <ScanOverlay status={detection.status} />
-      )}
+      {/* Guide overlay — always visible */}
+      <ScanOverlay status={detection.card ? 'detected' : detection.status} />
 
       {/* Dark overlay when version picker or tray is open */}
       {(showVersionPicker || trayExpanded) && <View style={styles.cameraOverlay} />}

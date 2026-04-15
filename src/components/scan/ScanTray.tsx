@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
   },
   footer: {
     flexDirection: 'row',

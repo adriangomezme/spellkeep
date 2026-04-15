@@ -63,14 +63,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderBottomWidth: 0.5,
     borderBottomColor: colors.divider,
   },
   image: {
-    width: 40,
-    height: 56,
-    borderRadius: borderRadius.sm,
+    width: 52,
+    height: 73,
+    borderRadius: 3,
     backgroundColor: colors.surfaceSecondary,
   },
   info: {
