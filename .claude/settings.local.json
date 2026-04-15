@@ -54,7 +54,9 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(find . -type f \\\\\\( -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.js\" -o -name \"*.json\" -o -name \"*.yaml\" -o -name \"*.yml\" -o -name \"*.sql\" \\\\\\) ! -path \"./node_modules/*\" ! -path \"./.expo/*\" ! -path \"./ios/*\" ! -path \"./android/*\" ! -path \"./supabase/.temp/*\" -exec wc -l {} +)",
-      "Bash(supabase functions:*)"
+      "Bash(supabase functions:*)",
+      "Bash(pkill -f \"metro\")",
+      "Bash(rm -rf /tmp/metro-*)"
     ]
   },
   "enableAllProjectMcpServers": true,

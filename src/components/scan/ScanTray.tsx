@@ -5,11 +5,14 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScanTrayItem as TrayItemType } from './useScanState';
 import { ScanTrayItemRow } from './ScanTrayItem';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 type Props = {
   items: TrayItemType[];
@@ -36,11 +39,13 @@ export function ScanTray({
 }: Props) {
   if (items.length === 0) return null;
 
+  // Calculate the max list height: screen - header - footer - tab bar - insets
+  const listMaxHeight = expanded ? SCREEN_HEIGHT * 0.85 - 180 - bottomInset : 0;
+
   return (
     <View
       style={[
         styles.container,
-        expanded && styles.containerExpanded,
         { paddingBottom: bottomInset + 90 },
       ]}
     >
@@ -70,7 +75,7 @@ export function ScanTray({
       {expanded && (
         <>
           <ScrollView
-            style={styles.list}
+            style={{ maxHeight: listMaxHeight }}
             showsVerticalScrollIndicator={false}
           >
             {items.map((item) => (
@@ -121,9 +126,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: borderRadius.xl,
     ...shadows.lg,
   },
-  containerExpanded: {
-    maxHeight: '85%',
-  },
   header: {
     alignItems: 'center',
     paddingTop: spacing.sm,
@@ -162,14 +164,12 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '700',
   },
-  list: {
-    flex: 1,
-  },
   footer: {
     flexDirection: 'row',
     gap: spacing.sm,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     borderTopWidth: 0.5,
     borderTopColor: colors.divider,
   },
