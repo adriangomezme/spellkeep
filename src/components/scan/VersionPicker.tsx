@@ -121,17 +121,8 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .finally(() => setIsLoadingMore(false));
   }
 
-  // Auto-scroll to selected card when bottom sheet is visible
-  // Runs on first load and when returning from fullscreen
-  useEffect(() => {
-    if (isLoading || versions.length === 0 || fullscreen) return;
-    const idx = versions.findIndex((v) => v.id === currentId);
-    if (idx > 0 && listRef.current) {
-      setTimeout(() => {
-        listRef.current?.scrollToOffset({ offset: (CARD_WIDTH_H + CARD_GAP) * idx - CARD_WIDTH_H, animated: false });
-      }, 50);
-    }
-  }, [isLoading, versions, currentId, fullscreen]);
+  const selectedIndex = versions.findIndex((v) => v.id === currentId);
+  const initialIndex = selectedIndex > 0 ? selectedIndex : undefined;
 
   // When a set is selected, fetch versions for that set
   useEffect(() => {
@@ -298,12 +289,14 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 </View>
               ) : (
                 <FlatList
+                  key={fullscreen ? 'fs' : 'bs'}
                   ref={listRef}
                   data={versions}
                   keyExtractor={(item) => item.id}
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.listContentH}
+                  initialScrollIndex={initialIndex}
                   getItemLayout={(_, index) => ({
                     length: CARD_WIDTH_H + CARD_GAP,
                     offset: (CARD_WIDTH_H + CARD_GAP) * index,
