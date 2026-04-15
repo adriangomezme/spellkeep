@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
-  ScrollView,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
@@ -19,6 +18,7 @@ import {
   getCardImageUri,
   formatPrice,
 } from '../../lib/scryfall';
+import { SetFilterScreen } from './SetFilterScreen';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
 type Props = {
@@ -63,11 +63,10 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const [showSetPicker, setShowSetPicker] = useState(false);
-  const [selectedSets, setSelectedSets] = useState<string[]>([]);
+  const [showSetFilter, setShowSetFilter] = useState(false);
+  const [selectedSet, setSelectedSet] = useState<string | null>(null);
   const [setFilteredVersions, setSetFilteredVersions] = useState<ScryfallCard[]>([]);
-  const [isLoadingSets, setIsLoadingSets] = useState(false);
-  const [allSets, setAllSets] = useState<{ code: string; name: string }[]>([]);
+  const [isLoadingSet, setIsLoadingSet] = useState(false);
   const listRef = useRef<FlatList>(null);
   const pageRef = useRef(1);
 
@@ -126,44 +125,22 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     }
   }, [isLoading, versions, currentId, fullscreen]);
 
-  // Fetch all sets when set picker is opened
+  // When a set is selected, fetch versions for that set
   useEffect(() => {
-    if (!showSetPicker || allSets.length > 0) return;
-    fetch('https://api.scryfall.com/sets')
-      .then((r) => r.json())
-      .then((data) => {
-        const sets = (data.data ?? [])
-          .filter((s: any) => s.card_count > 0)
-          .map((s: any) => ({ code: s.code, name: s.name }));
-        setAllSets(sets);
-      })
-      .catch(() => {});
-  }, [showSetPicker]);
-
-  // When selected sets change, fetch versions for those sets
-  useEffect(() => {
-    if (selectedSets.length === 0) {
+    if (!selectedSet) {
       setSetFilteredVersions([]);
       return;
     }
-    setIsLoadingSets(true);
-    const setQuery = selectedSets.map((s) => `set:${s}`).join(' OR ');
-    searchCards(`!"${cardName}" (${setQuery})`, 1)
+    setIsLoadingSet(true);
+    searchCards(`!"${cardName}" set:${selectedSet}`, 1)
       .then((result) => {
         setSetFilteredVersions(result?.data ?? []);
       })
       .catch(() => setSetFilteredVersions([]))
-      .finally(() => setIsLoadingSets(false));
-  }, [selectedSets, cardName]);
+      .finally(() => setIsLoadingSet(false));
+  }, [selectedSet, cardName]);
 
-  function toggleSet(code: string) {
-    setSelectedSets((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
-  }
-
-  // In fullscreen, if sets are selected use those results, otherwise use text-filtered
-  const fullscreenData = selectedSets.length > 0 ? setFilteredVersions : filtered;
+  const fullscreenData = selectedSet ? setFilteredVersions : filtered;
 
   useEffect(() => {
     if (!filter) { setFiltered(versions); return; }
@@ -198,6 +175,19 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
 
   // ── Fullscreen mode ──
   if (fullscreen) {
+    // Show set filter screen (lateral push)
+    if (showSetFilter) {
+      return (
+        <Modal visible={visible} animationType="slide" onRequestClose={() => setShowSetFilter(false)}>
+          <SetFilterScreen
+            selectedSet={selectedSet}
+            onSelect={setSelectedSet}
+            onBack={() => setShowSetFilter(false)}
+          />
+        </Modal>
+      );
+    }
+
     return (
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <View style={[styles.fullContainer, { paddingTop: insets.top }]}>
@@ -216,7 +206,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             </View>
           </View>
 
-          {/* Search + set filter toggle */}
+          {/* Search + set filter button */}
           <View style={styles.filterContainer}>
             <View style={styles.filterRow}>
               <Ionicons name="search" size={16} color={colors.textMuted} />
@@ -224,7 +214,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
                 style={styles.filterInput}
                 value={filter}
                 onChangeText={setFilter}
-                placeholder="Filter sets..."
+                placeholder="Filter by name..."
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
               />
@@ -235,61 +225,24 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               )}
             </View>
             <TouchableOpacity
-              style={[styles.setFilterBtn, showSetPicker && styles.setFilterBtnActive]}
-              onPress={() => setShowSetPicker(!showSetPicker)}
+              style={[styles.setFilterBtn, selectedSet && styles.setFilterBtnActive]}
+              onPress={() => setShowSetFilter(true)}
             >
-              <Ionicons name="funnel" size={16} color={showSetPicker ? '#FFFFFF' : colors.textMuted} />
-              {selectedSets.length > 0 && (
-                <View style={styles.setFilterBadge}>
-                  <Text style={styles.setFilterBadgeText}>{selectedSets.length}</Text>
-                </View>
-              )}
+              <Ionicons name="funnel" size={16} color={selectedSet ? '#FFFFFF' : colors.textMuted} />
             </TouchableOpacity>
           </View>
 
-          {/* Set picker chips */}
-          {showSetPicker && (
-            <View style={styles.setPickerContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.setChipsContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                {selectedSets.length > 0 && (
-                  <TouchableOpacity
-                    style={styles.clearSetsChip}
-                    onPress={() => setSelectedSets([])}
-                  >
-                    <Text style={styles.clearSetsText}>Clear</Text>
-                  </TouchableOpacity>
-                )}
-                {allSets.length === 0 ? (
-                  <ActivityIndicator color={colors.primary} />
-                ) : (
-                  allSets.map((s) => {
-                    const selected = selectedSets.includes(s.code);
-                    return (
-                      <TouchableOpacity
-                        key={s.code}
-                        style={[styles.setChip, selected && styles.setChipSelected]}
-                        onPress={() => toggleSet(s.code)}
-                      >
-                        <Text
-                          style={[styles.setChipText, selected && styles.setChipTextSelected]}
-                          numberOfLines={1}
-                        >
-                          {s.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
+          {/* Active set filter chip */}
+          {selectedSet && (
+            <View style={styles.activeSetChip}>
+              <Text style={styles.activeSetText}>Set: {selectedSet.toUpperCase()}</Text>
+              <TouchableOpacity onPress={() => setSelectedSet(null)}>
+                <Ionicons name="close-circle" size={18} color={colors.primary} />
+              </TouchableOpacity>
             </View>
           )}
 
-          {isLoading || isLoadingSets ? (
+          {isLoading || isLoadingSet ? (
             <View style={styles.centeredContent}>
               <ActivityIndicator color={colors.primary} size="large" />
             </View>
@@ -301,11 +254,11 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={styles.gridContent}
               renderItem={({ item }) => renderCard(item, false)}
-              onEndReached={loadMore}
+              onEndReached={selectedSet ? undefined : loadMore}
               onEndReachedThreshold={0.3}
               ListEmptyComponent={
                 <View style={styles.centeredContent}>
-                  <Text style={styles.emptyText}>{filter ? 'No matching sets' : 'No versions found'}</Text>
+                  <Text style={styles.emptyText}>No versions found</Text>
                 </View>
               }
               ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /> : null}
@@ -477,57 +430,22 @@ const styles = StyleSheet.create({
   setFilterBtnActive: {
     backgroundColor: colors.primary,
   },
-  setFilterBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: colors.error,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+  activeSetChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  setFilterBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  setPickerContainer: {
+    gap: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
+    alignSelf: 'flex-start',
   },
-  setChipsContent: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
-  },
-  setChip: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  setChipSelected: {
-    backgroundColor: colors.primary,
-  },
-  setChipText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-  },
-  setChipTextSelected: {
-    color: '#FFFFFF',
-  },
-  clearSetsChip: {
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.errorLight,
-  },
-  clearSetsText: {
-    color: colors.error,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
+  activeSetText: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
   gridContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
   gridRow: { gap: spacing.sm, marginBottom: spacing.sm },
