@@ -121,24 +121,17 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       .finally(() => setIsLoadingMore(false));
   }
 
-  // Auto-scroll to selected only once when data first loads
-  const hasScrolledRef = useRef(false);
+  // Auto-scroll to selected card when bottom sheet is visible
+  // Runs on first load and when returning from fullscreen
   useEffect(() => {
     if (isLoading || versions.length === 0 || fullscreen) return;
-    if (hasScrolledRef.current) return;
     const idx = versions.findIndex((v) => v.id === currentId);
     if (idx > 0 && listRef.current) {
-      hasScrolledRef.current = true;
       setTimeout(() => {
-        listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.5 });
-      }, 100);
+        listRef.current?.scrollToOffset({ offset: (CARD_WIDTH_H + CARD_GAP) * idx - CARD_WIDTH_H, animated: false });
+      }, 50);
     }
   }, [isLoading, versions, currentId, fullscreen]);
-
-  // Reset scroll flag when modal reopens
-  useEffect(() => {
-    if (visible) hasScrolledRef.current = false;
-  }, [visible]);
 
   // When a set is selected, fetch versions for that set
   useEffect(() => {
