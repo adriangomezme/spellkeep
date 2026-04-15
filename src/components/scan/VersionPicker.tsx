@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   Modal,
   TouchableOpacity,
   FlatList,
-  TextInput,
-  Keyboard,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
@@ -29,46 +27,46 @@ type Props = {
 };
 
 const CARD_WIDTH = 150;
+const CARD_GAP = spacing.sm;
 const IMAGE_WIDTH = CARD_WIDTH - spacing.sm * 2;
 const IMAGE_HEIGHT = Math.round(IMAGE_WIDTH * (88 / 63));
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
-  const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
-  const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const listRef = useRef<FlatList>(null);
 
   useEffect(() => {
     if (!visible || !cardName) return;
     setIsLoading(true);
-    setFilter('');
     searchCards(`!"${cardName}" unique:prints`, 1)
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
-        setFiltered(cards);
       })
-      .catch(() => { setVersions([]); setFiltered([]); })
+      .catch(() => setVersions([]))
       .finally(() => setIsLoading(false));
   }, [visible, cardName]);
 
+  // Scroll to selected card when data loads
   useEffect(() => {
-    if (!filter) { setFiltered(versions); return; }
-    const lower = filter.toLowerCase();
-    setFiltered(versions.filter((v) =>
-      v.set_name.toLowerCase().includes(lower) || v.set.toLowerCase().includes(lower)
-    ));
-  }, [filter, versions]);
-
-  function handleClose() {
-    Keyboard.dismiss();
-    onClose();
-  }
+    if (isLoading || versions.length === 0) return;
+    const idx = versions.findIndex((v) => v.id === currentId);
+    if (idx > 0 && listRef.current) {
+      setTimeout(() => {
+        listRef.current?.scrollToIndex({
+          index: idx,
+          animated: false,
+          viewPosition: 0.5,
+        });
+      }, 100);
+    }
+  }, [isLoading, versions, currentId]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
-        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={handleClose} />
+        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={onClose} />
 
         <View style={styles.sheet}>
           <View style={styles.header}>
@@ -76,28 +74,9 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               <Text style={styles.title}>Select Version</Text>
               <Text style={styles.subtitle}>{cardName}</Text>
             </View>
-            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <Ionicons name="close" size={20} color={colors.text} />
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.filterRow}>
-            <Ionicons name="search" size={16} color={colors.textMuted} />
-            <TextInput
-              style={styles.filterInput}
-              value={filter}
-              onChangeText={setFilter}
-              placeholder="Filter sets..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              returnKeyType="done"
-              onSubmitEditing={() => Keyboard.dismiss()}
-            />
-            {filter.length > 0 && (
-              <TouchableOpacity onPress={() => setFilter('')}>
-                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
           </View>
 
           <View style={styles.listContainer}>
@@ -105,22 +84,32 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               <View style={styles.centeredContent}>
                 <ActivityIndicator color={colors.primary} size="large" />
               </View>
-            ) : filtered.length === 0 ? (
+            ) : versions.length === 0 ? (
               <View style={styles.centeredContent}>
-                <Ionicons name="search" size={24} color={colors.textMuted} />
-                <Text style={styles.emptyText}>
-                  {filter ? 'No matching sets' : 'No versions found'}
-                </Text>
+                <Text style={styles.emptyText}>No versions found</Text>
               </View>
             ) : (
               <FlatList
-                data={filtered}
+                ref={listRef}
+                data={versions}
                 keyExtractor={(item) => item.id}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.listContent}
-                keyboardShouldPersistTaps="handled"
-                onScrollBeginDrag={() => Keyboard.dismiss()}
+                getItemLayout={(_, index) => ({
+                  length: CARD_WIDTH + CARD_GAP,
+                  offset: (CARD_WIDTH + CARD_GAP) * index,
+                  index,
+                })}
+                onScrollToIndexFailed={(info) => {
+                  setTimeout(() => {
+                    listRef.current?.scrollToIndex({
+                      index: info.index,
+                      animated: false,
+                      viewPosition: 0.5,
+                    });
+                  }, 200);
+                }}
                 renderItem={({ item }) => {
                   const isSelected = item.id === currentId;
                   return (
@@ -170,7 +159,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   headerInfo: { flex: 1 },
   title: {
@@ -191,22 +180,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    height: 40,
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  filterInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: fontSize.md,
-  },
   listContainer: {
     height: IMAGE_HEIGHT + 90,
   },
@@ -218,7 +191,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
+    gap: CARD_GAP,
   },
   versionCard: {
     width: CARD_WIDTH,
