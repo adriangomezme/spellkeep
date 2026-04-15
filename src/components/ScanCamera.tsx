@@ -46,6 +46,7 @@ export function ScanCamera({ isActive }: Props) {
 
   const {
     detection,
+    pausedRef,
     handleOCRText,
     setDetectionCondition,
     cycleFinish,
@@ -71,10 +72,8 @@ export function ScanCamera({ isActive }: Props) {
 
   const onTextDetected = useRunOnJS(handleOCRText, [handleOCRText]);
 
-  // Use a ref so the frame processor checks pause state without
-  // swapping the frameProcessor prop (which causes camera flicker)
-  const pausedRef = useRef(false);
-  pausedRef.current = !isActive || detection.status === 'searching' || trayExpanded || showVersionPicker;
+  // Pause OCR when tray or version picker is open
+  pausedRef.current = !isActive || trayExpanded || showVersionPicker;
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -137,16 +136,16 @@ export function ScanCamera({ isActive }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Guide overlay (only before first scan) */}
-      {detection.status !== 'detected' && (
+      {/* Guide overlay (only before first card detected) */}
+      {!detection.card && (
         <ScanOverlay status={detection.status} />
       )}
 
-      {/* Dark overlay when version picker is open */}
-      {showVersionPicker && <View style={styles.cameraOverlay} />}
+      {/* Dark overlay when version picker or tray is open */}
+      {(showVersionPicker || trayExpanded) && <View style={styles.cameraOverlay} />}
 
-      {/* Detection bar — always visible after first card scanned */}
-      {detection.status === 'detected' && detection.card && (
+      {/* Detection bar — visible whenever there's a card (persists during searching) */}
+      {detection.card && (
         <DetectionBar
           card={detection.card}
           condition={detection.condition}

@@ -76,9 +76,10 @@ export function useScanState() {
 
   const isProcessingRef = useRef(false);
   const statusRef = useRef<DetectionStatus>('scanning');
-  /** The Scryfall card name of the currently detected card */
   const currentCardNameRef = useRef('');
   const trayItemIdRef = useRef<string | null>(null);
+  /** Set by ScanCamera to pause OCR when tray/version picker is open */
+  const pausedRef = useRef(false);
 
   function updateDetection(newState: DetectionState) {
     statusRef.current = newState.status;
@@ -95,6 +96,7 @@ export function useScanState() {
   const handleOCRText = useCallback((text: string) => {
     if (isProcessingRef.current) return;
     if (statusRef.current === 'searching') return;
+    if (pausedRef.current) return;
 
     const validation = validateMTGLayout(text);
     if (!validation.isCard || !validation.regions.name) return;
@@ -107,18 +109,24 @@ export function useScanState() {
     }
 
     isProcessingRef.current = true;
-    statusRef.current = 'searching';
-    setDetection((prev) => ({ ...prev, status: 'searching' }));
+    const hadPreviousCard = !!trayItemIdRef.current;
+    // Only show 'searching' overlay if no card is in preview yet
+    if (!hadPreviousCard) {
+      statusRef.current = 'searching';
+      setDetection((prev) => ({ ...prev, status: 'searching' }));
+    }
 
     matchCard(text)
       .then((matches) => {
         if (matches.length > 0) {
           const card = matches[0];
 
-          // Double check: API result is same card as current
+          // Same card as currently showing — skip
           if (currentCardNameRef.current && card.name === currentCardNameRef.current) {
-            statusRef.current = trayItemIdRef.current ? 'detected' : 'scanning';
-            setDetection((prev) => ({ ...prev, status: statusRef.current }));
+            if (!hadPreviousCard) {
+              statusRef.current = 'scanning';
+              setDetection((prev) => ({ ...prev, status: 'scanning' }));
+            }
             return;
           }
 
@@ -166,19 +174,26 @@ export function useScanState() {
           };
           updateDetection(newState);
         } else {
-          statusRef.current = 'no_match';
-          setDetection((prev) => ({ ...prev, status: 'no_match' }));
-          setTimeout(() => {
-            if (statusRef.current === 'no_match') {
-              statusRef.current = 'scanning';
-              setDetection((prev) => ({ ...prev, status: 'scanning' }));
-            }
-          }, 2000);
+          // If we already have a card in preview, keep showing it
+          if (hadPreviousCard) {
+            // silently ignore the failed match
+          } else {
+            statusRef.current = 'no_match';
+            setDetection((prev) => ({ ...prev, status: 'no_match' }));
+            setTimeout(() => {
+              if (statusRef.current === 'no_match') {
+                statusRef.current = 'scanning';
+                setDetection((prev) => ({ ...prev, status: 'scanning' }));
+              }
+            }, 2000);
+          }
         }
       })
       .catch(() => {
-        statusRef.current = 'scanning';
-        setDetection((prev) => ({ ...prev, status: 'scanning' }));
+        if (!hadPreviousCard) {
+          statusRef.current = 'scanning';
+          setDetection((prev) => ({ ...prev, status: 'scanning' }));
+        }
       })
       .finally(() => {
         isProcessingRef.current = false;
@@ -330,6 +345,7 @@ export function useScanState() {
 
   return {
     detection,
+    pausedRef,
     handleOCRText,
     setDetectionCondition,
     cycleFinish,
