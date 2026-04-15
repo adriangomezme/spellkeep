@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import {
   View,
   Text,
   Modal,
   TouchableOpacity,
   ScrollView,
+  TextInput,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -35,6 +37,11 @@ export function ScanTray({
   onAddTo,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [search, setSearch] = useState('');
+
+  const filtered = search
+    ? items.filter((item) => item.card.name.toLowerCase().includes(search.toLowerCase()))
+    : items;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -52,6 +59,26 @@ export function ScanTray({
           </TouchableOpacity>
         </View>
 
+        {/* Search */}
+        {items.length > 0 && (
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search cards..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {items.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="layers-outline" size={48} color={colors.textMuted} />
@@ -65,7 +92,7 @@ export function ScanTray({
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
             >
-              {items.map((item) => (
+              {filtered.map((item) => (
                 <ScanTrayItemRow
                   key={item.id}
                   item={item}
@@ -137,6 +164,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    height: 40,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: fontSize.md,
   },
   emptyState: {
     flex: 1,
