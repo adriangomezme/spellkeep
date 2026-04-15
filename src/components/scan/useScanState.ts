@@ -317,6 +317,20 @@ export function useScanState() {
     setTrayItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
+
+    // If the edited item is currently shown in the preview, sync detection
+    if (trayItemIdRef.current === id) {
+      setDetection((prev) => ({
+        ...prev,
+        ...(updates.card && { card: updates.card }),
+        ...(updates.condition && { condition: updates.condition }),
+        ...(updates.finish && { finish: updates.finish }),
+        ...(updates.quantity !== undefined && { quantity: updates.quantity }),
+      }));
+      if (updates.card) {
+        currentCardNameRef.current = updates.card.name;
+      }
+    }
   }, []);
 
   const removeTrayItem = useCallback((id: string) => {
