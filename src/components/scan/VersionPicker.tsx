@@ -7,17 +7,12 @@ import {
   FlatList,
   TextInput,
   Keyboard,
-  Platform,
   ActivityIndicator,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
 import {
   ScryfallCard,
   searchCards,
@@ -37,14 +32,15 @@ type Props = {
 const CARD_WIDTH = 150;
 const IMAGE_WIDTH = CARD_WIDTH - spacing.sm * 2;
 const IMAGE_HEIGHT = Math.round(IMAGE_WIDTH * (88 / 63));
+// Total sheet content height: header + filter + card list + padding
+const SHEET_CONTENT_HEIGHT = IMAGE_HEIGHT + 180;
 
 export function VersionPicker({ visible, cardName, currentId, onSelect, onClose }: Props) {
+  const { height: screenHeight } = useWindowDimensions();
   const [versions, setVersions] = useState<ScryfallCard[]>([]);
   const [filtered, setFiltered] = useState<ScryfallCard[]>([]);
   const [filter, setFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const translateY = useSharedValue(0);
 
   useEffect(() => {
     if (!visible || !cardName) return;
@@ -66,25 +62,6 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
   }, [visible, cardName]);
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardVisible(true);
-      translateY.value = withTiming(-e.endCoordinates.height, { duration: 250 });
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardVisible(false);
-      translateY.value = withTiming(0, { duration: 250 });
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!filter) {
       setFiltered(versions);
       return;
@@ -104,25 +81,18 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     onClose();
   }
 
-  const sheetAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      {/* Tap to dismiss area */}
       <TouchableOpacity
-        style={styles.backdrop}
+        style={styles.dismissArea}
         activeOpacity={1}
         onPress={handleClose}
       />
 
-      <Animated.View
-        style={[
-          styles.sheet,
-          keyboardVisible && styles.sheetKeyboardOpen,
-          sheetAnimStyle,
-        ]}
-      >
+      {/* Sheet — tall enough that keyboard covers the bottom part,
+          but the content stays visible above the keyboard */}
+      <View style={[styles.sheet, { height: SHEET_CONTENT_HEIGHT + screenHeight * 0.4 }]}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
@@ -204,30 +174,21 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
             />
           )}
         </View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  dismissArea: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
     ...shadows.lg,
-  },
-  sheetKeyboardOpen: {
-    // Remove rounded corners when keyboard is open so there's
-    // no gap/camera visible at the edges between sheet and keyboard
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',

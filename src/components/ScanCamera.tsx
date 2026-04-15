@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,6 +66,8 @@ export function ScanCamera({ isActive }: Props) {
     addAllToDestination,
     isSaving,
   } = useScanState();
+
+  const [showVersionPicker, setShowVersionPicker] = useState(false);
 
   const onTextDetected = useRunOnJS(handleOCRText, [handleOCRText]);
 
@@ -143,6 +146,9 @@ export function ScanCamera({ isActive }: Props) {
         <ScanOverlay status={detection.status} />
       )}
 
+      {/* Dark overlay when version picker is open */}
+      {showVersionPicker && <View style={styles.cameraOverlay} />}
+
       {/* Detection bar */}
       {detection.status === 'detected' && detection.card && !trayExpanded && (
         <DetectionBar
@@ -156,6 +162,9 @@ export function ScanCamera({ isActive }: Props) {
           onResetQty={resetQuantity}
           onVersionChange={changeVersion}
           onDismiss={dismissDetection}
+          showVersionPicker={showVersionPicker}
+          onOpenVersionPicker={() => setShowVersionPicker(true)}
+          onCloseVersionPicker={() => setShowVersionPicker(false)}
         />
       )}
 
@@ -189,6 +198,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    zIndex: 1,
   },
   permissionContainer: {
     flex: 1,

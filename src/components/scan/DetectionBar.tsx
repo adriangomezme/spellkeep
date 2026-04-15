@@ -30,6 +30,9 @@ type Props = {
   onResetQty: () => void;
   onVersionChange: (card: ScryfallCard) => void;
   onDismiss: () => void;
+  showVersionPicker: boolean;
+  onOpenVersionPicker: () => void;
+  onCloseVersionPicker: () => void;
 };
 
 export function DetectionBar({
@@ -43,9 +46,11 @@ export function DetectionBar({
   onResetQty,
   onVersionChange,
   onDismiss,
+  showVersionPicker,
+  onOpenVersionPicker,
+  onCloseVersionPicker,
 }: Props) {
   const [showConditionDropdown, setShowConditionDropdown] = useState(false);
-  const [showVersionPicker, setShowVersionPicker] = useState(false);
   const price = getPriceForFinish(card, finish);
 
   return (
@@ -74,7 +79,7 @@ export function DetectionBar({
         {/* Set + Version */}
         <TouchableOpacity
           style={styles.chip}
-          onPress={() => setShowVersionPicker(true)}
+          onPress={onOpenVersionPicker}
         >
           <Text style={styles.chipText} numberOfLines={1}>
             {card.set.toUpperCase()} #{card.collector_number}
@@ -143,9 +148,9 @@ export function DetectionBar({
         currentId={card.id}
         onSelect={(newCard) => {
           onVersionChange(newCard);
-          setShowVersionPicker(false);
+          onCloseVersionPicker();
         }}
-        onClose={() => setShowVersionPicker(false)}
+        onClose={onCloseVersionPicker}
       />
     </View>
   );
