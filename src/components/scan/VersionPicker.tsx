@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,9 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
-  LayoutAnimation,
-  Platform,
-  UIManager,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-
-if (Platform.OS === 'android') {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -171,105 +164,26 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     );
   }
 
-  // ── Single Modal — switches layout based on state ──
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {/* Set filter sub-screen */}
-      {showSetFilter ? (
-        <SetFilterScreen
-          selectedSet={selectedSet}
-          onSelect={setSelectedSet}
-          onBack={() => setShowSetFilter(false)}
-        />
-      ) : fullscreen ? (
-        /* Fullscreen grid */
-        <View style={[styles.fullContainer, { paddingTop: insets.top }]}>
-          <View style={styles.fullHeader}>
-            <View style={styles.headerInfo}>
-              <Text style={styles.title}>Select Version</Text>
-              <Text style={styles.subtitle}>{cardName}</Text>
-            </View>
-            <View style={styles.headerButtons}>
-              <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext({ duration: 400, update: { type: LayoutAnimation.Types.easeInEaseOut } }); setFullscreen(false); }}>
-                <Ionicons name="contract-outline" size={18} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
-                <Ionicons name="close" size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.filterContainer}>
-            <View style={styles.filterRow}>
-              <Ionicons name="search" size={16} color={colors.textMuted} />
-              <TextInput
-                style={styles.filterInput}
-                value={filter}
-                onChangeText={setFilter}
-                placeholder="Filter by name..."
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-              />
-              {filter.length > 0 && (
-                <TouchableOpacity onPress={() => setFilter('')}>
-                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <TouchableOpacity
-              style={[styles.setFilterBtn, selectedSet && styles.setFilterBtnActive]}
-              onPress={() => setShowSetFilter(true)}
-            >
-              <Ionicons name="funnel" size={16} color={selectedSet ? '#FFFFFF' : colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {selectedSet && (
-            <View style={styles.activeSetChip}>
-              <Text style={styles.activeSetText}>Set: {selectedSet.toUpperCase()}</Text>
-              <TouchableOpacity onPress={() => setSelectedSet(null)}>
-                <Ionicons name="close-circle" size={18} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {isLoading || isLoadingSet ? (
-            <View style={styles.centeredContent}>
-              <ActivityIndicator color={colors.primary} size="large" />
-            </View>
-          ) : (
-            <FlatList
-              data={fullscreenData}
-              keyExtractor={(item) => item.id}
-              numColumns={2}
-              columnWrapperStyle={styles.gridRow}
-              contentContainerStyle={styles.gridContent}
-              renderItem={({ item }) => renderCard(item, false)}
-              onEndReached={selectedSet ? undefined : loadMore}
-              onEndReachedThreshold={0.3}
-              ListEmptyComponent={
-                <View style={styles.centeredContent}>
-                  <Text style={styles.emptyText}>No versions found</Text>
-                </View>
-              }
-              ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /> : null}
-            />
-          )}
-        </View>
-      ) : (
-        /* Bottom sheet */
-        <View style={styles.root}>
-          <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={onClose} />
-
-          <View style={styles.sheet}>
-            <View style={styles.header}>
+  // ── Fullscreen modal ──
+  if (fullscreen) {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={() => setFullscreen(false)}>
+        {showSetFilter ? (
+          <SetFilterScreen
+            selectedSet={selectedSet}
+            onSelect={setSelectedSet}
+            onBack={() => setShowSetFilter(false)}
+          />
+        ) : (
+          <View style={[styles.fullContainer, { paddingTop: insets.top }]}>
+            <View style={styles.fullHeader}>
               <View style={styles.headerInfo}>
                 <Text style={styles.title}>Select Version</Text>
                 <Text style={styles.subtitle}>{cardName}</Text>
               </View>
               <View style={styles.headerButtons}>
-                <TouchableOpacity style={styles.headerBtn} onPress={() => { LayoutAnimation.configureNext({ duration: 400, update: { type: LayoutAnimation.Types.easeInEaseOut } }); setFullscreen(true); }}>
-                  <Ionicons name="expand-outline" size={18} color={colors.text} />
+                <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(false)}>
+                  <Ionicons name="contract-outline" size={18} color={colors.text} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
                   <Ionicons name="close" size={20} color={colors.text} />
@@ -277,44 +191,126 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
               </View>
             </View>
 
-            <View style={styles.listContainerH}>
-              {isLoading ? (
-                <View style={styles.centeredContent}>
-                  <ActivityIndicator color={colors.primary} size="large" />
-                </View>
-              ) : versions.length === 0 ? (
-                <View style={styles.centeredContent}>
-                  <Text style={styles.emptyText}>No versions found</Text>
-                </View>
-              ) : (
-                <FlatList
-                  ref={listRef}
-                  data={versions}
-                  keyExtractor={(item) => item.id}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.listContentH}
-                  initialScrollIndex={selectedIndex > 0 ? selectedIndex : undefined}
-                  getItemLayout={(_, index) => ({
-                    length: CARD_WIDTH_H + CARD_GAP,
-                    offset: (CARD_WIDTH_H + CARD_GAP) * index,
-                    index,
-                  })}
-                  onScrollToIndexFailed={(info) => {
-                    setTimeout(() => {
-                      listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
-                    }, 200);
-                  }}
-                  renderItem={({ item }) => renderCard(item, true)}
-                  onEndReached={loadMore}
-                  onEndReachedThreshold={0.5}
-                  ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ marginLeft: spacing.md }} /> : null}
+            <View style={styles.filterContainer}>
+              <View style={styles.filterRow}>
+                <Ionicons name="search" size={16} color={colors.textMuted} />
+                <TextInput
+                  style={styles.filterInput}
+                  value={filter}
+                  onChangeText={setFilter}
+                  placeholder="Filter by name..."
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
                 />
-              )}
+                {filter.length > 0 && (
+                  <TouchableOpacity onPress={() => setFilter('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.setFilterBtn, selectedSet && styles.setFilterBtnActive]}
+                onPress={() => setShowSetFilter(true)}
+              >
+                <Ionicons name="funnel" size={16} color={selectedSet ? '#FFFFFF' : colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedSet && (
+              <View style={styles.activeSetChip}>
+                <Text style={styles.activeSetText}>Set: {selectedSet.toUpperCase()}</Text>
+                <TouchableOpacity onPress={() => setSelectedSet(null)}>
+                  <Ionicons name="close-circle" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {isLoading || isLoadingSet ? (
+              <View style={styles.centeredContent}>
+                <ActivityIndicator color={colors.primary} size="large" />
+              </View>
+            ) : (
+              <FlatList
+                data={fullscreenData}
+                keyExtractor={(item) => item.id}
+                numColumns={2}
+                columnWrapperStyle={styles.gridRow}
+                contentContainerStyle={styles.gridContent}
+                renderItem={({ item }) => renderCard(item, false)}
+                onEndReached={selectedSet ? undefined : loadMore}
+                onEndReachedThreshold={0.3}
+                ListEmptyComponent={
+                  <View style={styles.centeredContent}>
+                    <Text style={styles.emptyText}>No versions found</Text>
+                  </View>
+                }
+                ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ padding: spacing.lg }} /> : null}
+              />
+            )}
+          </View>
+        )}
+      </Modal>
+    );
+  }
+
+  // ── Bottom sheet modal ──
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.root}>
+        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.header}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.title}>Select Version</Text>
+              <Text style={styles.subtitle}>{cardName}</Text>
+            </View>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => setFullscreen(true)}>
+                <Ionicons name="expand-outline" size={18} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </TouchableOpacity>
             </View>
           </View>
+
+          <View style={styles.listContainerH}>
+            {isLoading ? (
+              <View style={styles.centeredContent}>
+                <ActivityIndicator color={colors.primary} size="large" />
+              </View>
+            ) : versions.length === 0 ? (
+              <View style={styles.centeredContent}>
+                <Text style={styles.emptyText}>No versions found</Text>
+              </View>
+            ) : (
+              <FlatList
+                ref={listRef}
+                data={versions}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.listContentH}
+                initialScrollIndex={selectedIndex > 0 ? selectedIndex : undefined}
+                getItemLayout={(_, index) => ({
+                  length: CARD_WIDTH_H + CARD_GAP,
+                  offset: (CARD_WIDTH_H + CARD_GAP) * index,
+                  index,
+                })}
+                onScrollToIndexFailed={(info) => {
+                  setTimeout(() => {
+                    listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
+                  }, 200);
+                }}
+                renderItem={({ item }) => renderCard(item, true)}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={isLoadingMore ? <ActivityIndicator color={colors.primary} style={{ marginLeft: spacing.md }} /> : null}
+              />
+            )}
+          </View>
         </View>
-      )}
+      </View>
     </Modal>
   );
 }
