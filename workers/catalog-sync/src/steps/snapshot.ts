@@ -106,7 +106,8 @@ async function shouldRegenerate(): Promise<boolean> {
 function createSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE cards (
-      scryfall_id TEXT PRIMARY KEY,
+      id TEXT PRIMARY KEY,
+      scryfall_id TEXT NOT NULL UNIQUE,
       oracle_id TEXT,
       name TEXT NOT NULL,
       mana_cost TEXT,
@@ -130,6 +131,7 @@ function createSchema(db: Database.Database) {
       layout TEXT,
       updated_at TEXT
     );
+    CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);
     CREATE INDEX idx_cards_name ON cards(name);
     CREATE INDEX idx_cards_set_code ON cards(set_code);
     CREATE INDEX idx_cards_oracle_id ON cards(oracle_id);

@@ -20,6 +20,7 @@ const VOLATILE_COLUMNS = [
 // Full set of "live" columns we ship for brand-new cards (first time
 // the client sees them). Keep in sync with snapshot.ts.
 const LIVE_COLUMNS = [
+  'id',
   'scryfall_id',
   'oracle_id',
   'name',
