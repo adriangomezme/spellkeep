@@ -30,22 +30,22 @@ export function CatalogBadge() {
       <TouchableOpacity
         style={[styles.pill, styles.error]}
         onPress={() => {
-          Alert.alert('Catálogo', state.error ?? 'Error de sincronización', [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Reintentar', onPress: () => { ensureCatalogFresh().catch(() => {}); } },
+          Alert.alert('Catalog', state.error ?? 'Sync failed', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Retry', onPress: () => { ensureCatalogFresh().catch(() => {}); } },
           ]);
         }}
       >
         <Ionicons name="warning-outline" size={14} color={colors.error} />
-        <Text style={[styles.text, { color: colors.error }]}>Catálogo</Text>
+        <Text style={[styles.text, { color: colors.error }]}>Catalog</Text>
       </TouchableOpacity>
     );
   }
 
   const label =
-    state.status === 'checking' ? 'Comprobando…'
-    : state.status === 'downloading' ? 'Descargando…'
-    : 'Aplicando…';
+    state.status === 'checking' ? 'Checking…'
+    : state.status === 'downloading' ? 'Downloading…'
+    : 'Applying…';
 
   const pct = state.progress == null ? null : Math.round(state.progress * 100);
 
