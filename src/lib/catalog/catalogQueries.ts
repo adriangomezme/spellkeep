@@ -1,37 +1,40 @@
-import { db } from '../powersync/system';
+import { getCatalog } from './catalogDb';
 import type { ScryfallCard } from '../scryfall';
 
 // ─────────────────────────────────────────────────────────────────────────
-// Local catalog queries — same shape as ScryfallCard so callers don't
-// need to care whether a hit came from local or the live API.
+// Local catalog queries — all run against the standalone catalog.db that
+// carries the pre-compiled snapshot from the server. Results are shaped
+// to match ScryfallCard so call sites don't need to know whether the hit
+// came from local or the live API.
 // ─────────────────────────────────────────────────────────────────────────
 
 export async function isCatalogReady(): Promise<boolean> {
-  const row = await db.getOptional<{ c: number }>(
-    `SELECT COUNT(*) as c FROM catalog_cards LIMIT 1`
-  );
-  return (row?.c ?? 0) > 0;
+  const db = getCatalog();
+  if (!db) return false;
+  try {
+    const res = await db.execute('SELECT COUNT(*) as c FROM cards LIMIT 1');
+    const count = readScalar<number>(res, 'c');
+    return (count ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function findCardByScryfallId(scryfallId: string): Promise<ScryfallCard | null> {
-  const row = await db.getOptional<CatalogRow>(
-    `SELECT * FROM catalog_cards WHERE scryfall_id = ? LIMIT 1`,
+  return queryOne(
+    `SELECT * FROM cards WHERE scryfall_id = ? LIMIT 1`,
     [scryfallId]
   );
-  return row ? rowToScryfallCard(row) : null;
 }
 
 export async function findCardByPrint(
   setCode: string,
   collectorNumber: string
 ): Promise<ScryfallCard | null> {
-  const row = await db.getOptional<CatalogRow>(
-    `SELECT * FROM catalog_cards
-     WHERE set_code = ? AND collector_number = ?
-     LIMIT 1`,
+  return queryOne(
+    `SELECT * FROM cards WHERE set_code = ? AND collector_number = ? LIMIT 1`,
     [setCode.toLowerCase(), collectorNumber]
   );
-  return row ? rowToScryfallCard(row) : null;
 }
 
 export async function findCardByNameAndPrint(
@@ -39,57 +42,54 @@ export async function findCardByNameAndPrint(
   setCode: string,
   collectorNumber: string
 ): Promise<ScryfallCard | null> {
-  const row = await db.getOptional<CatalogRow>(
-    `SELECT * FROM catalog_cards
+  return queryOne(
+    `SELECT * FROM cards
      WHERE name = ? AND set_code = ? AND collector_number = ?
      LIMIT 1`,
     [name, setCode.toLowerCase(), collectorNumber]
   );
-  return row ? rowToScryfallCard(row) : null;
 }
 
 /**
- * First printing found by exact name match, ordered by released_at DESC
- * so the latest print wins. Useful as a "just find me any version" fallback.
+ * First printing found by exact name match, newest first.
  */
 export async function findCardByName(name: string): Promise<ScryfallCard | null> {
-  const row = await db.getOptional<CatalogRow>(
-    `SELECT * FROM catalog_cards
+  return queryOne(
+    `SELECT * FROM cards
      WHERE name = ?
-     ORDER BY released_at DESC NULLS LAST
+     ORDER BY released_at DESC
      LIMIT 1`,
     [name]
   );
-  return row ? rowToScryfallCard(row) : null;
 }
 
 /**
- * Prefix-match autocomplete. Case-insensitive via COLLATE NOCASE on the index
- * would be ideal but we match what Scryfall does: prefix over distinct names.
+ * Prefix autocomplete of distinct card names.
  */
 export async function autocompleteNames(prefix: string, limit = 20): Promise<string[]> {
   if (!prefix || prefix.length < 2) return [];
-  const rows = await db.getAll<{ name: string }>(
-    `SELECT DISTINCT name FROM catalog_cards
+  const db = getCatalog();
+  if (!db) return [];
+  const res = await db.execute(
+    `SELECT DISTINCT name FROM cards
      WHERE name LIKE ? COLLATE NOCASE
      ORDER BY name ASC
      LIMIT ?`,
     [`${prefix}%`, limit]
   );
-  return rows.map((r) => r.name);
+  return readAllRows(res).map((r) => (r.name ?? '') as string);
 }
 
 /**
- * Full-text-ish search by name token. Returns distinct-by-name results so
- * the list isn't polluted by every reprint of the same card.
+ * Distinct-by-name fuzzy search, keeping the newest printing for each match.
  */
 export async function searchByName(query: string, limit = 50): Promise<ScryfallCard[]> {
   if (!query || query.length < 2) return [];
-  const rows = await db.getAll<CatalogRow>(
-    `SELECT c.* FROM catalog_cards c
+  return queryMany(
+    `SELECT c.* FROM cards c
      INNER JOIN (
        SELECT name, MAX(released_at) as latest
-       FROM catalog_cards
+       FROM cards
        WHERE name LIKE ? COLLATE NOCASE
        GROUP BY name
      ) latest_by_name
@@ -99,80 +99,64 @@ export async function searchByName(query: string, limit = 50): Promise<ScryfallC
      LIMIT ?`,
     [`%${query}%`, limit]
   );
-  return rows.map(rowToScryfallCard);
 }
 
-/**
- * All printings that share this oracle_id, newest first. Backs fetchPrints.
- */
 export async function findPrintsByOracleId(oracleId: string, limit = 200): Promise<ScryfallCard[]> {
-  const rows = await db.getAll<CatalogRow>(
-    `SELECT * FROM catalog_cards
-     WHERE oracle_id = ?
-     ORDER BY released_at DESC NULLS LAST
-     LIMIT ?`,
+  return queryMany(
+    `SELECT * FROM cards WHERE oracle_id = ? ORDER BY released_at DESC LIMIT ?`,
     [oracleId, limit]
   );
-  return rows.map(rowToScryfallCard);
 }
 
-/**
- * All printings of a card with this exact name, newest first.
- * Backs VersionPicker's "all prints of X" list.
- */
 export async function findPrintsByName(name: string, limit = 200): Promise<ScryfallCard[]> {
-  const rows = await db.getAll<CatalogRow>(
-    `SELECT * FROM catalog_cards
-     WHERE name = ?
-     ORDER BY released_at DESC NULLS LAST
-     LIMIT ?`,
+  return queryMany(
+    `SELECT * FROM cards WHERE name = ? ORDER BY released_at DESC LIMIT ?`,
     [name, limit]
   );
-  return rows.map(rowToScryfallCard);
 }
 
-/**
- * All printings of a card with this exact name inside a given set.
- */
 export async function findPrintsByNameInSet(
   name: string,
   setCode: string,
   limit = 50
 ): Promise<ScryfallCard[]> {
-  const rows = await db.getAll<CatalogRow>(
-    `SELECT * FROM catalog_cards
-     WHERE name = ? AND set_code = ?
-     ORDER BY collector_number ASC
-     LIMIT ?`,
+  return queryMany(
+    `SELECT * FROM cards WHERE name = ? AND set_code = ? ORDER BY collector_number ASC LIMIT ?`,
     [name, setCode.toLowerCase(), limit]
   );
-  return rows.map(rowToScryfallCard);
 }
 
-/**
- * Count prints for a given card name. Useful when a caller only wants to
- * know if local has anything before hitting the API.
- */
 export async function countPrintsByName(name: string): Promise<number> {
-  const row = await db.getOptional<{ c: number }>(
-    `SELECT COUNT(*) as c FROM catalog_cards WHERE name = ?`,
-    [name]
-  );
-  return row?.c ?? 0;
+  const db = getCatalog();
+  if (!db) return 0;
+  const res = await db.execute(`SELECT COUNT(*) as c FROM cards WHERE name = ?`, [name]);
+  return readScalar<number>(res, 'c') ?? 0;
 }
 
-/**
- * Resolve a batch of parsed imports against the local catalog in a single
- * query per index. Returns a map keyed by the caller's key function so the
- * caller can pair them back up.
- */
+// Look up the Supabase cards.id UUID for a given scryfall_id without
+// fetching the whole row. Used by ensureCardExists on the hot path.
+export async function findSupabaseIdByScryfallId(scryfallId: string): Promise<string | null> {
+  const db = getCatalog();
+  if (!db) return null;
+  const res = await db.execute(
+    `SELECT id FROM cards WHERE scryfall_id = ? LIMIT 1`,
+    [scryfallId]
+  );
+  return readScalar<string>(res, 'id') ?? null;
+}
+
 export type BatchKey = { key: string; setCode: string; collectorNumber: string };
 
+/**
+ * Resolve a batch of imports against the catalog in a single grouped query
+ * per set. Reduces 100k lookups to ~N distinct sets worth of round-trips
+ * instead of one SQL query per row.
+ */
 export async function batchResolveByPrint(keys: BatchKey[]): Promise<Map<string, ScryfallCard>> {
   const resolved = new Map<string, ScryfallCard>();
-  if (keys.length === 0) return resolved;
+  const db = getCatalog();
+  if (!db || keys.length === 0) return resolved;
 
-  // Group by setCode for efficient queries (one per set) — keeps param counts low.
   const bySet = new Map<string, BatchKey[]>();
   for (const k of keys) {
     const set = k.setCode.toLowerCase();
@@ -184,13 +168,13 @@ export async function batchResolveByPrint(keys: BatchKey[]): Promise<Map<string,
   for (const [setCode, bucket] of bySet) {
     const nums = bucket.map((b) => b.collectorNumber);
     const placeholders = nums.map(() => '?').join(',');
-    const rows = await db.getAll<CatalogRow>(
-      `SELECT * FROM catalog_cards
+    const res = await db.execute(
+      `SELECT * FROM cards
        WHERE set_code = ? AND collector_number IN (${placeholders})`,
       [setCode, ...nums]
     );
-
-    const byNum = new Map(rows.map((r) => [r.collector_number, r]));
+    const rows = readAllRows(res);
+    const byNum = new Map(rows.map((r) => [r.collector_number as string, r]));
     for (const b of bucket) {
       const row = byNum.get(b.collectorNumber);
       if (row) resolved.set(b.key, rowToScryfallCard(row));
@@ -200,44 +184,45 @@ export async function batchResolveByPrint(keys: BatchKey[]): Promise<Map<string,
   return resolved;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Raw row shape stored in catalog_cards
-// ─────────────────────────────────────────────────────────────────────────
+// ── Row helpers ───────────────────────────────────────────────────────────
 
-type CatalogRow = {
-  id: string;
-  scryfall_id: string;
-  oracle_id: string | null;
-  name: string;
-  mana_cost: string | null;
-  cmc: number | null;
-  type_line: string | null;
-  colors: string | null;         // JSON string
-  color_identity: string | null; // JSON string
-  rarity: string | null;
-  set_code: string | null;
-  set_name: string | null;
-  collector_number: string | null;
-  image_uri_small: string | null;
-  image_uri_normal: string | null;
-  price_usd: number | null;
-  price_usd_foil: number | null;
-  price_eur: number | null;
-  price_eur_foil: number | null;
-  legalities: string | null;     // JSON string
-  released_at: string | null;
-  is_legendary: number | null;   // 0/1
-  layout: string | null;
-  updated_at: string;
-};
+async function queryOne(sql: string, params: any[]): Promise<ScryfallCard | null> {
+  const db = getCatalog();
+  if (!db) return null;
+  const res = await db.execute(sql, params);
+  const rows = readAllRows(res);
+  return rows[0] ? rowToScryfallCard(rows[0]) : null;
+}
 
-function rowToScryfallCard(row: CatalogRow): ScryfallCard {
+async function queryMany(sql: string, params: any[]): Promise<ScryfallCard[]> {
+  const db = getCatalog();
+  if (!db) return [];
+  const res = await db.execute(sql, params);
+  return readAllRows(res).map(rowToScryfallCard);
+}
+
+function readAllRows(res: any): any[] {
+  // QuickSQLite execute returns { rows: { _array: any[], length, item } }
+  const array = res?.rows?._array;
+  if (Array.isArray(array)) return array;
+  const length = res?.rows?.length ?? 0;
+  const out: any[] = [];
+  for (let i = 0; i < length; i++) out.push(res.rows.item(i));
+  return out;
+}
+
+function readScalar<T>(res: any, key: string): T | null {
+  const rows = readAllRows(res);
+  if (rows.length === 0) return null;
+  return (rows[0]?.[key] ?? null) as T | null;
+}
+
+function rowToScryfallCard(row: any): ScryfallCard {
   const colors = parseJsonArray<string>(row.colors);
   const colorIdentity = parseJsonArray<string>(row.color_identity);
-  const legalities = parseJsonObject<Record<string, string>>(row.legalities) ?? {};
 
   return {
-    id: row.scryfall_id, // ScryfallCard.id is scryfall_id in callers
+    id: row.scryfall_id,
     oracle_id: row.oracle_id ?? '',
     name: row.name,
     mana_cost: row.mana_cost ?? undefined,
@@ -264,7 +249,7 @@ function rowToScryfallCard(row: CatalogRow): ScryfallCard {
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },
-    legalities,
+    legalities: {}, // not shipped in the snapshot — fetch from API when deck-validating
     released_at: row.released_at ?? '',
     layout: row.layout ?? '',
   };
@@ -275,15 +260,6 @@ function parseJsonArray<T>(raw: string | null): T[] | null {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as T[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseJsonObject<T>(raw: string | null): T | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
   } catch {
     return null;
   }

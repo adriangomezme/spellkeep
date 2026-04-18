@@ -42,7 +42,6 @@ export async function finishSyncRun(
     cards_inserted?: number;
     cards_updated?: number;
     sets_upserted?: number;
-    delta_url?: string | null;
     snapshot_url?: string | null;
     error_message?: string | null;
   }
@@ -55,7 +54,6 @@ export async function finishSyncRun(
       cards_inserted: fields.cards_inserted ?? 0,
       cards_updated: fields.cards_updated ?? 0,
       sets_upserted: fields.sets_upserted ?? 0,
-      delta_url: fields.delta_url ?? null,
       snapshot_url: fields.snapshot_url ?? null,
       error_message: fields.error_message ?? null,
     })
@@ -63,14 +61,3 @@ export async function finishSyncRun(
   if (error) throw new Error(`sync run update failed: ${error.message}`);
 }
 
-export async function getLastSuccessfulRun(): Promise<{ id: string; started_at: string } | null> {
-  const { data, error } = await supabase
-    .from('catalog_sync_runs')
-    .select('id, started_at')
-    .eq('status', 'succeeded')
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(`last run fetch failed: ${error.message}`);
-  return data as { id: string; started_at: string } | null;
-}

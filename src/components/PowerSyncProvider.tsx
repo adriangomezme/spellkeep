@@ -22,8 +22,22 @@ export function PowerSyncProvider({ children }: Props) {
         setIsReady(true);
       }
 
-      // Kick off catalog sync in the background. Doesn't block the UI —
-      // if it fails the app still works via the Scryfall API fallback.
+      // Open the catalog DB (if a snapshot already exists locally) and
+      // then kick off a background refresh. Both steps are non-blocking:
+      // the app renders immediately and search falls back to the Scryfall
+      // API while the catalog is prepared.
+      try {
+        const { openCatalog } = await import('../lib/catalog/catalogDb');
+        const FileSystem = await import('expo-file-system/legacy');
+        const path = `${FileSystem.documentDirectory}catalog.db`;
+        const exists = (await FileSystem.getInfoAsync(path)).exists;
+        if (exists) {
+          try { openCatalog(); } catch (err) { console.warn('Catalog open skipped:', err); }
+        }
+      } catch (err) {
+        console.error('Catalog open error:', err);
+      }
+
       try {
         const { ensureCatalogFresh } = await import('../lib/catalog/catalogSync');
         ensureCatalogFresh().catch((err) => {

@@ -15,10 +15,6 @@ on:
         description: 'Skip snapshot build (true/false)'
         required: false
         default: 'false'
-      skip_delta:
-        description: 'Skip delta build (true/false)'
-        required: false
-        default: 'false'
 
 concurrency:
   group: catalog-sync
@@ -51,5 +47,4 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FORCE_SNAPSHOT: ${{ github.event.inputs.force_snapshot || 'false' }}
           SKIP_SNAPSHOT: ${{ github.event.inputs.skip_snapshot || 'false' }}
-          SKIP_DELTA: ${{ github.event.inputs.skip_delta || 'false' }}
         run: npm start

@@ -2,7 +2,6 @@ import { finishSyncRun, startSyncRun } from './db.ts';
 import { getBulkData } from './scryfall.ts';
 import { syncSets } from './steps/sets.ts';
 import { syncCards } from './steps/cards.ts';
-import { buildDelta } from './steps/delta.ts';
 import { buildSnapshot } from './steps/snapshot.ts';
 import { config } from './config.ts';
 
@@ -13,7 +12,6 @@ async function main() {
   console.log(`[catalog-sync] scryfall bulk updated_at=${bulk.updated_at} size=${bulk.size}`);
 
   const runId = await startSyncRun(bulk.updated_at);
-  const runStartedAt = new Date().toISOString();
 
   try {
     const setsResult = await syncSets();
@@ -21,12 +19,6 @@ async function main() {
 
     const cardsResult = await syncCards(bulk.download_uri);
     console.log(`[catalog-sync] cards: processed=${cardsResult.processed}`);
-
-    let deltaUrl: string | null = null;
-    if (!config.skipDelta) {
-      deltaUrl = await buildDelta(runStartedAt);
-      console.log(`[catalog-sync] delta: ${deltaUrl ?? 'skipped (no prior baseline)'}`);
-    }
 
     let snapshotUrl: string | null = null;
     if (!config.skipSnapshot) {
@@ -39,7 +31,6 @@ async function main() {
       cards_inserted: cardsResult.inserted,
       cards_updated: cardsResult.updated,
       sets_upserted: setsResult.upserted,
-      delta_url: deltaUrl,
       snapshot_url: snapshotUrl,
     });
 

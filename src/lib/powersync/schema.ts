@@ -156,63 +156,13 @@ const deck_cards = new Table({
 });
 
 // ============================================================
-// Catalog (local-only, populated from snapshot + daily deltas)
+// Catalog sync metadata (local-only)
 // ============================================================
-// These tables mirror the global MTG catalog and are NOT synced via
-// PowerSync. They're refreshed from the catalog-sync worker's
-// snapshot/delta artifacts on app startup.
+// Tracks the state of the separate catalog.db that lives alongside the
+// PowerSync database. The actual catalog cards/sets data lives in that
+// file — opened independently via react-native-quick-sqlite — not here.
+// Keys: 'snapshot_version', 'last_sync_at'.
 
-const catalog_cards = new Table({
-  id: column.text,                // Supabase cards.id UUID (for collection_cards refs)
-  scryfall_id: column.text,
-  oracle_id: column.text,
-  name: column.text,
-  mana_cost: column.text,
-  cmc: column.real,
-  type_line: column.text,
-  colors: column.text,            // JSON array
-  color_identity: column.text,    // JSON array
-  rarity: column.text,
-  set_code: column.text,
-  set_name: column.text,
-  collector_number: column.text,
-  image_uri_small: column.text,
-  image_uri_normal: column.text,
-  price_usd: column.real,
-  price_usd_foil: column.real,
-  price_eur: column.real,
-  price_eur_foil: column.real,
-  legalities: column.text,        // JSON object
-  released_at: column.text,
-  is_legendary: column.integer,   // 0/1
-  layout: column.text,
-  updated_at: column.text,
-}, {
-  localOnly: true,
-  indexes: {
-    scryfall_id: ['scryfall_id'],
-    oracle_id: ['oracle_id'],
-    name: ['name'],
-    set_code: ['set_code'],
-    name_collector: ['name', 'collector_number'],
-    set_collector: ['set_code', 'collector_number'],
-  }
-});
-
-const catalog_sets = new Table({
-  code: column.text,
-  name: column.text,
-  set_type: column.text,
-  released_at: column.text,
-  card_count: column.integer,
-  icon_svg_uri: column.text,
-}, {
-  localOnly: true,
-  indexes: { code: ['code'] }
-});
-
-// Single-row key/value store for catalog sync state.
-// keys: 'snapshot_version', 'last_delta_version', 'last_sync_at', 'sync_status'
 const catalog_meta = new Table({
   key: column.text,
   value: column.text,
@@ -251,8 +201,6 @@ export const AppSchema = new Schema({
   decks,
   deck_cards,
   scan_history,
-  catalog_cards,
-  catalog_sets,
   catalog_meta,
 });
 
@@ -264,6 +212,4 @@ export type CollectionRecord = Database['collections'];
 export type CollectionCardRecord = Database['collection_cards'];
 export type DeckRecord = Database['decks'];
 export type DeckCardRecord = Database['deck_cards'];
-export type CatalogCardRecord = Database['catalog_cards'];
-export type CatalogSetRecord = Database['catalog_sets'];
 export type CatalogMetaRecord = Database['catalog_meta'];

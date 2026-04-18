@@ -16,7 +16,4 @@ export const config = {
 
   // Skip snapshot generation entirely (e.g. for fast iteration / debug runs).
   skipSnapshot: process.env.SKIP_SNAPSHOT === 'true',
-
-  // Skip delta generation (e.g. first-ever run where there is no prior baseline).
-  skipDelta: process.env.SKIP_DELTA === 'true',
 };

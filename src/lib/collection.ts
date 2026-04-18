@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { ScryfallCard } from './scryfall';
 import { getDefaultBinderId } from './collections';
-import { db } from './powersync/system';
+import { findSupabaseIdByScryfallId } from './catalog/catalogQueries';
 
 export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 export type Finish = 'normal' | 'foil' | 'etched';
@@ -31,13 +31,10 @@ const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
  * PowerSync generates ES256 JWTs which Edge Functions don't support.
  */
 async function ensureCardExists(card: ScryfallCard): Promise<string> {
-  // Fast path: local catalog usually has this card. The snapshot carries
-  // the Supabase `id` UUID so we can short-circuit the network entirely.
-  const localHit = await db.getOptional<{ id: string }>(
-    `SELECT id FROM catalog_cards WHERE scryfall_id = ? LIMIT 1`,
-    [card.id]
-  );
-  if (localHit?.id) return localHit.id;
+  // Fast path: local catalog usually has this card. The snapshot ships the
+  // Supabase `id` UUID so we can short-circuit the network entirely.
+  const localId = await findSupabaseIdByScryfallId(card.id);
+  if (localId) return localId;
 
   // Fallback: server lookup. Needed only for cards that landed in Scryfall
   // after our last catalog sync (rare — usually new set spoilers).
