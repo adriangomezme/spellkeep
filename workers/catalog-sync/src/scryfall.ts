@@ -1,6 +1,5 @@
 import { Readable } from 'node:stream';
 import StreamArray from 'stream-json/streamers/StreamArray.js';
-import { parser } from 'stream-json';
 
 const SCRYFALL_API = 'https://api.scryfall.com';
 
@@ -44,9 +43,10 @@ export async function* streamBulkCards(downloadUri: string): AsyncGenerator<any>
   }
 
   const nodeStream = Readable.fromWeb(res.body as any);
-  const stream = nodeStream.pipe(parser()).pipe(new StreamArray());
+  const stream = StreamArray.withParser();
+  nodeStream.pipe(stream.input as any);
 
-  for await (const chunk of stream) {
+  for await (const chunk of stream as AsyncIterable<{ value: any }>) {
     yield chunk.value;
   }
 }
