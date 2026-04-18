@@ -21,6 +21,17 @@ export function PowerSyncProvider({ children }: Props) {
       } finally {
         setIsReady(true);
       }
+
+      // Kick off catalog sync in the background. Doesn't block the UI —
+      // if it fails the app still works via the Scryfall API fallback.
+      try {
+        const { ensureCatalogFresh } = await import('../lib/catalog/catalogSync');
+        ensureCatalogFresh().catch((err) => {
+          console.error('Catalog sync error:', err);
+        });
+      } catch (err) {
+        console.error('Catalog sync boot error:', err);
+      }
     })();
   }, []);
 

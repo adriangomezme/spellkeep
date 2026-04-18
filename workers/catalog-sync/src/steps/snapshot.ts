@@ -127,7 +127,11 @@ async function fetchAllCards(): Promise<any[]> {
 }
 
 async function fetchAllSets(): Promise<any[]> {
-  const { data, error } = await supabase.from('sets').select(SET_COLUMNS.join(','));
+  // Explicit .range(0, 9999) overrides the default 1000-row limit for sets.
+  const { data, error } = await supabase
+    .from('sets')
+    .select(SET_COLUMNS.join(','))
+    .range(0, 9999);
   if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
   return data ?? [];
 }

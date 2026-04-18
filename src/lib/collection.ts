@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { ScryfallCard } from './scryfall';
+import { getDefaultBinderId } from './collections';
+import { db } from './powersync/system';
 
 export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 export type Finish = 'normal' | 'foil' | 'etched';
@@ -18,13 +20,27 @@ export const FINISHES: { value: Finish; label: string }[] = [
   { value: 'etched', label: 'Etched Foil' },
 ];
 
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+
 /**
  * Ensures a card exists in the cards table before adding to collection.
- * Uses the ensure-card Edge Function which inserts with service_role
- * (users cannot insert into cards directly via RLS).
+ * Calls the ensure-card Edge Function which uses service_role to insert.
+ *
+ * Uses fetch with anon key instead of supabase.functions.invoke because
+ * PowerSync generates ES256 JWTs which Edge Functions don't support.
  */
 async function ensureCardExists(card: ScryfallCard): Promise<string> {
-  // Check if card already exists locally first
+  // Fast path: local catalog usually has this card. The snapshot carries
+  // the Supabase `id` UUID so we can short-circuit the network entirely.
+  const localHit = await db.getOptional<{ id: string }>(
+    `SELECT id FROM catalog_cards WHERE scryfall_id = ? LIMIT 1`,
+    [card.id]
+  );
+  if (localHit?.id) return localHit.id;
+
+  // Fallback: server lookup. Needed only for cards that landed in Scryfall
+  // after our last catalog sync (rare — usually new set spoilers).
   const { data: existing } = await supabase
     .from('cards')
     .select('id')
@@ -33,7 +49,7 @@ async function ensureCardExists(card: ScryfallCard): Promise<string> {
 
   if (existing) return existing.id;
 
-  // Card not in DB — call Edge Function to insert it with service_role
+  // Build card data for insertion
   const mainFace = card.card_faces?.[0] ?? card;
   const cardData = {
     oracle_id: card.oracle_id,
@@ -66,51 +82,42 @@ async function ensureCardExists(card: ScryfallCard): Promise<string> {
     is_legendary: (card.type_line ?? '').includes('Legendary'),
     produced_mana: card.produced_mana ?? [],
     layout: card.layout,
-    card_faces: card.card_faces ? JSON.stringify(card.card_faces) : null,
+    card_faces: card.card_faces ?? null,
   };
 
-  const { data, error } = await supabase.functions.invoke('ensure-card', {
-    body: { scryfall_id: card.id, card_data: cardData },
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/ensure-card`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${ANON_KEY}`,
+    },
+    body: JSON.stringify({ scryfall_id: card.id, card_data: cardData }),
   });
 
-  if (error) throw new Error(`Failed to ensure card: ${error.message}`);
-  if (!data?.card_id) throw new Error('No card_id returned from ensure-card');
-  return data.card_id;
-}
+  const body = await res.json();
 
-/**
- * Get the user's default collection ID.
- */
-async function getDefaultCollectionId(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { data, error } = await supabase
-    .from('collections')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('type', 'collection')
-    .single();
-
-  if (error || !data) throw new Error('Default collection not found');
-  return data.id;
+  if (!res.ok) throw new Error(`Failed to ensure card: ${body?.error ?? res.statusText}`);
+  if (!body?.card_id) throw new Error('No card_id returned from ensure-card');
+  return body.card_id;
 }
 
 /**
  * Add a card to a collection, binder, or list.
- * If collectionId is omitted, uses the user's default collection.
+ * If collectionId is omitted, uses the user's default binder ("My Cards").
+ *
+ * `purchasePrice` is per-row and last-write-wins on merges.
  */
 export async function addToCollection(
   card: ScryfallCard,
   condition: Condition,
   finish: Finish,
   quantity: number,
-  collectionId?: string
+  collectionId?: string,
+  purchasePrice?: number | null
 ): Promise<void> {
   const cardId = await ensureCardExists(card);
-  const targetId = collectionId ?? await getDefaultCollectionId();
+  const targetId = collectionId ?? await getDefaultBinderId();
 
-  // Check if entry already exists for this card + condition
   const { data: existing } = await supabase
     .from('collection_cards')
     .select('id, quantity_normal, quantity_foil, quantity_etched')
@@ -120,11 +127,11 @@ export async function addToCollection(
     .single();
 
   if (existing) {
-    // Update quantity for the specific finish
-    const updates: Record<string, number> = {};
+    const updates: Record<string, number | null> = {};
     if (finish === 'normal') updates.quantity_normal = existing.quantity_normal + quantity;
     if (finish === 'foil') updates.quantity_foil = existing.quantity_foil + quantity;
     if (finish === 'etched') updates.quantity_etched = existing.quantity_etched + quantity;
+    if (purchasePrice != null) updates.purchase_price = purchasePrice;
 
     const { error } = await supabase
       .from('collection_cards')
@@ -133,7 +140,6 @@ export async function addToCollection(
 
     if (error) throw new Error(`Failed to update collection: ${error.message}`);
   } else {
-    // Insert new entry
     const { error } = await supabase
       .from('collection_cards')
       .insert({
@@ -143,6 +149,7 @@ export async function addToCollection(
         quantity_normal: finish === 'normal' ? quantity : 0,
         quantity_foil: finish === 'foil' ? quantity : 0,
         quantity_etched: finish === 'etched' ? quantity : 0,
+        purchase_price: purchasePrice ?? null,
       });
 
     if (error) throw new Error(`Failed to add to collection: ${error.message}`);
