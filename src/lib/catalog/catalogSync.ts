@@ -1,4 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import pako from 'pako';
 import { db } from '../powersync/system';
 import { getMeta, setMeta } from './catalogMeta';
@@ -71,7 +70,7 @@ async function runSync(): Promise<void> {
     publish({ status: 'checking', progress: undefined, error: undefined });
 
     const remoteIndex = await fetchIndex();
-    if (!remoteIndex?.snapshot_version || !remoteIndex.snapshot_url) {
+    if (!remoteIndex?.snapshot_version || !remoteIndex.snapshot_base_url || !remoteIndex.snapshot_card_chunks) {
       publish({ status: 'error', error: 'No catalog snapshot available' });
       return;
     }
@@ -80,7 +79,7 @@ async function runSync(): Promise<void> {
     const localDelta = await getMeta(META_KEYS.lastDelta);
 
     if (!localSnapshot) {
-      await applySnapshotFromUrl(remoteIndex.snapshot_url, remoteIndex.snapshot_version);
+      await applyChunkedSnapshot(remoteIndex);
       if (remoteIndex.latest_delta) {
         await setMeta(META_KEYS.lastDelta, remoteIndex.latest_delta);
       }
@@ -91,7 +90,7 @@ async function runSync(): Promise<void> {
     if (localSnapshot !== remoteIndex.snapshot_version) {
       const daysBehind = daysBetween(localSnapshot, remoteIndex.snapshot_version);
       if (daysBehind >= SNAPSHOT_REDOWNLOAD_DAYS) {
-        await applySnapshotFromUrl(remoteIndex.snapshot_url, remoteIndex.snapshot_version);
+        await applyChunkedSnapshot(remoteIndex);
         if (remoteIndex.latest_delta) {
           await setMeta(META_KEYS.lastDelta, remoteIndex.latest_delta);
         }
@@ -125,14 +124,7 @@ async function fetchIndex(): Promise<CatalogIndex | null> {
   return (await res.json()) as CatalogIndex;
 }
 
-// ── Snapshot (bulk JSON.gz bootstrap) ─────────────────────────────────────
-
-type SnapshotPayload = {
-  version: string;
-  generated_at: string;
-  cards: CatalogCardPayload[];
-  sets: CatalogSetPayload[];
-};
+// ── Snapshot (chunked JSON.gz bootstrap) ──────────────────────────────────
 
 type CatalogSetPayload = {
   code: string;
@@ -143,75 +135,43 @@ type CatalogSetPayload = {
   icon_svg_uri: string | null;
 };
 
-async function applySnapshotFromUrl(url: string, version: string): Promise<void> {
-  publish({ status: 'downloading', progress: 0 });
+/**
+ * Bootstrap the local catalog by streaming N small JSON.gz chunks from the
+ * server, one at a time. Each chunk carries ~5000 cards (~800 KB gzipped,
+ * ~6 MB JSON), which the JS thread can ungzip + parse in well under a
+ * second. That keeps the UI responsive throughout the ~30–60 s bootstrap.
+ */
+async function applyChunkedSnapshot(index: CatalogIndex): Promise<void> {
+  const baseUrl = index.snapshot_base_url!;
+  const chunkCount = index.snapshot_card_chunks!;
+  const version = index.snapshot_version!;
 
-  // Download to disk so (a) we get progress, (b) we don't hold the gzipped
-  // payload in JS heap alongside the decompressed JSON string later.
-  const tmpPath = `${FileSystem.cacheDirectory}catalog-${version}.json.gz`;
-  try {
-    const downloader = FileSystem.createDownloadResumable(url, tmpPath, {}, (p) => {
-      if (p.totalBytesExpectedToWrite > 0) {
-        publish({
-          status: 'downloading',
-          progress: p.totalBytesWrittenSoFar / p.totalBytesExpectedToWrite,
-        });
-      }
-    });
-    const result = await downloader.downloadAsync();
-    if (!result) throw new Error('Snapshot download returned no result');
+  const totalUnits = chunkCount + 1; // +1 for the sets file
 
-    publish({ status: 'applying', progress: 0 });
+  for (let i = 0; i < chunkCount; i++) {
+    publish({ status: 'downloading', progress: i / totalUnits });
+    const url = `${baseUrl}/cards-${i}.json.gz`;
+    const payload = await fetchJsonGz<{ cards: CatalogCardPayload[] }>(url);
+
+    publish({ status: 'applying', progress: (i + 0.5) / totalUnits });
     await yieldToUi();
 
-    const payload = await readAndUngzipJson<SnapshotPayload>(result.uri);
-    await applySnapshotPayload(payload);
+    for (let j = 0; j < payload.cards.length; j += APPLY_CHUNK) {
+      await applyCardsChunk(payload.cards.slice(j, j + APPLY_CHUNK));
+    }
 
-    await setMeta(META_KEYS.snapshotVersion, version);
-  } finally {
-    await FileSystem.deleteAsync(tmpPath, { idempotent: true });
-  }
-}
-
-async function readAndUngzipJson<T>(uri: string): Promise<T> {
-  // Read gzip bytes as base64 (expo-file-system doesn't expose binary reads).
-  const base64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const bytes = base64ToBytes(base64);
-  const json = pako.ungzip(bytes, { to: 'string' });
-  return JSON.parse(json) as T;
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  // RN's atob is available in the Hermes runtime.
-  const bin = globalThis.atob(base64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-async function applySnapshotPayload(payload: SnapshotPayload): Promise<void> {
-  const cards = payload.cards;
-  const sets = payload.sets;
-  const totalUnits = cards.length + sets.length;
-  let done = 0;
-
-  let chunkIdx = 0;
-  for (let i = 0; i < cards.length; i += APPLY_CHUNK) {
-    const chunk = cards.slice(i, i + APPLY_CHUNK);
-    await applyCardsChunk(chunk);
-    done += chunk.length;
-    publish({ status: 'applying', progress: done / totalUnits });
-    if (++chunkIdx % YIELD_EVERY_CHUNKS === 0) await yieldToUi();
+    publish({ status: 'applying', progress: (i + 1) / totalUnits });
+    await yieldToUi();
   }
 
-  if (sets.length > 0) {
-    await applySetsChunk(sets);
-    done += sets.length;
-    publish({ status: 'applying', progress: done / totalUnits });
-  }
+  // Sets file: small, one-shot.
+  publish({ status: 'downloading', progress: chunkCount / totalUnits });
+  const setsPayload = await fetchJsonGz<{ sets: CatalogSetPayload[] }>(`${baseUrl}/sets.json.gz`);
+  publish({ status: 'applying', progress: (chunkCount + 0.5) / totalUnits });
+  await yieldToUi();
+  if (setsPayload.sets?.length) await applySetsChunk(setsPayload.sets);
+
+  await setMeta(META_KEYS.snapshotVersion, version);
 }
 
 // ── Deltas (incremental JSON.gz) ──────────────────────────────────────────
@@ -237,14 +197,26 @@ async function applyDeltasSince(fromVersion: string, toVersion: string): Promise
 }
 
 async function fetchDelta(url: string): Promise<CatalogDelta | null> {
-  // Deltas are small enough (~1-5 MB) to fetch directly without the
-  // download-to-disk dance we do for snapshots.
+  try {
+    return await fetchJsonGz<CatalogDelta>(url);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes(' 404')) return null;
+    throw err;
+  }
+}
+
+/**
+ * GET a .json.gz URL, decompress, and parse. Used for snapshot chunks and
+ * daily deltas. Both are small enough (~1–6 MB compressed) that pulling
+ * the whole response into memory is fine; unlike the old monolithic
+ * snapshot which blew up the JS heap at ~125 MB.
+ */
+async function fetchJsonGz<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`delta fetch ${url} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status}`);
   const buf = new Uint8Array(await res.arrayBuffer());
   const json = pako.ungzip(buf, { to: 'string' });
-  return JSON.parse(json) as CatalogDelta;
+  return JSON.parse(json) as T;
 }
 
 // ── Shared write helpers ──────────────────────────────────────────────────

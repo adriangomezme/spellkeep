@@ -1,7 +1,10 @@
 export type CatalogIndex = {
   snapshot_version?: string;
-  snapshot_url?: string;
-  snapshot_raw_bytes?: number;
+  snapshot_base_url?: string;        // new chunked layout
+  snapshot_card_chunks?: number;
+  snapshot_card_chunk_size?: number;
+  snapshot_card_count?: number;
+  snapshot_set_count?: number;
   snapshot_gz_bytes?: number;
   latest_delta?: string;
   latest_delta_url?: string;

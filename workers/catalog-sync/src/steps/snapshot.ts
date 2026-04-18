@@ -7,6 +7,12 @@ const SNAPSHOTS_BUCKET = 'catalog-snapshots';
 const DELTAS_INDEX_PATH = 'index.json';
 const PAGE = 1000;
 
+// Each card chunk holds ~5000 cards and lands around ~800 KB gz / ~6 MB JSON.
+// Small enough that the client can ungzip + JSON.parse a single chunk in
+// well under a second without hanging the JS thread, large enough to keep
+// chunk count reasonable (~20 requests for a full bootstrap).
+const SNAPSHOT_CARD_CHUNK_SIZE = 5000;
+
 const LIVE_CARD_COLUMNS = deltaInternals.LIVE_COLUMNS;
 
 const SET_COLUMNS = [
@@ -21,16 +27,17 @@ const SET_COLUMNS = [
 const SNAPSHOT_REFRESH_DAYS = 7;
 
 /**
- * Builds a compact JSON snapshot of the catalog (all cards + all sets) and
- * publishes it to Storage as `<date>.json.gz`. The client streams this file
- * down, ungzips it, and applies the payload as bulk INSERT OR REPLACE into
- * its local catalog_* tables.
+ * Builds a chunked JSON snapshot of the catalog and publishes it to Storage.
  *
- * Why JSON and not SQLite? PowerSync owns the client's SQLite database at
- * runtime; we can't swap or attach arbitrary SQLite files into it. A JSON
- * payload is the portable interchange format that fits into our existing
- * delta application path. Trade-off: the snapshot is larger on disk than a
- * SQLite file would be, but gzipped the difference is ~1.2x.
+ * Layout:
+ *   catalog-snapshots/<date>/sets.json.gz
+ *   catalog-snapshots/<date>/cards-0.json.gz   (5000 cards)
+ *   catalog-snapshots/<date>/cards-1.json.gz
+ *   ...
+ *
+ * A single 100 MB+ JSON payload stalls the React Native JS thread for
+ * 20–30 s during JSON.parse, freezing the UI. Chunking keeps each parse
+ * under a second and lets the client paint progress between chunks.
  */
 export async function buildSnapshot(): Promise<string | null> {
   if (!config.forceSnapshot && !(await shouldRegenerate())) {
@@ -42,54 +49,71 @@ export async function buildSnapshot(): Promise<string | null> {
   const cards = await fetchAllCards();
   const sets = await fetchAllSets();
 
-  const payload = {
-    version: today,
-    generated_at: new Date().toISOString(),
-    cards,
-    sets,
-  };
+  const chunkCount = Math.ceil(cards.length / SNAPSHOT_CARD_CHUNK_SIZE);
+  let totalGzBytes = 0;
 
-  const json = JSON.stringify(payload);
-  const gz = gzipSync(Buffer.from(json, 'utf-8'));
+  for (let i = 0; i < chunkCount; i++) {
+    const chunk = cards.slice(i * SNAPSHOT_CARD_CHUNK_SIZE, (i + 1) * SNAPSHOT_CARD_CHUNK_SIZE);
+    const gz = gzipSync(Buffer.from(JSON.stringify({ cards: chunk }), 'utf-8'));
+    totalGzBytes += gz.byteLength;
+    await uploadGz(`${today}/cards-${i}.json.gz`, gz);
+  }
 
-  const objectPath = `${today}.json.gz`;
+  const setsGz = gzipSync(Buffer.from(JSON.stringify({ sets }), 'utf-8'));
+  totalGzBytes += setsGz.byteLength;
+  await uploadGz(`${today}/sets.json.gz`, setsGz);
+
+  const baseUrl = publicUrlFor(`${today}`);
+
+  await patchDeltasIndex({
+    snapshot_version: today,
+    snapshot_base_url: baseUrl,
+    snapshot_card_chunks: chunkCount,
+    snapshot_card_chunk_size: SNAPSHOT_CARD_CHUNK_SIZE,
+    snapshot_card_count: cards.length,
+    snapshot_set_count: sets.length,
+    snapshot_gz_bytes: totalGzBytes,
+    // Intentionally omit legacy snapshot_url — clients that still read the
+    // old single-file layout will fall through and re-bootstrap once they
+    // see snapshot_base_url on the new schema.
+  });
+
+  console.log(
+    `[catalog-sync] snapshot: ${cards.length} cards in ${chunkCount} chunks, ${sets.length} sets, ${totalGzBytes} bytes gz total`
+  );
+  return baseUrl;
+}
+
+async function uploadGz(objectPath: string, body: Buffer): Promise<void> {
   const { error } = await supabase.storage
     .from(SNAPSHOTS_BUCKET)
-    .upload(objectPath, gz, {
+    .upload(objectPath, body, {
       contentType: 'application/json',
       cacheControl: '2592000, immutable',
       upsert: true,
     });
-  if (error) throw new Error(`snapshot upload failed: ${error.message}`);
+  if (error) throw new Error(`snapshot upload ${objectPath} failed: ${error.message}`);
+}
 
-  const { data: pub } = supabase.storage.from(SNAPSHOTS_BUCKET).getPublicUrl(objectPath);
-  const snapshotUrl = pub.publicUrl;
-
-  await patchDeltasIndex({
-    snapshot_version: today,
-    snapshot_url: snapshotUrl,
-    snapshot_raw_bytes: json.length,
-    snapshot_gz_bytes: gz.byteLength,
-    snapshot_card_count: cards.length,
-    snapshot_set_count: sets.length,
-  });
-
-  console.log(`[catalog-sync] snapshot: ${cards.length} cards, ${sets.length} sets, ${gz.byteLength} bytes gz`);
-  return snapshotUrl;
+function publicUrlFor(path: string): string {
+  const { data } = supabase.storage.from(SNAPSHOTS_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
 
 async function shouldRegenerate(): Promise<boolean> {
+  // New layout: snapshot is a folder <date>/. List top-level prefixes by
+  // walking `list('')` which returns folder-like entries.
   const { data } = await supabase.storage.from(SNAPSHOTS_BUCKET).list('', { limit: 100 });
   if (!data || data.length === 0) return true;
 
-  const latest = data
-    .filter((f) => f.name.endsWith('.json.gz'))
-    .sort((a, b) => (a.name < b.name ? 1 : -1))[0];
+  const dateFolders = data
+    .filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f.name))
+    .sort((a, b) => (a.name < b.name ? 1 : -1));
 
-  if (!latest) return true;
+  if (dateFolders.length === 0) return true;
 
-  const dateStr = latest.name.replace('.json.gz', '');
-  const ageMs = Date.now() - new Date(dateStr).getTime();
+  const latest = dateFolders[0].name;
+  const ageMs = Date.now() - new Date(latest).getTime();
   const ageDays = ageMs / 86400000;
   return ageDays >= SNAPSHOT_REFRESH_DAYS;
 }
