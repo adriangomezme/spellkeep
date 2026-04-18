@@ -1,8 +1,4 @@
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import Database from 'better-sqlite3';
 import { supabase } from '../supabase.ts';
 import { config } from '../config.ts';
 import { deltaInternals } from './delta.ts';
@@ -22,69 +18,64 @@ const SET_COLUMNS = [
   'icon_svg_uri',
 ] as const;
 
-/**
- * Builds a compact SQLite snapshot of the catalog and publishes it to Storage.
- * Skipped unless one of:
- *   - config.forceSnapshot is true
- *   - no snapshot exists yet
- *   - the latest snapshot is older than SNAPSHOT_REFRESH_DAYS
- */
 const SNAPSHOT_REFRESH_DAYS = 7;
 
+/**
+ * Builds a compact JSON snapshot of the catalog (all cards + all sets) and
+ * publishes it to Storage as `<date>.json.gz`. The client streams this file
+ * down, ungzips it, and applies the payload as bulk INSERT OR REPLACE into
+ * its local catalog_* tables.
+ *
+ * Why JSON and not SQLite? PowerSync owns the client's SQLite database at
+ * runtime; we can't swap or attach arbitrary SQLite files into it. A JSON
+ * payload is the portable interchange format that fits into our existing
+ * delta application path. Trade-off: the snapshot is larger on disk than a
+ * SQLite file would be, but gzipped the difference is ~1.2x.
+ */
 export async function buildSnapshot(): Promise<string | null> {
   if (!config.forceSnapshot && !(await shouldRegenerate())) {
     return null;
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const tmpDir = join(tmpdir(), `spellkeep-catalog-${Date.now()}`);
-  mkdirSync(tmpDir, { recursive: true });
-  const dbPath = join(tmpDir, `catalog-${today}.sqlite`);
 
-  try {
-    const db = new Database(dbPath);
-    try {
-      db.pragma('journal_mode = WAL');
-      db.pragma('synchronous = NORMAL');
+  const cards = await fetchAllCards();
+  const sets = await fetchAllSets();
 
-      createSchema(db);
-      await populateCards(db);
-      await populateSets(db);
+  const payload = {
+    version: today,
+    generated_at: new Date().toISOString(),
+    cards,
+    sets,
+  };
 
-      db.pragma('wal_checkpoint(TRUNCATE)');
-      db.exec('VACUUM');
-    } finally {
-      db.close();
-    }
+  const json = JSON.stringify(payload);
+  const gz = gzipSync(Buffer.from(json, 'utf-8'));
 
-    const raw = readFileSync(dbPath);
-    const gz = gzipSync(raw);
-
-    const objectPath = `${today}.sqlite.gz`;
-    const { error } = await supabase.storage
-      .from(SNAPSHOTS_BUCKET)
-      .upload(objectPath, gz, {
-        contentType: 'application/octet-stream',
-        cacheControl: '2592000, immutable',
-        upsert: true,
-      });
-    if (error) throw new Error(`snapshot upload failed: ${error.message}`);
-
-    const { data: pub } = supabase.storage.from(SNAPSHOTS_BUCKET).getPublicUrl(objectPath);
-    const snapshotUrl = pub.publicUrl;
-
-    await patchDeltasIndex({
-      snapshot_version: today,
-      snapshot_url: snapshotUrl,
-      snapshot_raw_bytes: raw.byteLength,
-      snapshot_gz_bytes: gz.byteLength,
+  const objectPath = `${today}.json.gz`;
+  const { error } = await supabase.storage
+    .from(SNAPSHOTS_BUCKET)
+    .upload(objectPath, gz, {
+      contentType: 'application/json',
+      cacheControl: '2592000, immutable',
+      upsert: true,
     });
+  if (error) throw new Error(`snapshot upload failed: ${error.message}`);
 
-    console.log(`[catalog-sync] snapshot: ${raw.byteLength} bytes raw, ${gz.byteLength} bytes gz`);
-    return snapshotUrl;
-  } finally {
-    rmSync(tmpDir, { recursive: true, force: true });
-  }
+  const { data: pub } = supabase.storage.from(SNAPSHOTS_BUCKET).getPublicUrl(objectPath);
+  const snapshotUrl = pub.publicUrl;
+
+  await patchDeltasIndex({
+    snapshot_version: today,
+    snapshot_url: snapshotUrl,
+    snapshot_raw_bytes: json.length,
+    snapshot_gz_bytes: gz.byteLength,
+    snapshot_card_count: cards.length,
+    snapshot_set_count: sets.length,
+  });
+
+  console.log(`[catalog-sync] snapshot: ${cards.length} cards, ${sets.length} sets, ${gz.byteLength} bytes gz`);
+  return snapshotUrl;
 }
 
 async function shouldRegenerate(): Promise<boolean> {
@@ -92,75 +83,20 @@ async function shouldRegenerate(): Promise<boolean> {
   if (!data || data.length === 0) return true;
 
   const latest = data
-    .filter((f) => f.name.endsWith('.sqlite.gz'))
+    .filter((f) => f.name.endsWith('.json.gz'))
     .sort((a, b) => (a.name < b.name ? 1 : -1))[0];
 
   if (!latest) return true;
 
-  const dateStr = latest.name.replace('.sqlite.gz', '');
+  const dateStr = latest.name.replace('.json.gz', '');
   const ageMs = Date.now() - new Date(dateStr).getTime();
   const ageDays = ageMs / 86400000;
   return ageDays >= SNAPSHOT_REFRESH_DAYS;
 }
 
-function createSchema(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE cards (
-      id TEXT PRIMARY KEY,
-      scryfall_id TEXT NOT NULL UNIQUE,
-      oracle_id TEXT,
-      name TEXT NOT NULL,
-      mana_cost TEXT,
-      cmc REAL,
-      type_line TEXT,
-      colors TEXT,
-      color_identity TEXT,
-      rarity TEXT,
-      set_code TEXT,
-      set_name TEXT,
-      collector_number TEXT,
-      image_uri_small TEXT,
-      image_uri_normal TEXT,
-      price_usd REAL,
-      price_usd_foil REAL,
-      price_eur REAL,
-      price_eur_foil REAL,
-      legalities TEXT,
-      released_at TEXT,
-      is_legendary INTEGER,
-      layout TEXT,
-      updated_at TEXT
-    );
-    CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);
-    CREATE INDEX idx_cards_name ON cards(name);
-    CREATE INDEX idx_cards_set_code ON cards(set_code);
-    CREATE INDEX idx_cards_oracle_id ON cards(oracle_id);
-    CREATE INDEX idx_cards_name_collector ON cards(name, collector_number);
-    CREATE INDEX idx_cards_set_collector ON cards(set_code, collector_number);
-
-    CREATE TABLE sets (
-      code TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      set_type TEXT,
-      released_at TEXT,
-      card_count INTEGER,
-      icon_svg_uri TEXT
-    );
-    CREATE INDEX idx_sets_name ON sets(name);
-  `);
-}
-
-async function populateCards(db: Database.Database) {
-  const cols = LIVE_CARD_COLUMNS.join(', ');
-  const placeholders = LIVE_CARD_COLUMNS.map(() => '?').join(', ');
-  const insert = db.prepare(`INSERT OR REPLACE INTO cards (${cols}) VALUES (${placeholders})`);
-
-  const insertMany = db.transaction((rows: any[]) => {
-    for (const row of rows) {
-      insert.run(...LIVE_CARD_COLUMNS.map((c) => serialize(row[c])));
-    }
-  });
-
+async function fetchAllCards(): Promise<any[]> {
+  const cols = LIVE_CARD_COLUMNS.join(',');
+  const all: any[] = [];
   let from = 0;
   while (true) {
     const { data, error } = await supabase
@@ -170,29 +106,17 @@ async function populateCards(db: Database.Database) {
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`snapshot cards fetch failed: ${error.message}`);
     if (!data || data.length === 0) break;
-    insertMany(data);
+    all.push(...data);
     from += data.length;
     if (data.length < PAGE) break;
   }
+  return all;
 }
 
-async function populateSets(db: Database.Database) {
-  const cols = SET_COLUMNS.join(', ');
-  const placeholders = SET_COLUMNS.map(() => '?').join(', ');
-  const insert = db.prepare(`INSERT OR REPLACE INTO sets (${cols}) VALUES (${placeholders})`);
-  const { data, error } = await supabase.from('sets').select(cols);
+async function fetchAllSets(): Promise<any[]> {
+  const { data, error } = await supabase.from('sets').select(SET_COLUMNS.join(','));
   if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
-  const insertMany = db.transaction((rows: any[]) => {
-    for (const row of rows) insert.run(...SET_COLUMNS.map((c) => serialize(row[c])));
-  });
-  insertMany(data ?? []);
-}
-
-function serialize(value: unknown): string | number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (typeof value === 'object') return JSON.stringify(value);
-  return value as string | number;
+  return data ?? [];
 }
 
 async function patchDeltasIndex(patch: Record<string, unknown>): Promise<void> {

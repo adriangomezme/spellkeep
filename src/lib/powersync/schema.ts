@@ -72,6 +72,15 @@ const profiles = new Table({
   updated_at: column.text,
 });
 
+const collection_folders = new Table({
+  user_id: column.text,
+  name: column.text,
+  type: column.text,
+  color: column.text,
+  created_at: column.text,
+  updated_at: column.text,
+}, { indexes: { user_id: ['user_id'] } });
+
 const collections = new Table({
   user_id: column.text,
   name: column.text,
@@ -79,9 +88,11 @@ const collections = new Table({
   description: column.text,
   is_public: column.integer,
   share_token: column.text,
+  folder_id: column.text,
+  color: column.text,
   created_at: column.text,
   updated_at: column.text,
-}, { indexes: { user_id: ['user_id'] } });
+}, { indexes: { user_id: ['user_id'], folder_id: ['folder_id'] } });
 
 const collection_cards = new Table({
   collection_id: column.text,
@@ -90,6 +101,7 @@ const collection_cards = new Table({
   quantity_normal: column.integer,
   quantity_foil: column.integer,
   quantity_etched: column.integer,
+  purchase_price: column.real,
   tags: column.text,             // JSON array stored as text
   notes: column.text,
   added_at: column.text,
@@ -143,6 +155,77 @@ const deck_cards = new Table({
   }
 });
 
+// ============================================================
+// Catalog (local-only, populated from snapshot + daily deltas)
+// ============================================================
+// These tables mirror the global MTG catalog and are NOT synced via
+// PowerSync. They're refreshed from the catalog-sync worker's
+// snapshot/delta artifacts on app startup.
+
+const catalog_cards = new Table({
+  id: column.text,                // Supabase cards.id UUID (for collection_cards refs)
+  scryfall_id: column.text,
+  oracle_id: column.text,
+  name: column.text,
+  mana_cost: column.text,
+  cmc: column.real,
+  type_line: column.text,
+  colors: column.text,            // JSON array
+  color_identity: column.text,    // JSON array
+  rarity: column.text,
+  set_code: column.text,
+  set_name: column.text,
+  collector_number: column.text,
+  image_uri_small: column.text,
+  image_uri_normal: column.text,
+  price_usd: column.real,
+  price_usd_foil: column.real,
+  price_eur: column.real,
+  price_eur_foil: column.real,
+  legalities: column.text,        // JSON object
+  released_at: column.text,
+  is_legendary: column.integer,   // 0/1
+  layout: column.text,
+  updated_at: column.text,
+}, {
+  localOnly: true,
+  indexes: {
+    scryfall_id: ['scryfall_id'],
+    oracle_id: ['oracle_id'],
+    name: ['name'],
+    set_code: ['set_code'],
+    name_collector: ['name', 'collector_number'],
+    set_collector: ['set_code', 'collector_number'],
+  }
+});
+
+const catalog_sets = new Table({
+  code: column.text,
+  name: column.text,
+  set_type: column.text,
+  released_at: column.text,
+  card_count: column.integer,
+  icon_svg_uri: column.text,
+}, {
+  localOnly: true,
+  indexes: { code: ['code'] }
+});
+
+// Single-row key/value store for catalog sync state.
+// keys: 'snapshot_version', 'last_delta_version', 'last_sync_at', 'sync_status'
+const catalog_meta = new Table({
+  key: column.text,
+  value: column.text,
+  updated_at: column.text,
+}, {
+  localOnly: true,
+  indexes: { key: ['key'] }
+});
+
+// ============================================================
+// Scan history (user-scoped, synced)
+// ============================================================
+
 const scan_history = new Table({
   user_id: column.text,
   card_id: column.text,
@@ -161,18 +244,26 @@ export const AppSchema = new Schema({
   sets,
   cards,
   profiles,
+  collection_folders,
   collections,
   collection_cards,
   deck_folders,
   decks,
   deck_cards,
   scan_history,
+  catalog_cards,
+  catalog_sets,
+  catalog_meta,
 });
 
 export type Database = (typeof AppSchema)['types'];
 export type CardRecord = Database['cards'];
 export type SetRecord = Database['sets'];
+export type CollectionFolderRecord = Database['collection_folders'];
 export type CollectionRecord = Database['collections'];
 export type CollectionCardRecord = Database['collection_cards'];
 export type DeckRecord = Database['decks'];
 export type DeckCardRecord = Database['deck_cards'];
+export type CatalogCardRecord = Database['catalog_cards'];
+export type CatalogSetRecord = Database['catalog_sets'];
+export type CatalogMetaRecord = Database['catalog_meta'];
