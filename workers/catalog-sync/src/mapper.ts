@@ -9,7 +9,7 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
 
   return {
     scryfall_id: card.id,
-    oracle_id: card.oracle_id,
+    oracle_id: card.oracle_id ?? faces?.[0]?.oracle_id ?? null,
     name: card.name,
     mana_cost: mainFace.mana_cost ?? card.mana_cost ?? null,
     cmc: card.cmc ?? 0,
