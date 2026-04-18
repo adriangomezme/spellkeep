@@ -97,18 +97,31 @@ async function shouldRegenerate(): Promise<boolean> {
 async function fetchAllCards(): Promise<any[]> {
   const cols = LIVE_CARD_COLUMNS.join(',');
   const all: any[] = [];
-  let from = 0;
+
+  // Keyset pagination: each page selects rows strictly greater than the last
+  // seen scryfall_id. This stays O(log n) per page via the scryfall_id unique
+  // index, whereas .range(from, to) uses OFFSET which degrades to O(n) and
+  // trips the 30s statement timeout around page ~100.
+  let lastSeen: string | null = null;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('cards')
       .select(cols)
       .order('scryfall_id', { ascending: true })
-      .range(from, from + PAGE - 1);
+      .limit(PAGE);
+    if (lastSeen !== null) query = query.gt('scryfall_id', lastSeen);
+
+    const { data, error } = await query;
     if (error) throw new Error(`snapshot cards fetch failed: ${error.message}`);
     if (!data || data.length === 0) break;
+
     all.push(...data);
-    from += data.length;
+    lastSeen = (data[data.length - 1] as any).scryfall_id;
+
     if (data.length < PAGE) break;
+    if (all.length % 20000 === 0) {
+      console.log(`[catalog-sync] snapshot fetched ${all.length} cards so far`);
+    }
   }
   return all;
 }
