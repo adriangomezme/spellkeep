@@ -1,0 +1,55 @@
+name: catalog-sync
+
+on:
+  schedule:
+    # Runs daily at 06:00 UTC. Scryfall publishes fresh bulk data around 09:00 UTC,
+    # so our first production schedule will shift to match once we confirm cadence.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_snapshot:
+        description: 'Force snapshot regeneration (true/false)'
+        required: false
+        default: 'false'
+      skip_snapshot:
+        description: 'Skip snapshot build (true/false)'
+        required: false
+        default: 'false'
+      skip_delta:
+        description: 'Skip delta build (true/false)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: workers/catalog-sync
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: workers/catalog-sync/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run catalog sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FORCE_SNAPSHOT: ${{ github.event.inputs.force_snapshot || 'false' }}
+          SKIP_SNAPSHOT: ${{ github.event.inputs.skip_snapshot || 'false' }}
+          SKIP_DELTA: ${{ github.event.inputs.skip_delta || 'false' }}
+        run: npm start

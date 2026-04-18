@@ -1,0 +1,26 @@
+{
+  "name": "@spellkeep/catalog-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Daily worker that mirrors Scryfall bulk data into Supabase and publishes snapshot + delta artifacts to Storage.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "better-sqlite3": "^12.2.0",
+    "stream-json": "^1.9.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "@types/stream-json": "^1.7.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
