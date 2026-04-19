@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { View, FlatList, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,12 +24,21 @@ export default function SearchScreen() {
     clear,
   } = useCardSearch();
 
-  function handleCardPress(card: ScryfallCard) {
+  // Stable identity for the memoised CardListItem — recreating this on every
+  // render would defeat the memo and force 175 rows to re-render on keystroke.
+  const handleCardPress = useCallback((card: ScryfallCard) => {
     router.push({
       pathname: '/card/[id]',
       params: { id: card.id, cardJson: JSON.stringify(card) },
     });
-  }
+  }, [router]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: ScryfallCard }) => (
+      <CardListItem card={item} onPress={handleCardPress} />
+    ),
+    [handleCardPress]
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -60,12 +70,15 @@ export default function SearchScreen() {
       <FlatList
         data={results}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <CardListItem card={item} onPress={handleCardPress} />
-        )}
+        renderItem={renderItem}
         contentContainerStyle={styles.list}
         onEndReached={hasMore ? loadMore : undefined}
         onEndReachedThreshold={0.3}
+        initialNumToRender={12}
+        windowSize={7}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews={true}
         ListEmptyComponent={
           !isLoading && query.length >= 2 ? (
             <View style={styles.emptyContainer}>

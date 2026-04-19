@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { ScryfallCard, getCardImageUri, formatPrice } from '../lib/scryfall';
@@ -33,7 +34,7 @@ function ColorDots({ colors: cardColors }: { colors: string[] }) {
   );
 }
 
-export function CardListItem({ card, onPress }: Props) {
+function CardListItemInner({ card, onPress }: Props) {
   const imageUri = getCardImageUri(card, 'small');
 
   return (
@@ -63,6 +64,12 @@ export function CardListItem({ card, onPress }: Props) {
     </TouchableOpacity>
   );
 }
+
+export const CardListItem = memo(CardListItemInner, (prev, next) => (
+  prev.card.id === next.card.id &&
+  prev.card.prices?.usd === next.card.prices?.usd &&
+  prev.onPress === next.onPress
+));
 
 const styles = StyleSheet.create({
   container: {
