@@ -2,7 +2,13 @@ import { streamBulkCards } from '../scryfall.ts';
 import { upsertCards } from '../db.ts';
 import { mapScryfallCard } from '../mapper.ts';
 
-const BATCH_SIZE = 500;
+// Keep batches small enough that each INSERT ... ON CONFLICT UPDATE with
+// all secondary indexes (name COLLATE NOCASE, set_code, oracle_id, GIN on
+// color_identity, partial edhrec_rank, etc.) completes well under Supabase's
+// ~30s statement timeout. 200 rows × ~9 index maintenance ops per row fits
+// comfortably; 500 started tripping the timeout around the 90k-row mark
+// once the table had 100k+ rows.
+const BATCH_SIZE = 200;
 // Scryfall includes digital-only printings (Arena, MTGO) in default_cards.
 // Our catalog is for paper play, so we filter them out.
 const PAPER_ONLY = true;
