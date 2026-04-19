@@ -240,13 +240,9 @@ function rowToScryfallCard(row: any): ScryfallCard {
     mana_cost: row.mana_cost ?? undefined,
     cmc: row.cmc ?? 0,
     type_line: row.type_line ?? '',
-    oracle_text: row.oracle_text ?? undefined,
     colors: colors ?? undefined,
     color_identity: colorIdentity ?? [],
     keywords: [],
-    power: row.power ?? undefined,
-    toughness: row.toughness ?? undefined,
-    loyalty: row.loyalty ?? undefined,
     rarity: row.rarity ?? '',
     set: row.set_code ?? '',
     set_name: row.set_name ?? '',
@@ -266,7 +262,11 @@ function rowToScryfallCard(row: any): ScryfallCard {
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },
-    legalities: {}, // not shipped in the snapshot — fetch from Supabase on-demand if/when deck-validating
+    // oracle_text, power, toughness, loyalty, legalities, keywords, flavor_text
+    // and artist are deliberately NOT in the local snapshot — they're fetched
+    // in the background when the card detail screen opens. Offline detail
+    // renders with these fields empty; online backfills silently.
+    legalities: {},
     released_at: row.released_at ?? '',
     layout: row.layout ?? '',
   };

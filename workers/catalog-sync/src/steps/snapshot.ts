@@ -14,9 +14,10 @@ const PAGE = 1000;
 const SNAPSHOT_REFRESH_DAYS = 7;
 
 // Keep in lockstep with the client-side catalog schema.
-// Intentionally excluded (rare flows, fetched on-demand from Supabase):
-// legalities, keywords, artist, flavor_text, produced_mana,
-// image_uri_large, image_uri_art_crop.
+// Intentionally excluded — fetched on-demand from Supabase when the card
+// detail screen opens: oracle_text, power, toughness, loyalty, legalities,
+// keywords, artist, flavor_text, produced_mana, image_uri_large,
+// image_uri_art_crop.
 const CARD_COLUMNS = [
   'id',
   'scryfall_id',
@@ -26,12 +27,8 @@ const CARD_COLUMNS = [
   'mana_cost',
   'cmc',
   'type_line',
-  'oracle_text',
   'colors',
   'color_identity',
-  'power',
-  'toughness',
-  'loyalty',
   'rarity',
   'set_code',
   'set_name',
@@ -158,12 +155,8 @@ function createSchema(db: Database.Database) {
       mana_cost TEXT,
       cmc REAL,
       type_line TEXT,
-      oracle_text TEXT,
       colors TEXT,
       color_identity TEXT,
-      power TEXT,
-      toughness TEXT,
-      loyalty TEXT,
       rarity TEXT,
       set_code TEXT,
       set_name TEXT,
