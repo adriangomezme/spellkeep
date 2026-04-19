@@ -81,18 +81,34 @@ export async function autocompleteNames(prefix: string, limit = 20): Promise<str
 }
 
 /**
- * Fuzzy search by name. Returns every matching printing (not distinct) so
- * callers mirror Scryfall's `unique=prints` default and can let the user
- * pick the exact edition they want — same behaviour as Scryfall's website.
+ * Fuzzy search by name with Scryfall-parity defaults:
+ *   - unique=art  → one printing per unique illustration_id, keeping the
+ *     newest printing for each illustration.
+ *   - order=edhrec → sort by EDHREC popularity rank (lowest rank first,
+ *     nulls pushed to the bottom).
+ *
+ * A card like Lightning Bolt has ~15 unique illustrations across 80+
+ * printings; this surfaces those 15 variants, most-played first.
  */
 export async function searchByName(query: string, limit = 175): Promise<ScryfallCard[]> {
   if (!query || query.length < 2) return [];
   return queryMany(
-    `SELECT * FROM cards
-     WHERE name LIKE ? COLLATE NOCASE
-     ORDER BY name ASC, released_at DESC
+    `SELECT c.* FROM cards c
+     INNER JOIN (
+       SELECT illustration_id, MAX(released_at) as latest
+       FROM cards
+       WHERE name LIKE ? COLLATE NOCASE AND illustration_id IS NOT NULL
+       GROUP BY illustration_id
+     ) latest_art
+       ON c.illustration_id = latest_art.illustration_id
+      AND (c.released_at = latest_art.latest OR latest_art.latest IS NULL)
+     WHERE c.name LIKE ? COLLATE NOCASE
+     ORDER BY
+       CASE WHEN c.edhrec_rank IS NULL THEN 1 ELSE 0 END,
+       c.edhrec_rank ASC,
+       c.name ASC
      LIMIT ?`,
-    [`%${query}%`, limit]
+    [`%${query}%`, `%${query}%`, limit]
   );
 }
 

@@ -40,6 +40,8 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
     produced_mana: card.produced_mana ?? [],
     layout: card.layout,
     card_faces: faces ?? null,
+    edhrec_rank: card.edhrec_rank ?? null,
+    illustration_id: card.illustration_id ?? faces?.[0]?.illustration_id ?? null,
     updated_at: now,
   };
 }

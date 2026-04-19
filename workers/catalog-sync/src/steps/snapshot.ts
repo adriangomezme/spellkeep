@@ -14,13 +14,14 @@ const PAGE = 1000;
 const SNAPSHOT_REFRESH_DAYS = 7;
 
 // Keep in lockstep with the client-side catalog schema.
-// Intentionally excluded (rare flows, fetched on-demand from Supabase when
-// needed): legalities, keywords, artist, flavor_text, produced_mana,
+// Intentionally excluded (rare flows, fetched on-demand from Supabase):
+// legalities, keywords, artist, flavor_text, produced_mana,
 // image_uri_large, image_uri_art_crop.
 const CARD_COLUMNS = [
   'id',
   'scryfall_id',
   'oracle_id',
+  'illustration_id',
   'name',
   'mana_cost',
   'cmc',
@@ -45,6 +46,7 @@ const CARD_COLUMNS = [
   'is_legendary',
   'layout',
   'card_faces',
+  'edhrec_rank',
   'updated_at',
 ] as const;
 
@@ -151,6 +153,7 @@ function createSchema(db: Database.Database) {
       id TEXT PRIMARY KEY,
       scryfall_id TEXT NOT NULL UNIQUE,
       oracle_id TEXT,
+      illustration_id TEXT,
       name TEXT NOT NULL,
       mana_cost TEXT,
       cmc REAL,
@@ -175,14 +178,17 @@ function createSchema(db: Database.Database) {
       is_legendary INTEGER,
       layout TEXT,
       card_faces TEXT,
+      edhrec_rank INTEGER,
       updated_at TEXT
     );
     CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);
     CREATE INDEX idx_cards_oracle_id ON cards(oracle_id);
+    CREATE INDEX idx_cards_illustration_id ON cards(illustration_id);
     CREATE INDEX idx_cards_name ON cards(name COLLATE NOCASE);
     CREATE INDEX idx_cards_set_code ON cards(set_code);
     CREATE INDEX idx_cards_name_collector ON cards(name, collector_number);
     CREATE INDEX idx_cards_set_collector ON cards(set_code, collector_number);
+    CREATE INDEX idx_cards_edhrec_rank ON cards(edhrec_rank) WHERE edhrec_rank IS NOT NULL;
 
     CREATE TABLE sets (
       code TEXT PRIMARY KEY,
