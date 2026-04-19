@@ -382,11 +382,11 @@ export default function OwnedCardsScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Owned Cards</Text>
-          {uniqueCards > 0 && (
-            <Text style={styles.headerSubtitle}>
-              {totalCards.toLocaleString()} cards · {uniqueCards.toLocaleString()} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          )}
+          <Text style={styles.headerSubtitle}>
+            {uniqueCards > 0
+              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '—'}
+          </Text>
         </View>
         <View style={{ width: 28 }} />
       </View>

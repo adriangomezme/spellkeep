@@ -430,11 +430,15 @@ export default function CollectionDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-          {uniqueCards > 0 && (
-            <Text style={styles.headerSubtitle}>
-              {totalCards.toLocaleString()} cards · {uniqueCards.toLocaleString()} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          )}
+          {/* Always render the subtitle so the header height is reserved
+              from the first frame. Before the stats resolve we show an
+              em-dash placeholder — keeps layout stable and avoids the
+              "ghost appearance" blink when totals arrive ~1 s later. */}
+          <Text style={styles.headerSubtitle}>
+            {uniqueCards > 0
+              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '—'}
+          </Text>
         </View>
         <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />

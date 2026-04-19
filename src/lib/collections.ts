@@ -226,17 +226,6 @@ export async function fetchCollectionCardsStreamed(
   const initialPageSize = opts?.initialPageSize ?? pageSize;
   const concurrency = opts?.concurrency ?? 6;
 
-  // Count the collection size cheaply so we can fan out pages without
-  // overshooting. `head: true` skips the body; we only want the Content-
-  // Range total.
-  const { count } = await supabase
-    .from('collection_cards')
-    .select('id', { count: 'exact', head: true })
-    .eq('collection_id', collectionId);
-
-  const total = count ?? 0;
-  if (total === 0) return;
-
   // Stable ordering so pages don't overlap or skip rows.
   const fetchRange = async (from: number, to: number) => {
     const { data, error } = await supabase
@@ -248,32 +237,59 @@ export async function fetchCollectionCardsStreamed(
       .range(from, to);
     if (error) throw new Error(`Failed to page cards: ${error.message}`);
     if (data && data.length > 0) onPage(data);
+    return data?.length ?? 0;
   };
 
-  // Small initial page so the FlatList viewport has content as soon as
-  // possible — the rest streams in after.
-  await fetchRange(0, Math.min(initialPageSize, total) - 1);
-  if (total <= initialPageSize) return;
+  // Paint the initial page immediately regardless of whether we can get
+  // a count.
+  const firstCount = await fetchRange(0, initialPageSize - 1);
+  if (firstCount < initialPageSize) return;
 
-  // Remaining rows paginated by `pageSize`, starting right after the
-  // initial page so we don't re-fetch or skip any rows.
-  const remainingRows = total - initialPageSize;
-  const pages = Math.ceil(remainingRows / pageSize);
+  // Count the collection size to fan out pages in parallel. `exact` is
+  // accurate; if it trips Supabase's statement_timeout on very large
+  // collections, fall through to `estimated` (pg_class.reltuples — fast
+  // but approximate). If both fail, drop to sequential pagination.
+  let total: number | null = null;
+  const tryCount = async (mode: 'exact' | 'estimated') => {
+    const { count, error } = await supabase
+      .from('collection_cards')
+      .select('id', { count: mode, head: true })
+      .eq('collection_id', collectionId);
+    if (error) return null;
+    return count ?? null;
+  };
+  total = await tryCount('exact');
+  if (total == null) total = await tryCount('estimated');
+
   const startOffset = initialPageSize;
 
-  let cursor = 0;
-  async function worker() {
-    while (true) {
-      const idx = cursor++;
-      if (idx >= pages) return;
-      const from = startOffset + idx * pageSize;
-      const to = from + pageSize - 1;
-      await fetchRange(from, to);
+  if (total != null && total > initialPageSize) {
+    const remainingRows = total - initialPageSize;
+    const pages = Math.ceil(remainingRows / pageSize);
+
+    let cursor = 0;
+    async function worker() {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= pages) return;
+        const from = startOffset + idx * pageSize;
+        const to = from + pageSize - 1;
+        await fetchRange(from, to);
+      }
     }
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, pages) }, worker)
+    );
+    return;
   }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, pages) }, worker)
-  );
+
+  // No count available — page sequentially until empty.
+  let offset = startOffset;
+  while (true) {
+    const got = await fetchRange(offset, offset + pageSize - 1);
+    if (got < pageSize) break;
+    offset += pageSize;
+  }
 }
 
 /**
@@ -293,14 +309,6 @@ export async function fetchCollectionCardsInStreamed(
   const initialPageSize = opts?.initialPageSize ?? pageSize;
   const concurrency = opts?.concurrency ?? 6;
 
-  const { count } = await supabase
-    .from('collection_cards')
-    .select('id', { count: 'exact', head: true })
-    .in('collection_id', collectionIds);
-
-  const total = count ?? 0;
-  if (total === 0) return;
-
   const fetchRange = async (from: number, to: number) => {
     const { data, error } = await supabase
       .from('collection_cards')
@@ -311,28 +319,61 @@ export async function fetchCollectionCardsInStreamed(
       .range(from, to);
     if (error) throw new Error(`Failed to page cards: ${error.message}`);
     if (data && data.length > 0) onPage(data);
+    return data?.length ?? 0;
   };
 
-  await fetchRange(0, Math.min(initialPageSize, total) - 1);
-  if (total <= initialPageSize) return;
+  // Always paint the initial page first so the UI has something to show.
+  const firstCount = await fetchRange(0, initialPageSize - 1);
+  if (firstCount < initialPageSize) return;
 
-  const remainingRows = total - initialPageSize;
-  const pages = Math.ceil(remainingRows / pageSize);
+  // Try to learn the total up-front so we can fan out pages in parallel.
+  // Owned-view counts span many binders and have been timing out on
+  // `count: 'exact'` for large collections (>50k rows) — fall through to
+  // the estimated count (uses pg_class.reltuples, effectively free).
+  // If both fail we still work, just serially: keep pulling pages until
+  // we get a short one.
+  let total: number | null = null;
+  const tryCount = async (mode: 'exact' | 'estimated') => {
+    const { count, error } = await supabase
+      .from('collection_cards')
+      .select('id', { count: mode, head: true })
+      .in('collection_id', collectionIds);
+    if (error) return null;
+    return count ?? null;
+  };
+  total = await tryCount('exact');
+  if (total == null) total = await tryCount('estimated');
+
   const startOffset = initialPageSize;
 
-  let cursor = 0;
-  async function worker() {
-    while (true) {
-      const idx = cursor++;
-      if (idx >= pages) return;
-      const from = startOffset + idx * pageSize;
-      const to = from + pageSize - 1;
-      await fetchRange(from, to);
+  if (total != null && total > initialPageSize) {
+    const remainingRows = total - initialPageSize;
+    const pages = Math.ceil(remainingRows / pageSize);
+
+    let cursor = 0;
+    async function worker() {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= pages) return;
+        const from = startOffset + idx * pageSize;
+        const to = from + pageSize - 1;
+        await fetchRange(from, to);
+      }
     }
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, pages) }, worker)
+    );
+    return;
   }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, pages) }, worker)
-  );
+
+  // Fallback: no reliable count. Page sequentially until a short page
+  // signals end-of-data. Slower on huge collections but bulletproof.
+  let offset = startOffset;
+  while (true) {
+    const got = await fetchRange(offset, offset + pageSize - 1);
+    if (got < pageSize) break;
+    offset += pageSize;
+  }
 }
 
 /**
