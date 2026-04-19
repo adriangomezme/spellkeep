@@ -35,6 +35,7 @@ import {
   type OwnershipEntry,
   type OwnershipSummary,
 } from '../../src/lib/cardDetail';
+import { getSetIconSync } from '../../src/lib/catalog/catalogDb';
 import { CONDITIONS, type Condition, type Finish } from '../../src/lib/collection';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -123,7 +124,11 @@ export default function CardDetailScreen() {
   const [ownership, setOwnership] = useState<OwnershipSummary | null>(null);
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
   const [printsLoading, setPrintsLoading] = useState(false);
-  const [setIconUri, setSetIconUri] = useState<string | null>(null);
+  // Seed the set icon from the in-memory catalog cache so the glyph paints
+  // on first render instead of flashing in after the async fetch resolves.
+  const [setIconUri, setSetIconUri] = useState<string | null>(() =>
+    initialCard?.set ? getSetIconSync(initialCard.set) : null
+  );
   const [printSetIcons, setPrintSetIcons] = useState<Record<string, string>>({});
   const [printOwned, setPrintOwned] = useState<Record<string, number>>({});
   const [rulings, setRulings] = useState<ScryfallRuling[] | null>(null);
@@ -145,6 +150,14 @@ export default function CardDetailScreen() {
 
   useEffect(() => {
     if (!card?.set) return;
+    // Sync-first: the catalog keeps every icon URI in memory so the vast
+    // majority of opens hit this branch and paint instantly.
+    const syncHit = getSetIconSync(card.set);
+    if (syncHit) {
+      setSetIconUri(syncHit);
+      return;
+    }
+    // Fallback: brand-new sets not yet in the local catalog — one network hop.
     fetchSetIcon(card.set).then(setSetIconUri).catch(() => setSetIconUri(null));
   }, [card?.set]);
 

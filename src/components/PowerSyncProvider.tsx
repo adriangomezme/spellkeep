@@ -40,9 +40,24 @@ export function PowerSyncProvider({ children }: Props) {
 
       try {
         const { ensureCatalogFresh } = await import('../lib/catalog/catalogSync');
-        ensureCatalogFresh().catch((err) => {
-          console.error('Catalog sync error:', err);
-        });
+        ensureCatalogFresh()
+          .then(async () => {
+            // Warm expo-image's disk cache with every set glyph URL so
+            // the first detail-screen open doesn't visibly download the
+            // SVG. Small (1031 × ~3 KB SVG) and one-shot per catalog
+            // install.
+            try {
+              const { getAllSetIconUris } = await import('../lib/catalog/catalogDb');
+              const uris = getAllSetIconUris();
+              if (uris.length > 0) {
+                const { Image } = await import('expo-image');
+                Image.prefetch(uris, { cachePolicy: 'disk' }).catch(() => {});
+              }
+            } catch {}
+          })
+          .catch((err) => {
+            console.error('Catalog sync error:', err);
+          });
       } catch (err) {
         console.error('Catalog sync boot error:', err);
       }

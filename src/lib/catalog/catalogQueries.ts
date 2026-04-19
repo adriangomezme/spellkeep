@@ -291,6 +291,7 @@ function rowToScryfallCard(row: any): ScryfallCard {
         }
       : undefined,
     card_faces: cardFaces ?? undefined,
+    artist: row.artist ?? undefined,
     prices: {
       usd: row.price_usd != null ? String(row.price_usd) : undefined,
       usd_foil: row.price_usd_foil != null ? String(row.price_usd_foil) : undefined,

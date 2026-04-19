@@ -16,7 +16,7 @@ const SNAPSHOT_REFRESH_DAYS = 7;
 // Keep in lockstep with the client-side catalog schema.
 // Intentionally excluded — fetched on-demand from Supabase when the card
 // detail screen opens: oracle_text, power, toughness, loyalty, legalities,
-// keywords, artist, flavor_text, produced_mana, image_uri_large,
+// keywords, flavor_text, produced_mana, image_uri_large,
 // image_uri_art_crop.
 const CARD_COLUMNS = [
   'id',
@@ -44,6 +44,7 @@ const CARD_COLUMNS = [
   'layout',
   'card_faces',
   'edhrec_rank',
+  'artist',
   'updated_at',
 ] as const;
 
@@ -172,6 +173,7 @@ function createSchema(db: Database.Database) {
       layout TEXT,
       card_faces TEXT,
       edhrec_rank INTEGER,
+      artist TEXT,
       updated_at TEXT
     );
     CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);

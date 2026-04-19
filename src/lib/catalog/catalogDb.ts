@@ -19,6 +19,19 @@ const CATALOG_DB_NAME = 'catalog.db';
 
 let connection: QuickSQLiteConnection | null = null;
 
+// In-memory cache of set code → icon_svg_uri, preloaded the moment the
+// catalog opens. Lets callers read icons synchronously and render the
+// set glyph on first paint — no async state transition, no blink.
+const setIconMap = new Map<string, string>();
+
+export function getSetIconSync(setCode: string): string | null {
+  return setIconMap.get(setCode.toLowerCase()) ?? null;
+}
+
+export function getAllSetIconUris(): string[] {
+  return Array.from(setIconMap.values());
+}
+
 export function openCatalog(): QuickSQLiteConnection {
   if (connection) return connection;
   connection = open(CATALOG_DB_NAME);
@@ -29,7 +42,23 @@ export function openCatalog(): QuickSQLiteConnection {
   connection.execute('PRAGMA query_only = ON;');
   connection.execute('PRAGMA cache_size = -64000;'); // ~64 MB page cache
 
+  // Fire-and-forget warm-up of the set-icon map so synchronous callers
+  // can render icons on first paint.
+  preloadSetIcons().catch(() => {});
+
   return connection;
+}
+
+async function preloadSetIcons(): Promise<void> {
+  if (!connection) return;
+  const res = await connection.execute('SELECT code, icon_svg_uri FROM sets');
+  const arr = (res as any)?.rows?._array ?? [];
+  setIconMap.clear();
+  for (const row of arr) {
+    if (row?.code && row?.icon_svg_uri) {
+      setIconMap.set((row.code as string).toLowerCase(), row.icon_svg_uri as string);
+    }
+  }
 }
 
 export function closeCatalog(): void {
@@ -40,6 +69,7 @@ export function closeCatalog(): void {
     // Already closed or never opened cleanly.
   }
   connection = null;
+  setIconMap.clear();
 }
 
 export function getCatalog(): QuickSQLiteConnection | null {
