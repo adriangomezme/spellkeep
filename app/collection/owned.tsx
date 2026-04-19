@@ -23,7 +23,9 @@ import {
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
-import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
+import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters, type SetInfo } from '../../src/components/collection/FilterSheet';
+import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
+import { OwnedLocationPicker, type OwnedLocation } from '../../src/components/collection/OwnedLocationPicker';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -85,7 +87,9 @@ export default function OwnedCardsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [serverStats, setServerStats] = useState<OwnedCardStats | null>(null);
+  const [overallStats, setOverallStats] = useState<OwnedCardStats | null>(null);
+  const [filteredStats, setFilteredStats] = useState<OwnedCardStats | null>(null);
+  const [allSets, setAllSets] = useState<SetInfo[]>([]);
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('grid-compact');
@@ -96,6 +100,20 @@ export default function OwnedCardsScreen() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+
+  // Edit flow: long-press a card → open binder picker (if >1 owns it) →
+  // open EditCollectionCardModal for the selected binder's row.
+  const [pendingEdit, setPendingEdit] = useState<OwnedRow | null>(null);
+  const [editEntry, setEditEntry] = useState<{
+    id: string;
+    condition: string;
+    quantity_normal: number;
+    quantity_foil: number;
+    quantity_etched: number;
+    cardName: string;
+    setName: string;
+    collectorNumber: string;
+  } | null>(null);
 
   // Debounce the search box so keystrokes don't each hit the server.
   useEffect(() => {
@@ -173,37 +191,106 @@ export default function OwnedCardsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, isFetchingMore, isLoading, rows.length, queryParams]);
 
-  const fetchStats = useCallback(async () => {
+  const fetchOverallStats = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const stats = await fetchOwnedCardStats(user.id);
-      setServerStats(stats);
+      setOverallStats(stats);
     } catch (err) {
-      // Stats error shouldn't block the list.
       console.error('Owned stats error:', err);
     }
   }, []);
 
+  // Filtered totals: server computes cards/unique/value matching the
+  // same search + filters the list is using, so the header reflects
+  // what the user is actually looking at.
+  const fetchFilteredStats = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_owned_cards_filtered_stats', {
+        p_search: queryParams.search,
+        p_filters: queryParams.filters as any,
+      });
+      if (error) {
+        setFilteredStats(null);
+        return;
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) {
+        setFilteredStats({
+          total_cards: Number(row.total_cards ?? 0),
+          unique_cards: Number(row.unique_cards ?? 0),
+          total_value: Number(row.total_value ?? 0),
+        });
+      }
+    } catch (err) {
+      console.error('Owned filtered stats error:', err);
+    }
+  }, [queryParams]);
+
+  // Full list of sets in the user's collection — used by the filter
+  // sheet so the picker always shows every set the user owns, not
+  // just the ones currently rendered. Cheap aggregate, loaded once.
+  const fetchAllSets = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_owned_available_sets');
+      if (error) {
+        setAllSets([]);
+        return;
+      }
+      setAllSets(
+        ((data ?? []) as Array<{ code: string; name: string; count: number }>)
+          .map((s) => ({ code: s.code, name: s.name ?? s.code, count: s.count }))
+      );
+    } catch (err) {
+      console.error('Owned sets error:', err);
+    }
+  }, []);
+
   // Any change in search/sort/filter resets pagination and refetches
-  // page 0. Stats are refetched independently so the header stays
-  // correct regardless of the filter.
+  // page 0 + the filtered totals. Overall stats are independent of the
+  // filter and reload on focus / pull-to-refresh only.
   useEffect(() => {
     loadFirstPage();
-  }, [loadFirstPage]);
+    fetchFilteredStats();
+  }, [loadFirstPage, fetchFilteredStats]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchStats();
+      fetchOverallStats();
+      fetchAllSets();
       loadFirstPage();
-    }, [fetchStats, loadFirstPage])
+      fetchFilteredStats();
+    }, [fetchOverallStats, fetchAllSets, loadFirstPage, fetchFilteredStats])
   );
 
   const onPullRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchStats();
+    fetchOverallStats();
+    fetchAllSets();
+    fetchFilteredStats();
     loadFirstPage();
-  }, [fetchStats, loadFirstPage]);
+  }, [fetchOverallStats, fetchAllSets, fetchFilteredStats, loadFirstPage]);
+
+  function handleLongPressEdit(row: OwnedRow) {
+    setPendingEdit(row);
+  }
+
+  function handlePickLocation(loc: OwnedLocation) {
+    if (!pendingEdit) return;
+    const row = pendingEdit;
+    setPendingEdit(null);
+    setEditEntry({
+      id: loc.id,
+      condition: row.condition,
+      quantity_normal: loc.quantity_normal,
+      quantity_foil: loc.quantity_foil,
+      quantity_etched: loc.quantity_etched,
+      cardName: row.name,
+      setName: row.set_name,
+      collectorNumber: row.collector_number,
+    });
+  }
 
   function handleCardPress(row: OwnedRow) {
     router.push({
@@ -233,10 +320,15 @@ export default function OwnedCardsScreen() {
     });
   }
 
-  // Available sets from currently loaded page — good enough for the
-  // filter sheet's UX; when the user filters by set, the server fetches
-  // a fresh result set for the full collection.
-  const availableSets = useMemo(() => {
+  const isFilterActive =
+    !!queryParams.search || countActiveFilters(filters) > 0;
+
+  // Filter sheet set picker:
+  //  - No search / filters: show ALL sets the user owns (server RPC).
+  //  - Filter active: show only sets present in the currently loaded
+  //    rows, so the picker matches what you're looking at.
+  const availableSets = useMemo<SetInfo[]>(() => {
+    if (!isFilterActive) return allSets;
     const map = new Map<string, { name: string; count: number }>();
     for (const r of rows) {
       const existing = map.get(r.set_code);
@@ -246,15 +338,15 @@ export default function OwnedCardsScreen() {
     return Array.from(map.entries())
       .map(([code, { name, count }]) => ({ code, name, count }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows]);
+  }, [isFilterActive, allSets, rows]);
 
-  // Header stats: the server RPCs give us the overall totals across the
-  // entire collection (not filtered). When the user has an active
-  // search / filter the totals below the title still show the full-
-  // collection numbers — the filter only narrows the list beneath.
-  const totalCards = serverStats?.total_cards ?? 0;
-  const uniqueCards = serverStats?.unique_cards ?? 0;
-  const displayValue = serverStats?.total_value ?? 0;
+  // Header stats: when a filter / search is active show the filtered
+  // totals from the server so the header matches the list below. When
+  // not active, show overall collection totals.
+  const activeStats = isFilterActive ? filteredStats : overallStats;
+  const totalCards = activeStats?.total_cards ?? 0;
+  const uniqueCards = activeStats?.unique_cards ?? 0;
+  const displayValue = activeStats?.total_value ?? 0;
 
   const isGrid = viewMode !== 'list';
 
@@ -291,6 +383,7 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.gridCompactCard}
         onPress={() => handleCardPress(item)}
+        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.7}
       >
         <Image
@@ -316,6 +409,7 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.gridCard}
         onPress={() => handleCardPress(item)}
+        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.7}
       >
         <View style={styles.gridImageWrap}>
@@ -358,6 +452,7 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.listCard}
         onPress={() => handleCardPress(item)}
+        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.6}
       >
         <Image
@@ -475,6 +570,33 @@ export default function OwnedCardsScreen() {
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}
+      />
+
+      {/* Edit flow: long-press a card → pick which binder (if >1) →
+          open EditCollectionCardModal for that binder's row. The
+          picker auto-selects when only one binder owns the card. */}
+      <OwnedLocationPicker
+        visible={pendingEdit !== null}
+        cardName={pendingEdit?.name ?? ''}
+        cardId={pendingEdit?.card_id ?? null}
+        condition={pendingEdit?.condition ?? null}
+        language={pendingEdit?.language ?? null}
+        onClose={() => setPendingEdit(null)}
+        onPick={handlePickLocation}
+      />
+
+      <EditCollectionCardModal
+        visible={editEntry !== null}
+        entry={editEntry}
+        onClose={() => setEditEntry(null)}
+        onSaved={() => {
+          setEditEntry(null);
+          // Refresh the row list and both stats buckets so the
+          // updated quantity shows up immediately.
+          loadFirstPage();
+          fetchOverallStats();
+          fetchFilteredStats();
+        }}
       />
     </View>
   );
