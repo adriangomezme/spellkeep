@@ -22,6 +22,7 @@ import {
   duplicateCollection,
   deleteCollection,
   deleteFolderWithContents,
+  emptyCollection,
   moveToFolder,
   type CollectionSummary,
   type CollectionType,
@@ -133,6 +134,26 @@ export default function CollectionHubScreen() {
     } else if (key === 'remove-from-folder' && actionTarget.kind === 'collection') {
       setActionTarget(null);
       moveToFolder(actionTarget.item.id, null).then(() => fetchAll()).catch(() => {});
+    } else if (key === 'empty' && actionTarget.kind === 'collection') {
+      const target = actionTarget.item as CollectionSummary;
+      setActionTarget(null);
+      const label = target.type === 'list' ? 'list' : 'binder';
+      Alert.alert(
+        `Empty this ${label}?`,
+        `All cards will be removed. The ${label} itself stays with its name and settings.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Empty',
+            style: 'destructive',
+            onPress: () => {
+              emptyCollection(target.id)
+                .then(() => fetchAll())
+                .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
+            },
+          },
+        ]
+      );
     } else if (key === 'delete') {
       const target = actionTarget;
       setActionTarget(null);

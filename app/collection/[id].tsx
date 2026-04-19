@@ -477,7 +477,6 @@ export default function CollectionDetailScreen() {
         itemType={(collectionType as 'binder' | 'list') ?? 'binder'}
         inFolder={!!collectionFolderId}
         onAction={(key) => {
-          console.log('[CollectionActions] tapped:', key);
           setShowActions(false);
           if (key === 'edit') setShowEditInfo(true);
           else if (key === 'merge') setShowMerge(true);
@@ -489,7 +488,6 @@ export default function CollectionDetailScreen() {
           } else if (key === 'duplicate') {
             duplicateCollection(id!).then(() => router.back()).catch(() => {});
           } else if (key === 'empty') {
-            console.log('[CollectionActions] firing empty alert for', id);
             const label = (collectionType as 'binder' | 'list') === 'list' ? 'list' : 'binder';
             Alert.alert(
               `Empty this ${label}?`,

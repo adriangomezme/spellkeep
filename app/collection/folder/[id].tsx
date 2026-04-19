@@ -17,6 +17,7 @@ import {
   deleteFolderWithContents,
   deleteCollection,
   duplicateCollection,
+  emptyCollection,
   moveToFolder,
   type CollectionSummary,
   type CollectionType,
@@ -107,6 +108,27 @@ export default function FolderDetailScreen() {
       setShowItemActions(false);
       setSelectedItem(null);
       moveToFolder(selectedItem.id, null).then(() => fetchContents()).catch(() => {});
+    } else if (key === 'empty') {
+      const item = selectedItem;
+      setShowItemActions(false);
+      setSelectedItem(null);
+      const label = item.type === 'list' ? 'list' : 'binder';
+      Alert.alert(
+        `Empty this ${label}?`,
+        `All cards will be removed. The ${label} itself stays with its name and settings.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Empty',
+            style: 'destructive',
+            onPress: () => {
+              emptyCollection(item.id)
+                .then(() => fetchContents())
+                .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
+            },
+          },
+        ]
+      );
     } else if (key === 'delete') {
       setShowItemActions(false);
       setSelectedItem(null);
