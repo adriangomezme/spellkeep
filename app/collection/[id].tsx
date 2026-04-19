@@ -181,21 +181,21 @@ export default function CollectionDetailScreen() {
         )
       `;
 
-      // If we have cached rows on screen, accumulate the refresh into a
-      // silent buffer and swap once fully loaded — prevents a mid-scroll
-      // flicker. Cold path (no cache) still paints progressively: first
-      // 100 rows in ~100 ms, subsequent 1k-row pages with concurrency 8.
+      // Paint the first page so the FlatList wakes up, then let later
+      // pages accumulate silently and swap to the full buffer at the
+      // end. Progressive appends during the fetch caused the list to
+      // visibly grow mid-search and mid-scroll — one atomic swap when
+      // streaming completes is stabler even though the loading state
+      // lasts a bit longer.
       const buffer: CollectionEntry[] = [];
       let firstPainted = !!cached;
       await fetchCollectionCardsStreamed(id, SELECT, (page) => {
         const typed = page as unknown as CollectionEntry[];
         buffer.push(...typed);
-        if (!cached) {
-          setEntries((prev) => [...prev, ...typed]);
-          if (!firstPainted) {
-            firstPainted = true;
-            setIsLoading(false);
-          }
+        if (!cached && !firstPainted) {
+          setEntries(typed);
+          firstPainted = true;
+          setIsLoading(false);
         }
       }, { initialPageSize: 100, concurrency: 8 });
 
@@ -430,14 +430,17 @@ export default function CollectionDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-          {/* Always render the subtitle so the header height is reserved
-              from the first frame. Before the stats resolve we show an
-              em-dash placeholder — keeps layout stable and avoids the
-              "ghost appearance" blink when totals arrive ~1 s later. */}
-          <Text style={styles.headerSubtitle}>
+          {/* Always render the subtitle so the header height is
+              reserved from the first frame. Before the stats resolve
+              we use opacity:0 with a placeholder string so the slot
+              takes its real vertical space but shows no visible
+              character — the numbers fade in cleanly when they land. */}
+          <Text
+            style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
+          >
             {uniqueCards > 0
               ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              : '—'}
+              : '\u00A0'}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

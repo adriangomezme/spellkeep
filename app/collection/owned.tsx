@@ -193,17 +193,22 @@ export default function OwnedCardsScreen() {
 
       const rawBuffer: CollectionEntry[] = [];
       const mergedMap = new Map<string, CollectionEntry>();
+      // Progressive setEntries on every page caused a nasty race with
+      // search/filter: the same card aggregated across binders could
+      // visibly change quantity as more pages landed (page 1 brings
+      // 1× from binder A, page 3 brings 2× from binder C → the row
+      // jumps from 1 to 3). To avoid that we paint the FIRST page only
+      // to get the FlatList alive, let later pages accumulate silently,
+      // and swap to the final merged view once streaming completes.
       let firstPainted = !!cached;
       await fetchCollectionCardsInStreamed(binderIds, SELECT, (page) => {
         const typed = page as unknown as CollectionEntry[];
         rawBuffer.push(...typed);
         for (const row of typed) mergeInto(mergedMap, row);
-        if (!cached) {
+        if (!cached && !firstPainted) {
           setEntries(Array.from(mergedMap.values()));
-          if (!firstPainted) {
-            firstPainted = true;
-            setIsLoading(false);
-          }
+          firstPainted = true;
+          setIsLoading(false);
         }
       }, { initialPageSize: 100, concurrency: 8 });
 
@@ -422,10 +427,12 @@ export default function OwnedCardsScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Owned Cards</Text>
-          <Text style={styles.headerSubtitle}>
+          <Text
+            style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
+          >
             {uniqueCards > 0
               ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              : '—'}
+              : '\u00A0'}
           </Text>
         </View>
         <View style={{ width: 28 }} />
