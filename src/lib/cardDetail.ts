@@ -31,13 +31,19 @@ export async function fetchCardExtras(scryfallId: string): Promise<CardExtras | 
   const cached = extrasCache.get(scryfallId);
   if (cached) return cached;
 
+  // Note: flavor_text isn't stored in our `cards` table (Scryfall bulk
+  // exposes it per-face for DFCs, not at the top level we sync). If we
+  // ever want it, it's a schema + worker mapper change.
   const { data, error } = await supabase
     .from('cards')
-    .select('oracle_text, power, toughness, loyalty, legalities, keywords, flavor_text, artist, produced_mana')
+    .select('oracle_text, power, toughness, loyalty, legalities, keywords, artist, produced_mana')
     .eq('scryfall_id', scryfallId)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    if (error) console.warn('[fetchCardExtras] failed:', error.message);
+    return null;
+  }
 
   const extras: CardExtras = {
     oracle_text: data.oracle_text ?? undefined,
@@ -46,7 +52,6 @@ export async function fetchCardExtras(scryfallId: string): Promise<CardExtras | 
     loyalty: data.loyalty ?? undefined,
     legalities: data.legalities ?? undefined,
     keywords: data.keywords ?? undefined,
-    flavor_text: data.flavor_text ?? undefined,
     artist: data.artist ?? undefined,
     produced_mana: data.produced_mana ?? undefined,
   };
