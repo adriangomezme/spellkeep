@@ -20,9 +20,13 @@ export type ImportHistoryEntry = {
   collectionId: string;
   collectionName: string;
   status: ImportHistoryStatus;
-  // Variant counts (matches the in-binder "unique" definition).
+  // Physical card quantities (sum of qty_normal + qty_foil + qty_etched).
   imported: number;
   updated: number;
+  // Distinct (print × finish) variants for the same buckets. Optional so
+  // entries written before variants were persisted still read cleanly.
+  imported_variants?: number;
+  updated_variants?: number;
   failedCount: number;
   // First N names that failed to resolve — useful to audit without bloating
   // storage on huge imports.

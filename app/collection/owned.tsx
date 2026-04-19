@@ -18,7 +18,7 @@ import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
 import {
   fetchOwnedCardStats,
-  fetchAllCollectionCardsIn,
+  fetchCollectionCardsInStreamed,
   type OwnedCardStats,
 } from '../../src/lib/collections';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
@@ -97,40 +97,52 @@ export default function OwnedCardsScreen() {
   const [showFilter, setShowFilter] = useState(false);
 
   const fetchOwnedCards = useCallback(async () => {
+    setEntries([]);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: binders } = await supabase
-        .from('collections')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('type', 'binder');
+      // Resolve binders + aggregate stats first — cheap queries so the
+      // header paints immediately.
+      const [{ data: binders }, stats] = await Promise.all([
+        supabase
+          .from('collections')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('type', 'binder'),
+        fetchOwnedCardStats(user.id),
+      ]);
+      setServerStats(stats);
 
       const binderIds = (binders ?? []).map((b) => b.id);
+      if (binderIds.length === 0) {
+        setIsLoading(false);
+        return;
+      }
 
-      const [stats, allRows] = await Promise.all([
-        fetchOwnedCardStats(user.id),
-        binderIds.length === 0
-          ? Promise.resolve([])
-          : fetchAllCollectionCardsIn(
-              binderIds,
-              `
-                id, card_id, condition, language, added_at, collection_id,
-                quantity_normal, quantity_foil, quantity_etched,
-                cards (
-                  id, scryfall_id, oracle_id, name, set_name, set_code,
-                  collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
-                  image_uri_small, image_uri_normal,
-                  price_usd, price_usd_foil,
-                  color_identity, layout, card_faces, artist
-                )
-              `
-            ),
-      ]);
+      // Same slimmed select as the binder detail view. card_faces and
+      // mana_cost stay off the list query to cut payload bytes — detail
+      // refetches them on open.
+      const SELECT = `
+        id, card_id, condition, language, added_at, collection_id,
+        quantity_normal, quantity_foil, quantity_etched,
+        cards (
+          id, scryfall_id, oracle_id, name, set_name, set_code,
+          collector_number, rarity, type_line, cmc, is_legendary,
+          image_uri_small, image_uri_normal,
+          price_usd, price_usd_foil,
+          color_identity, layout, artist
+        )
+      `;
 
-      setServerStats(stats);
-      setEntries(allRows as unknown as CollectionEntry[]);
+      let firstPainted = false;
+      await fetchCollectionCardsInStreamed(binderIds, SELECT, (page) => {
+        setEntries((prev) => [...prev, ...(page as unknown as CollectionEntry[])]);
+        if (!firstPainted) {
+          firstPainted = true;
+          setIsLoading(false);
+        }
+      }, { concurrency: 8 });
     } catch (err) {
       console.error('Owned fetch error:', err);
     } finally {

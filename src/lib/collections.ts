@@ -272,6 +272,62 @@ export async function fetchCollectionCardsStreamed(
 }
 
 /**
+ * Streamed variant for the Owned view (multiple binders at once). Counts
+ * the union first, renders the first page, then fans out the rest in
+ * parallel — same contract as fetchCollectionCardsStreamed but across a
+ * set of collection ids.
+ */
+export async function fetchCollectionCardsInStreamed(
+  collectionIds: string[],
+  select: string,
+  onPage: (rows: any[]) => void,
+  opts?: { pageSize?: number; concurrency?: number }
+): Promise<void> {
+  if (collectionIds.length === 0) return;
+  const pageSize = opts?.pageSize ?? 1000;
+  const concurrency = opts?.concurrency ?? 6;
+
+  const { count } = await supabase
+    .from('collection_cards')
+    .select('id', { count: 'exact', head: true })
+    .in('collection_id', collectionIds);
+
+  const total = count ?? 0;
+  if (total === 0) return;
+
+  const pages = Math.ceil(total / pageSize);
+
+  const fetchPage = async (pageIndex: number) => {
+    const offset = pageIndex * pageSize;
+    const { data, error } = await supabase
+      .from('collection_cards')
+      .select(select)
+      .in('collection_id', collectionIds)
+      .order('added_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(`Failed to page cards: ${error.message}`);
+    if (data && data.length > 0) onPage(data);
+  };
+
+  await fetchPage(0);
+  if (pages <= 1) return;
+
+  const remaining = Array.from({ length: pages - 1 }, (_, i) => i + 1);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= remaining.length) return;
+      await fetchPage(remaining[idx]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, remaining.length) }, worker)
+  );
+}
+
+/**
  * Same idea for the Owned view — pages across any set of collection ids.
  */
 export async function fetchAllCollectionCardsIn(

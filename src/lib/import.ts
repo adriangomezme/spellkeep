@@ -242,13 +242,17 @@ export type ImportResult = {
   // Count of parsed source rows (lines in the CSV / text). Used by the
   // progress UI as the denominator.
   total: number;
-  // Total card quantities added. `imported` counts the qty on rows that
-  // didn't exist in the destination collection; `updated` counts the qty
-  // delta applied to rows that did. Their sum = physical cards saved to
-  // the binder. Switched from variant counts so the displayed number
-  // matches what the user sees on the CSV.
+  // Physical card counts. imported = qty on newly inserted rows;
+  // updated = qty delta applied to pre-existing rows. Their sum is the
+  // total cards saved — matches the user's "I imported 15,000 cards"
+  // mental model.
   imported: number;
   updated: number;
+  // Distinct (print × finish) variant counts for the same two buckets.
+  // Used by the result view + history detail so the user also sees how
+  // many unique printings they picked up.
+  imported_variants: number;
+  updated_variants: number;
   failed: string[];
 };
 
@@ -428,6 +432,8 @@ export async function importToCollection(
     total: parsed.length,
     imported: 0,
     updated: 0,
+    imported_variants: 0,
+    updated_variants: 0,
     failed: [],
   };
   if (parsed.length === 0) return result;
@@ -626,6 +632,8 @@ export async function importToCollection(
     if (stats) {
       result.imported += Number(stats.inserted ?? 0);
       result.updated += Number(stats.updated ?? 0);
+      result.imported_variants += Number(stats.inserted_variants ?? 0);
+      result.updated_variants += Number(stats.updated_variants ?? 0);
     }
     uploaded += chunk.length;
     onProgress?.({ phase: 'uploading', current: uploaded, total: rows.length });

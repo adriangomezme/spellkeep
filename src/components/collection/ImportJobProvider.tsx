@@ -138,6 +138,8 @@ export function ImportJobProvider({ children }: { children: React.ReactNode }) {
           status: 'completed',
           imported: result.imported,
           updated: result.updated,
+          imported_variants: result.imported_variants,
+          updated_variants: result.updated_variants,
           failedCount: result.failed.length,
           failedSample: result.failed.slice(0, 25),
         });

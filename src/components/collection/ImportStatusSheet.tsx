@@ -100,6 +100,11 @@ function ImportResultView({
   const saved = result ? result.imported + result.updated : 0;
   const failedCount = result?.failed.length ?? 0;
 
+  function savedVariants(r: typeof result) {
+    if (!r) return 0;
+    return (r.imported_variants ?? 0) + (r.updated_variants ?? 0);
+  }
+
   return (
     <View style={styles.resultContainer}>
       <TouchableOpacity style={styles.closeBtn} onPress={onMinimize}>
@@ -163,7 +168,7 @@ function ImportResultView({
 
       {!isFailed && (
         <Text style={styles.resultHint}>
-          {saved.toLocaleString()} entries saved to {job.collectionName}
+          {saved.toLocaleString()} cards · {savedVariants(result).toLocaleString()} unique saved to {job.collectionName}
         </Text>
       )}
     </View>

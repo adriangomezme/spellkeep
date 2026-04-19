@@ -78,6 +78,8 @@ export default function ImportHistoryDetailScreen() {
   const bg = isFailed ? colors.errorLight : hasFailures ? colors.warningLight : colors.successLight;
   const icon = isFailed ? 'alert-circle' : hasFailures ? 'checkmark-done' : 'checkmark-circle';
   const saved = entry.imported + entry.updated;
+  const savedVariants =
+    (entry.imported_variants ?? 0) + (entry.updated_variants ?? 0);
   const duration = Math.max(0, Math.round((entry.finishedAt - entry.startedAt) / 1000));
 
   return (
@@ -116,7 +118,10 @@ export default function ImportHistoryDetailScreen() {
           <MetaRow label="Finished" value={new Date(entry.finishedAt).toLocaleString()} />
           <MetaRow label="Duration" value={`${duration}s`} />
           {!isFailed && (
-            <MetaRow label="Total saved" value={saved.toLocaleString()} />
+            <MetaRow label="Total saved" value={`${saved.toLocaleString()} cards`} />
+          )}
+          {!isFailed && savedVariants > 0 && (
+            <MetaRow label="Unique saved" value={`${savedVariants.toLocaleString()} variants`} />
           )}
         </View>
 

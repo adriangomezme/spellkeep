@@ -146,22 +146,28 @@ export default function CollectionDetailScreen() {
       }
       setServerStats(stats);
 
+      // Slimmed-down select: dropped card_faces and mana_cost from the
+      // list query. `card_faces` is a JSONB column that can carry tens of
+      // KB per double-faced card — a huge share of payload bytes on
+      // 10k+ row binders. The detail screen already refetches the full
+      // card from the local catalog / Scryfall on open, so nothing is
+      // lost functionally. mana_cost isn't rendered in grid or list.
       const SELECT = `
         id, card_id, condition, language, added_at,
         quantity_normal, quantity_foil, quantity_etched,
         cards (
           id, scryfall_id, oracle_id, name, set_name, set_code,
-          collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
+          collector_number, rarity, type_line, cmc, is_legendary,
           image_uri_small, image_uri_normal,
           price_usd, price_usd_foil,
-          color_identity, layout, card_faces, artist
+          color_identity, layout, artist
         )
       `;
 
       // Streamed fetch: first 1k rows paint the FlatList immediately;
-      // remaining pages fan out with concurrency 6 and append as they
-      // land. On a 100k-row binder this is ~5 s end-to-end vs the
-      // ~50 s the old serial pagination took.
+      // remaining pages fan out in parallel and append as they land.
+      // On a 100k-row binder this is ~3–5 s end-to-end (was ~30–50 s
+      // with serial pagination).
       let firstPainted = false;
       await fetchCollectionCardsStreamed(id, SELECT, (page) => {
         setEntries((prev) => [...prev, ...(page as unknown as CollectionEntry[])]);
@@ -169,7 +175,7 @@ export default function CollectionDetailScreen() {
           firstPainted = true;
           setIsLoading(false);
         }
-      });
+      }, { concurrency: 8 });
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
