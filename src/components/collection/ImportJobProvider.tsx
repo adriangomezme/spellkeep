@@ -5,6 +5,7 @@ import {
   type ImportProgress,
   type ImportResult,
 } from '../../lib/import';
+import { recordImportHistory } from '../../lib/importHistory';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,7 @@ export function ImportJobProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const result = await importToCollection(text, format, collectionId, onProgress);
+        const finishedAt = Date.now();
         setJob((prev) => {
           if (!prev || prev.id !== id) return prev;
           return {
@@ -123,18 +125,47 @@ export function ImportJobProvider({ children }: { children: React.ReactNode }) {
             current: result.imported + result.updated + result.failed.length,
             total: result.total,
             result,
-            finishedAt: Date.now(),
+            finishedAt,
           };
         });
+        await recordImportHistory({
+          id,
+          startedAt,
+          finishedAt,
+          format,
+          collectionId,
+          collectionName,
+          status: 'completed',
+          imported: result.imported,
+          updated: result.updated,
+          failedCount: result.failed.length,
+          failedSample: result.failed.slice(0, 25),
+        });
       } catch (err: any) {
+        const finishedAt = Date.now();
+        const message = err?.message ?? 'Import failed';
         setJob((prev) => {
           if (!prev || prev.id !== id) return prev;
           return {
             ...prev,
             status: 'failed',
-            error: err?.message ?? 'Import failed',
-            finishedAt: Date.now(),
+            error: message,
+            finishedAt,
           };
+        });
+        await recordImportHistory({
+          id,
+          startedAt,
+          finishedAt,
+          format,
+          collectionId,
+          collectionName,
+          status: 'failed',
+          imported: 0,
+          updated: 0,
+          failedCount: 0,
+          failedSample: [],
+          errorMessage: message,
         });
       } finally {
         runningRef.current = false;

@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -20,6 +20,11 @@ import {
   subscribeCatalogSync,
 } from '../../src/lib/catalog/catalogSync';
 import type { CatalogSyncState } from '../../src/lib/catalog/types';
+import {
+  getImportHistory,
+  subscribeImportHistory,
+  type ImportHistoryEntry,
+} from '../../src/lib/importHistory';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 type StorageSnapshot = {
@@ -30,20 +35,24 @@ type StorageSnapshot = {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [storage, setStorage] = useState<StorageSnapshot>({});
   const [catalogState, setCatalogState] = useState<CatalogSyncState>(() => getCatalogSyncState());
   const [refreshing, setRefreshing] = useState(false);
+  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
 
   const loadStorage = useCallback(async () => {
-    const [meta, imageCacheBytes] = await Promise.all([
+    const [meta, imageCacheBytes, history] = await Promise.all([
       getAllMeta(),
       measureImageCacheBytes(),
+      getImportHistory(),
     ]);
     setStorage({
       catalogVersion: meta.snapshot_version,
       catalogLastSyncAt: meta.last_sync_at,
       imageCacheBytes,
     });
+    setImportHistory(history);
   }, []);
 
   useFocusEffect(
@@ -53,6 +62,7 @@ export default function ProfileScreen() {
   );
 
   useEffect(() => subscribeCatalogSync(setCatalogState), []);
+  useEffect(() => subscribeImportHistory(setImportHistory), []);
 
   async function onPullRefresh() {
     setRefreshing(true);
@@ -157,9 +167,39 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </TouchableOpacity>
+
+        <Text style={styles.sectionLabel}>Activity</Text>
+
+        {/* Import History */}
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.6}
+          onPress={() => router.push('/profile/import-history')}
+        >
+          <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
+            <Ionicons name="time" size={20} color={colors.primary} />
+          </View>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Import History</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>
+              {describeHistory(importHistory)}
+            </Text>
+          </View>
+          <View style={styles.rowTrailing}>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </View>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
+}
+
+function describeHistory(entries: ImportHistoryEntry[]): string {
+  if (entries.length === 0) return 'No imports yet';
+  const last = entries[0];
+  const when = formatRelativeTime(new Date(last.finishedAt).toISOString());
+  const count = entries.length === 1 ? '1 import' : `${entries.length} imports`;
+  return `${count} · last ${when}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

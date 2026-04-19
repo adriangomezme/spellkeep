@@ -462,6 +462,14 @@ export async function importToCollection(
     const printKeys: BatchKey[] = [];
     for (const g of groups) {
       if (resolvedByGroup.has(g.groupKey)) continue;
+      // When the source row carries a scryfall_id, don't silently substitute
+      // a different print with the same (set, collector_number). Two rows
+      // can share set+cn but have distinct scryfall_ids (language variants,
+      // art variants, etched foils) — substituting the wrong one would
+      // create a "phantom" entry tagged with the foreign language but
+      // pointing at the English card_id. Let the Supabase bridge and the
+      // Scryfall API fallback handle it instead, or mark the row failed.
+      if (g.parsed.scryfall_id) continue;
       if (g.parsed.set_code && g.parsed.collector_number) {
         printKeys.push({
           key: g.groupKey,
