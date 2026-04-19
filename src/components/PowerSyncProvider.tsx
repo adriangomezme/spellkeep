@@ -42,17 +42,14 @@ export function PowerSyncProvider({ children }: Props) {
         const { ensureCatalogFresh } = await import('../lib/catalog/catalogSync');
         ensureCatalogFresh()
           .then(async () => {
-            // Warm expo-image's disk cache with every set glyph URL so
-            // the first detail-screen open doesn't visibly download the
-            // SVG. Small (1031 × ~3 KB SVG) and one-shot per catalog
-            // install.
+            // Warm just the set-icon URI map (a ~1031-row SELECT,
+            // ~200 KB in memory, no network). Means the first card
+            // open of the session renders its set glyph on first frame.
+            // We deliberately do NOT prefetch the SVG bytes — expo-image
+            // handles disk caching on demand.
             try {
-              const { getAllSetIconUris } = await import('../lib/catalog/catalogDb');
-              const uris = getAllSetIconUris();
-              if (uris.length > 0) {
-                const { Image } = await import('expo-image');
-                Image.prefetch(uris, { cachePolicy: 'disk' }).catch(() => {});
-              }
+              const { ensureSetIconsLoaded } = await import('../lib/catalog/catalogDb');
+              ensureSetIconsLoaded().catch(() => {});
             } catch {}
           })
           .catch((err) => {

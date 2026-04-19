@@ -35,7 +35,7 @@ import {
   type OwnershipEntry,
   type OwnershipSummary,
 } from '../../src/lib/cardDetail';
-import { getSetIconSync } from '../../src/lib/catalog/catalogDb';
+import { ensureSetIconsLoaded, getSetIconSync } from '../../src/lib/catalog/catalogDb';
 import { CONDITIONS, type Condition, type Finish } from '../../src/lib/collection';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -150,15 +150,27 @@ export default function CardDetailScreen() {
 
   useEffect(() => {
     if (!card?.set) return;
-    // Sync-first: the catalog keeps every icon URI in memory so the vast
-    // majority of opens hit this branch and paint instantly.
+    // Fast path: map is already populated (second card onwards this
+    // session). Paints in a single frame.
     const syncHit = getSetIconSync(card.set);
     if (syncHit) {
       setSetIconUri(syncHit);
       return;
     }
-    // Fallback: brand-new sets not yet in the local catalog — one network hop.
-    fetchSetIcon(card.set).then(setSetIconUri).catch(() => setSetIconUri(null));
+    // First card of the session — lazy-load the full map once, then read.
+    // Cheap (~1031 rows, ~50 ms from on-device SQLite), amortises over
+    // every subsequent icon read for the rest of the session.
+    let cancelled = false;
+    ensureSetIconsLoaded()
+      .then(() => {
+        if (cancelled || !card?.set) return;
+        const hit = getSetIconSync(card.set);
+        if (hit) setSetIconUri(hit);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [card?.set]);
 
   // Fetch set icons for all prints in one batch
