@@ -96,14 +96,30 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Insert the card with service_role (bypasses RLS)
+    // Insert the card with service_role (bypasses RLS). Use upsert so
+    // parallel workers racing on the same scryfall_id don't 500 on a
+    // unique-constraint violation — the second one just reads the
+    // already-inserted row.
     const { data: inserted, error } = await supabase
       .from("cards")
-      .insert({ scryfall_id, ...card_data })
+      .upsert({ scryfall_id, ...card_data }, { onConflict: "scryfall_id" })
       .select("id")
       .single();
 
     if (error) {
+      // Last-ditch attempt: fetch the row in case the upsert raced with
+      // another request that already committed it.
+      const { data: fallback } = await supabase
+        .from("cards")
+        .select("id")
+        .eq("scryfall_id", scryfall_id)
+        .single();
+      if (fallback) {
+        return new Response(JSON.stringify({ card_id: fallback.id }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ error: error.message }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
