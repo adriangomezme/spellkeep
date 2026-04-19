@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { ScryfallCard } from '../../lib/scryfall';
 import { matchCard, validateMTGLayout } from '../../lib/card-matcher';
 import { addToCollection, Condition, Finish } from '../../lib/collection';
+import { setLastUsedDestination } from '../../lib/collections';
 
 export type ScanTrayItem = {
   id: string;
@@ -377,6 +378,7 @@ export function useScanState() {
     const failures = results.filter((r) => r.status === 'rejected');
 
     if (failures.length === 0) {
+      await setLastUsedDestination(collectionId);
       Alert.alert('Done!', `${trayItems.length} cards added successfully`);
       setTrayItems([]);
       setTrayExpanded(false);

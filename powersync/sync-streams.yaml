@@ -8,6 +8,8 @@ streams:
         query: "SELECT id, scryfall_id, code, name, set_type, released_at, card_count, icon_svg_uri, updated_at FROM sets"
     user_profile:
         query: "SELECT * FROM profiles WHERE id = auth.user_id()"
+    user_collection_folders:
+        query: "SELECT * FROM collection_folders WHERE user_id = auth.user_id()"
     user_collections:
         queries:
             - "SELECT * FROM collections WHERE user_id = auth.user_id()"

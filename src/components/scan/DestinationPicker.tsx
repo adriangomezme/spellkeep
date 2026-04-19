@@ -15,12 +15,11 @@ import { colors, shadows, spacing, fontSize, borderRadius } from '../../constant
 type Destination = {
   id: string;
   name: string;
-  type: 'collection' | 'binder' | 'list';
+  type: 'binder' | 'list';
 };
 
 const TYPE_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
-  collection: 'library',
-  binder: 'folder',
+  binder: 'albums',
   list: 'list',
 };
 

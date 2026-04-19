@@ -35,7 +35,8 @@
     "plugins": [
       "expo-router",
       "@journeyapps/react-native-quick-sqlite",
-      "react-native-vision-camera"
+      "react-native-vision-camera",
+      "expo-font"
     ]
   }
 }
