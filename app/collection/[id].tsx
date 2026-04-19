@@ -134,7 +134,7 @@ export default function CollectionDetailScreen() {
             id, scryfall_id, oracle_id, name, set_name, set_code,
             collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
             image_uri_small, image_uri_normal,
-            price_usd, price_usd_foil, price_eur, price_eur_foil,
+            price_usd, price_usd_foil,
             color_identity, layout, card_faces, artist
           )
         `)

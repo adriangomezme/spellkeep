@@ -111,8 +111,6 @@ export function serializeCardForNavigation(card: {
   image_uri_normal?: string | null;
   price_usd?: number | string | null;
   price_usd_foil?: number | string | null;
-  price_eur?: number | string | null;
-  price_eur_foil?: number | string | null;
   color_identity?: string[] | string | null;
   layout?: string | null;
   card_faces?: unknown;
@@ -146,8 +144,6 @@ export function serializeCardForNavigation(card: {
     prices: {
       usd: card.price_usd != null ? String(card.price_usd) : undefined,
       usd_foil: card.price_usd_foil != null ? String(card.price_usd_foil) : undefined,
-      eur: card.price_eur != null ? String(card.price_eur) : undefined,
-      eur_foil: card.price_eur_foil != null ? String(card.price_eur_foil) : undefined,
     },
     color_identity: colorIdentity,
     legalities: {},
