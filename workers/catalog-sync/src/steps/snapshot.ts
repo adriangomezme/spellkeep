@@ -13,10 +13,10 @@ const INDEX_PATH = 'index.json';
 const PAGE = 1000;
 const SNAPSHOT_REFRESH_DAYS = 7;
 
-// Keep in lockstep with the client-side Attached catalog schema.
-// Note: legalities is intentionally excluded — it adds ~40% to the payload
-// but is only used by deck validation (rare flow). Client fetches it
-// on demand from Supabase when needed.
+// Keep in lockstep with the client-side catalog schema.
+// Intentionally excluded (rare flows, fetched on-demand from Supabase when
+// needed): legalities, keywords, artist, flavor_text, produced_mana,
+// image_uri_large, image_uri_art_crop.
 const CARD_COLUMNS = [
   'id',
   'scryfall_id',
@@ -25,8 +25,12 @@ const CARD_COLUMNS = [
   'mana_cost',
   'cmc',
   'type_line',
+  'oracle_text',
   'colors',
   'color_identity',
+  'power',
+  'toughness',
+  'loyalty',
   'rarity',
   'set_code',
   'set_name',
@@ -40,6 +44,7 @@ const CARD_COLUMNS = [
   'released_at',
   'is_legendary',
   'layout',
+  'card_faces',
   'updated_at',
 ] as const;
 
@@ -150,8 +155,12 @@ function createSchema(db: Database.Database) {
       mana_cost TEXT,
       cmc REAL,
       type_line TEXT,
+      oracle_text TEXT,
       colors TEXT,
       color_identity TEXT,
+      power TEXT,
+      toughness TEXT,
+      loyalty TEXT,
       rarity TEXT,
       set_code TEXT,
       set_name TEXT,
@@ -165,6 +174,7 @@ function createSchema(db: Database.Database) {
       released_at TEXT,
       is_legendary INTEGER,
       layout TEXT,
+      card_faces TEXT,
       updated_at TEXT
     );
     CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);

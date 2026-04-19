@@ -81,21 +81,16 @@ export async function autocompleteNames(prefix: string, limit = 20): Promise<str
 }
 
 /**
- * Distinct-by-name fuzzy search, keeping the newest printing for each match.
+ * Fuzzy search by name. Returns every matching printing (not distinct) so
+ * callers mirror Scryfall's `unique=prints` default and can let the user
+ * pick the exact edition they want — same behaviour as Scryfall's website.
  */
-export async function searchByName(query: string, limit = 50): Promise<ScryfallCard[]> {
+export async function searchByName(query: string, limit = 175): Promise<ScryfallCard[]> {
   if (!query || query.length < 2) return [];
   return queryMany(
-    `SELECT c.* FROM cards c
-     INNER JOIN (
-       SELECT name, MAX(released_at) as latest
-       FROM cards
-       WHERE name LIKE ? COLLATE NOCASE
-       GROUP BY name
-     ) latest_by_name
-       ON c.name = latest_by_name.name
-      AND (c.released_at = latest_by_name.latest OR latest_by_name.latest IS NULL)
-     ORDER BY c.name ASC
+    `SELECT * FROM cards
+     WHERE name LIKE ? COLLATE NOCASE
+     ORDER BY name ASC, released_at DESC
      LIMIT ?`,
     [`%${query}%`, limit]
   );
@@ -220,6 +215,7 @@ function readScalar<T>(res: any, key: string): T | null {
 function rowToScryfallCard(row: any): ScryfallCard {
   const colors = parseJsonArray<string>(row.colors);
   const colorIdentity = parseJsonArray<string>(row.color_identity);
+  const cardFaces = parseJsonValue<ScryfallCard['card_faces']>(row.card_faces);
 
   return {
     id: row.scryfall_id,
@@ -228,9 +224,13 @@ function rowToScryfallCard(row: any): ScryfallCard {
     mana_cost: row.mana_cost ?? undefined,
     cmc: row.cmc ?? 0,
     type_line: row.type_line ?? '',
+    oracle_text: row.oracle_text ?? undefined,
     colors: colors ?? undefined,
     color_identity: colorIdentity ?? [],
     keywords: [],
+    power: row.power ?? undefined,
+    toughness: row.toughness ?? undefined,
+    loyalty: row.loyalty ?? undefined,
     rarity: row.rarity ?? '',
     set: row.set_code ?? '',
     set_name: row.set_name ?? '',
@@ -243,16 +243,26 @@ function rowToScryfallCard(row: any): ScryfallCard {
           art_crop: row.image_uri_normal ?? row.image_uri_small,
         }
       : undefined,
+    card_faces: cardFaces ?? undefined,
     prices: {
       usd: row.price_usd != null ? String(row.price_usd) : undefined,
       usd_foil: row.price_usd_foil != null ? String(row.price_usd_foil) : undefined,
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },
-    legalities: {}, // not shipped in the snapshot — fetch from API when deck-validating
+    legalities: {}, // not shipped in the snapshot — fetch from Supabase on-demand if/when deck-validating
     released_at: row.released_at ?? '',
     layout: row.layout ?? '',
   };
+}
+
+function parseJsonValue<T>(raw: string | null | undefined): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 }
 
 function parseJsonArray<T>(raw: string | null): T[] | null {
