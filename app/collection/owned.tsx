@@ -75,6 +75,43 @@ function getTotalQuantity(entry: CollectionEntry): number {
   return entry.quantity_normal + entry.quantity_foil + entry.quantity_etched;
 }
 
+// Owned view merges the per-binder rows so one physical card appears
+// once even if it lives in multiple binders. Key is (card_id,
+// condition, language) — same canonical key used by the import RPC,
+// so the totals here line up with what the server considers unique.
+function mergeKey(row: CollectionEntry): string {
+  return `${row.card_id}|${row.condition}|${(row.language ?? 'en').toLowerCase()}`;
+}
+
+function mergeInto(map: Map<string, CollectionEntry>, row: CollectionEntry): void {
+  const key = mergeKey(row);
+  const existing = map.get(key);
+  if (existing) {
+    existing.quantity_normal += row.quantity_normal;
+    existing.quantity_foil += row.quantity_foil;
+    existing.quantity_etched += row.quantity_etched;
+    // Keep the earliest added_at across binders so the default "added"
+    // sort is stable.
+    if ((row.added_at ?? '') < (existing.added_at ?? '')) {
+      existing.added_at = row.added_at;
+    }
+  } else {
+    // Shallow clone so we don't mutate cached source rows.
+    map.set(key, {
+      ...row,
+      quantity_normal: row.quantity_normal,
+      quantity_foil: row.quantity_foil,
+      quantity_etched: row.quantity_etched,
+    });
+  }
+}
+
+function mergeAcrossBinders(rows: CollectionEntry[]): CollectionEntry[] {
+  const map = new Map<string, CollectionEntry>();
+  for (const row of rows) mergeInto(map, row);
+  return Array.from(map.values());
+}
+
 export default function OwnedCardsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -103,13 +140,14 @@ export default function OwnedCardsScreen() {
   const [showFilter, setShowFilter] = useState(false);
 
   const fetchOwnedCards = useCallback(async () => {
-    // SWR: paint cache instantly — entries AND stats together so the
-    // header doesn't show a client-computed value for ~1 s before the
-    // server stats arrive.
+    // SWR: paint cache instantly. We cache the raw per-binder rows and
+    // merge into the Owned view on render — that way if a card lives
+    // in multiple binders, it shows up once with the total across
+    // binders instead of N duplicate entries.
     const cached = getCachedEntries<CollectionEntry>('owned', 'me');
     const cachedStats = getCached<OwnedCardStats>('owned_stats', 'me');
     if (cached) {
-      setEntries(cached);
+      setEntries(mergeAcrossBinders(cached));
       setIsLoading(false);
     } else {
       setEntries([]);
@@ -153,13 +191,15 @@ export default function OwnedCardsScreen() {
         )
       `;
 
-      const buffer: CollectionEntry[] = [];
+      const rawBuffer: CollectionEntry[] = [];
+      const mergedMap = new Map<string, CollectionEntry>();
       let firstPainted = !!cached;
       await fetchCollectionCardsInStreamed(binderIds, SELECT, (page) => {
         const typed = page as unknown as CollectionEntry[];
-        buffer.push(...typed);
+        rawBuffer.push(...typed);
+        for (const row of typed) mergeInto(mergedMap, row);
         if (!cached) {
-          setEntries((prev) => [...prev, ...typed]);
+          setEntries(Array.from(mergedMap.values()));
           if (!firstPainted) {
             firstPainted = true;
             setIsLoading(false);
@@ -167,8 +207,8 @@ export default function OwnedCardsScreen() {
         }
       }, { initialPageSize: 100, concurrency: 8 });
 
-      setEntries(buffer);
-      setCachedEntries('owned', 'me', buffer);
+      setEntries(Array.from(mergedMap.values()));
+      setCachedEntries('owned', 'me', rawBuffer);
     } catch (err) {
       console.error('Owned fetch error:', err);
     } finally {
