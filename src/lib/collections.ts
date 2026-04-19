@@ -81,31 +81,49 @@ export async function fetchCollectionSummaries(_userId: string): Promise<Collect
 
 /**
  * Fetch owned card stats — sum across ALL binders only (not lists).
- * Uses the get_owned_stats RPC to avoid the 1000-row truncation bug.
+ *
+ * Split into two RPCs: a fast quantities aggregation (no join to cards)
+ * and a slower value aggregation (LEFT JOIN cards for prices). The
+ * value query occasionally trips Supabase's statement_timeout on users
+ * with 50k+ owned rows; if that happens we still return quantities so
+ * the header paints a usable value.
  */
 export async function fetchOwnedCardStats(_userId: string): Promise<OwnedCardStats> {
-  const { data, error } = await supabase.rpc('get_owned_stats');
-  if (error) throw new Error(`Failed to fetch owned stats: ${error.message}`);
-  const row = Array.isArray(data) ? data[0] : data;
+  const [qtyRes, valRes] = await Promise.all([
+    supabase.rpc('get_owned_stats_quantities'),
+    supabase.rpc('get_owned_stats_value'),
+  ]);
+  if (qtyRes.error) throw new Error(`Failed to fetch owned stats: ${qtyRes.error.message}`);
+  const qtyRow = Array.isArray(qtyRes.data) ? qtyRes.data[0] : qtyRes.data;
+  const valRow = !valRes.error && valRes.data
+    ? (Array.isArray(valRes.data) ? valRes.data[0] : valRes.data)
+    : null;
   return {
-    total_cards: Number(row?.total_cards ?? 0),
-    unique_cards: Number(row?.unique_cards ?? 0),
-    total_value: Number(row?.total_value ?? 0),
+    total_cards: Number(qtyRow?.total_cards ?? 0),
+    unique_cards: Number(qtyRow?.unique_cards ?? 0),
+    total_value: Number(valRow?.total_value ?? 0),
   };
 }
 
 /**
- * Stats for a single collection. Used by the detail screen header so the
- * totals stay correct even before all rows finish loading.
+ * Stats for a single collection. Same split as owned stats — value runs
+ * as a best-effort parallel RPC so a timeout on the value aggregation
+ * doesn't block the cards/unique header from rendering.
  */
 export async function fetchCollectionStats(collectionId: string): Promise<OwnedCardStats> {
-  const { data, error } = await supabase.rpc('get_collection_stats', { p_collection_id: collectionId });
-  if (error) throw new Error(`Failed to fetch collection stats: ${error.message}`);
-  const row = Array.isArray(data) ? data[0] : data;
+  const [qtyRes, valRes] = await Promise.all([
+    supabase.rpc('get_collection_stats_quantities', { p_collection_id: collectionId }),
+    supabase.rpc('get_collection_stats_value', { p_collection_id: collectionId }),
+  ]);
+  if (qtyRes.error) throw new Error(`Failed to fetch collection stats: ${qtyRes.error.message}`);
+  const qtyRow = Array.isArray(qtyRes.data) ? qtyRes.data[0] : qtyRes.data;
+  const valRow = !valRes.error && valRes.data
+    ? (Array.isArray(valRes.data) ? valRes.data[0] : valRes.data)
+    : null;
   return {
-    total_cards: Number(row?.total_cards ?? 0),
-    unique_cards: Number(row?.unique_cards ?? 0),
-    total_value: Number(row?.total_value ?? 0),
+    total_cards: Number(qtyRow?.total_cards ?? 0),
+    unique_cards: Number(qtyRow?.unique_cards ?? 0),
+    total_value: Number(valRow?.total_value ?? 0),
   };
 }
 
