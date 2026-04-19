@@ -20,6 +20,41 @@ export async function isCatalogReady(): Promise<boolean> {
   }
 }
 
+/**
+ * Read a single set's icon URI from the local catalog. Used by card
+ * detail / prints list to avoid a network round-trip for every
+ * set-icon render.
+ */
+export async function findSetIconLocal(setCode: string): Promise<string | null> {
+  const db = getCatalog();
+  if (!db) return null;
+  const res = await db.execute(
+    `SELECT icon_svg_uri FROM sets WHERE code = ? LIMIT 1`,
+    [setCode.toLowerCase()]
+  );
+  return readScalar<string>(res, 'icon_svg_uri') ?? null;
+}
+
+/**
+ * Batch variant for lists that render many set icons at once (e.g. the
+ * prints sidebar on card detail).
+ */
+export async function findSetIconsLocal(setCodes: string[]): Promise<Record<string, string>> {
+  const db = getCatalog();
+  if (!db || setCodes.length === 0) return {};
+  const unique = Array.from(new Set(setCodes.map((c) => c.toLowerCase())));
+  const placeholders = unique.map(() => '?').join(',');
+  const res = await db.execute(
+    `SELECT code, icon_svg_uri FROM sets WHERE code IN (${placeholders})`,
+    unique
+  );
+  const out: Record<string, string> = {};
+  for (const row of readAllRows(res)) {
+    if (row.icon_svg_uri) out[(row.code as string).toLowerCase()] = row.icon_svg_uri as string;
+  }
+  return out;
+}
+
 export async function findCardByScryfallId(scryfallId: string): Promise<ScryfallCard | null> {
   return queryOne(
     `SELECT * FROM cards WHERE scryfall_id = ? LIMIT 1`,

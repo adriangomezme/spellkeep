@@ -42,6 +42,7 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
     card_faces: faces ?? null,
     edhrec_rank: card.edhrec_rank ?? null,
     illustration_id: card.illustration_id ?? faces?.[0]?.illustration_id ?? null,
+    flavor_text: card.flavor_text ?? faces?.[0]?.flavor_text ?? null,
     updated_at: now,
   };
 }
