@@ -33,6 +33,7 @@ import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
 import {
   duplicateCollection,
   deleteCollection,
+  emptyCollection,
   moveToFolder,
   fetchCollectionStats,
   fetchAllCollectionCards,
@@ -486,6 +487,24 @@ export default function CollectionDetailScreen() {
             moveToFolder(id!, null).then(() => { setCollectionFolderId(null); }).catch(() => {});
           } else if (key === 'duplicate') {
             duplicateCollection(id!).then(() => router.back()).catch(() => {});
+          } else if (key === 'empty') {
+            const label = (collectionType as 'binder' | 'list') === 'list' ? 'list' : 'binder';
+            Alert.alert(
+              `Empty this ${label}?`,
+              `All cards will be removed. The ${label} itself stays with its name and settings.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Empty',
+                  style: 'destructive',
+                  onPress: () => {
+                    emptyCollection(id!)
+                      .then(() => fetchCards())
+                      .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
+                  },
+                },
+              ]
+            );
           } else if (key === 'delete') {
             Alert.alert('Delete?', 'This will delete all cards inside.', [
               { text: 'Cancel', style: 'cancel' },

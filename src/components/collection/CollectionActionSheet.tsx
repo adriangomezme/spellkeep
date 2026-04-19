@@ -53,12 +53,13 @@ export function CollectionActionSheet({ visible, itemName, itemType, inFolder, o
       { key: 'merge', label: 'Merge', icon: 'git-merge-outline' },
       { key: 'import', label: 'Import', icon: 'arrow-down-circle-outline' },
       { key: 'export', label: 'Export', icon: 'arrow-up-circle-outline' },
+      { key: 'empty', label: 'Empty', icon: 'refresh-outline', destructive: true },
       { key: 'delete', label: 'Delete', icon: 'trash-outline', destructive: true },
     );
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '40%']}>
+    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '48%']}>
       <Text style={styles.title} numberOfLines={1}>{itemName}</Text>
 
       {/* Quick action buttons */}

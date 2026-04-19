@@ -341,133 +341,46 @@ export async function deleteFolder(id: string): Promise<void> {
 
 /**
  * Duplicate a collection (binder or list) with all its cards.
- * New name = original name + " Copy"
+ * New name = `${original} Copy` unless a custom name is passed.
+ *
+ * Runs as a single server-side RPC — one SQL statement inserts all the
+ * child rows regardless of scale, so a 100k-card binder copies in the
+ * same time as a 10-card one.
  */
-export async function duplicateCollection(sourceId: string): Promise<string> {
-  const userId = await getUserId();
-
-  // Fetch source
-  const { data: source, error: srcErr } = await supabase
-    .from('collections')
-    .select('name, type, folder_id, color, description')
-    .eq('id', sourceId)
-    .single();
-
-  if (srcErr || !source) throw new Error('Source collection not found');
-
-  // Create copy
-  const { data: newCol, error: createErr } = await supabase
-    .from('collections')
-    .insert({
-      user_id: userId,
-      name: `${source.name} Copy`,
-      type: source.type,
-      folder_id: source.folder_id,
-      color: source.color,
-      description: source.description,
-    })
-    .select('id')
-    .single();
-
-  if (createErr || !newCol) throw new Error(`Failed to duplicate: ${createErr?.message}`);
-
-  // Copy all cards
-  const { data: cards } = await supabase
-    .from('collection_cards')
-    .select('card_id, condition, quantity_normal, quantity_foil, quantity_etched, tags, notes')
-    .eq('collection_id', sourceId);
-
-  if (cards && cards.length > 0) {
-    const rows = cards.map((c: any) => ({
-      collection_id: newCol.id,
-      card_id: c.card_id,
-      condition: c.condition,
-      quantity_normal: c.quantity_normal,
-      quantity_foil: c.quantity_foil,
-      quantity_etched: c.quantity_etched,
-      tags: c.tags,
-      notes: c.notes,
-    }));
-
-    const { error: insertErr } = await supabase
-      .from('collection_cards')
-      .insert(rows);
-
-    if (insertErr) throw new Error(`Failed to copy cards: ${insertErr.message}`);
-  }
-
-  return newCol.id;
+export async function duplicateCollection(sourceId: string, newName?: string): Promise<string> {
+  const { data, error } = await supabase.rpc('sp_duplicate_collection', {
+    p_source_id: sourceId,
+    p_new_name: newName ?? null,
+  });
+  if (error) throw new Error(`Failed to duplicate: ${error.message}`);
+  if (!data) throw new Error('Duplicate returned no id');
+  return data as string;
 }
 
 /**
- * Merge source collection into destination.
- * Cards from source are added to destination (quantities merged if same card+condition).
- * Source is deleted after merge.
+ * Merge source collection into destination. Quantities sum on conflict.
+ * Source is deleted after merge. Runs as a single server-side RPC so
+ * even binders with hundreds of thousands of entries finish in seconds.
  */
 export async function mergeCollections(sourceId: string, destinationId: string): Promise<void> {
-  // Fetch source cards
-  const { data: sourceCards } = await supabase
-    .from('collection_cards')
-    .select('card_id, condition, quantity_normal, quantity_foil, quantity_etched')
-    .eq('collection_id', sourceId);
+  const { error } = await supabase.rpc('sp_merge_collections', {
+    p_source_id: sourceId,
+    p_dest_id: destinationId,
+  });
+  if (error) throw new Error(`Failed to merge: ${error.message}`);
+}
 
-  if (!sourceCards || sourceCards.length === 0) {
-    // Nothing to merge, just delete source
-    await deleteCollection(sourceId);
-    return;
-  }
-
-  // Fetch destination cards for matching
-  const { data: destCards } = await supabase
-    .from('collection_cards')
-    .select('id, card_id, condition, quantity_normal, quantity_foil, quantity_etched')
-    .eq('collection_id', destinationId);
-
-  const destMap = new Map<string, any>();
-  for (const dc of destCards ?? []) {
-    destMap.set(`${dc.card_id}_${dc.condition}`, dc);
-  }
-
-  const toInsert: any[] = [];
-  const toUpdate: { id: string; updates: any }[] = [];
-
-  for (const sc of sourceCards as any[]) {
-    const key = `${sc.card_id}_${sc.condition}`;
-    const existing = destMap.get(key);
-
-    if (existing) {
-      toUpdate.push({
-        id: existing.id,
-        updates: {
-          quantity_normal: existing.quantity_normal + sc.quantity_normal,
-          quantity_foil: existing.quantity_foil + sc.quantity_foil,
-          quantity_etched: existing.quantity_etched + sc.quantity_etched,
-        },
-      });
-    } else {
-      toInsert.push({
-        collection_id: destinationId,
-        card_id: sc.card_id,
-        condition: sc.condition,
-        quantity_normal: sc.quantity_normal,
-        quantity_foil: sc.quantity_foil,
-        quantity_etched: sc.quantity_etched,
-      });
-    }
-  }
-
-  // Execute updates
-  for (const { id, updates } of toUpdate) {
-    await supabase.from('collection_cards').update(updates).eq('id', id);
-  }
-
-  // Execute inserts
-  if (toInsert.length > 0) {
-    await supabase.from('collection_cards').insert(toInsert);
-  }
-
-  // Delete source
-  await deleteCollection(sourceId);
+/**
+ * Remove every card from the collection while keeping the collection row
+ * (name, color, folder, type, description). Returns the number of rows
+ * removed — useful for a confirmation toast.
+ */
+export async function emptyCollection(collectionId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('sp_empty_collection', {
+    p_collection_id: collectionId,
+  });
+  if (error) throw new Error(`Failed to empty collection: ${error.message}`);
+  return Number(data ?? 0);
 }
 
 /**
