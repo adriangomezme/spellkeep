@@ -210,18 +210,19 @@ export async function fetchAllCollectionCards(
  * synchronously for an immediate paint, then loads the rest in parallel
  * (configurable concurrency) invoking `onPage` with each new chunk.
  *
- * Callers typically set state on the first-page resolve and again on
- * each onPage so the FlatList starts rendering right away while the
- * remaining pages stream in the background. Eliminates the serial
- * waterfall that made large binders feel unusably slow to open.
+ * The first page can be smaller than the rest (`initialPageSize`) so the
+ * viewport gets its first ~100 rows in ~100 ms, and the remaining pages
+ * of 1k each stream in the background. Later pages start at offset
+ * `initialPageSize` and chunk by `pageSize` from there.
  */
 export async function fetchCollectionCardsStreamed(
   collectionId: string,
   select: string,
   onPage: (rows: any[]) => void,
-  opts?: { pageSize?: number; concurrency?: number }
+  opts?: { pageSize?: number; initialPageSize?: number; concurrency?: number }
 ): Promise<void> {
   const pageSize = opts?.pageSize ?? 1000;
+  const initialPageSize = opts?.initialPageSize ?? pageSize;
   const concurrency = opts?.concurrency ?? 6;
 
   // Count the collection size cheaply so we can fan out pages without
@@ -235,39 +236,42 @@ export async function fetchCollectionCardsStreamed(
   const total = count ?? 0;
   if (total === 0) return;
 
-  const pages = Math.ceil(total / pageSize);
-
   // Stable ordering so pages don't overlap or skip rows.
-  const fetchPage = async (pageIndex: number) => {
-    const offset = pageIndex * pageSize;
+  const fetchRange = async (from: number, to: number) => {
     const { data, error } = await supabase
       .from('collection_cards')
       .select(select)
       .eq('collection_id', collectionId)
       .order('added_at', { ascending: false })
       .order('id', { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .range(from, to);
     if (error) throw new Error(`Failed to page cards: ${error.message}`);
     if (data && data.length > 0) onPage(data);
   };
 
-  // First page synchronous — caller can start rendering immediately.
-  await fetchPage(0);
-  if (pages <= 1) return;
+  // Small initial page so the FlatList viewport has content as soon as
+  // possible — the rest streams in after.
+  await fetchRange(0, Math.min(initialPageSize, total) - 1);
+  if (total <= initialPageSize) return;
 
-  // Remaining pages in a bounded concurrency pool so 100k-row binders
-  // don't launch 100 parallel requests against Supabase.
-  const remaining = Array.from({ length: pages - 1 }, (_, i) => i + 1);
+  // Remaining rows paginated by `pageSize`, starting right after the
+  // initial page so we don't re-fetch or skip any rows.
+  const remainingRows = total - initialPageSize;
+  const pages = Math.ceil(remainingRows / pageSize);
+  const startOffset = initialPageSize;
+
   let cursor = 0;
   async function worker() {
     while (true) {
       const idx = cursor++;
-      if (idx >= remaining.length) return;
-      await fetchPage(remaining[idx]);
+      if (idx >= pages) return;
+      const from = startOffset + idx * pageSize;
+      const to = from + pageSize - 1;
+      await fetchRange(from, to);
     }
   }
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, remaining.length) }, worker)
+    Array.from({ length: Math.min(concurrency, pages) }, worker)
   );
 }
 
@@ -281,10 +285,11 @@ export async function fetchCollectionCardsInStreamed(
   collectionIds: string[],
   select: string,
   onPage: (rows: any[]) => void,
-  opts?: { pageSize?: number; concurrency?: number }
+  opts?: { pageSize?: number; initialPageSize?: number; concurrency?: number }
 ): Promise<void> {
   if (collectionIds.length === 0) return;
   const pageSize = opts?.pageSize ?? 1000;
+  const initialPageSize = opts?.initialPageSize ?? pageSize;
   const concurrency = opts?.concurrency ?? 6;
 
   const { count } = await supabase
@@ -295,35 +300,37 @@ export async function fetchCollectionCardsInStreamed(
   const total = count ?? 0;
   if (total === 0) return;
 
-  const pages = Math.ceil(total / pageSize);
-
-  const fetchPage = async (pageIndex: number) => {
-    const offset = pageIndex * pageSize;
+  const fetchRange = async (from: number, to: number) => {
     const { data, error } = await supabase
       .from('collection_cards')
       .select(select)
       .in('collection_id', collectionIds)
       .order('added_at', { ascending: false })
       .order('id', { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .range(from, to);
     if (error) throw new Error(`Failed to page cards: ${error.message}`);
     if (data && data.length > 0) onPage(data);
   };
 
-  await fetchPage(0);
-  if (pages <= 1) return;
+  await fetchRange(0, Math.min(initialPageSize, total) - 1);
+  if (total <= initialPageSize) return;
 
-  const remaining = Array.from({ length: pages - 1 }, (_, i) => i + 1);
+  const remainingRows = total - initialPageSize;
+  const pages = Math.ceil(remainingRows / pageSize);
+  const startOffset = initialPageSize;
+
   let cursor = 0;
   async function worker() {
     while (true) {
       const idx = cursor++;
-      if (idx >= remaining.length) return;
-      await fetchPage(remaining[idx]);
+      if (idx >= pages) return;
+      const from = startOffset + idx * pageSize;
+      const to = from + pageSize - 1;
+      await fetchRange(from, to);
     }
   }
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, remaining.length) }, worker)
+    Array.from({ length: Math.min(concurrency, pages) }, worker)
   );
 }
 

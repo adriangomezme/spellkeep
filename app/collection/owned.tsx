@@ -142,7 +142,7 @@ export default function OwnedCardsScreen() {
           firstPainted = true;
           setIsLoading(false);
         }
-      }, { concurrency: 8 });
+      }, { initialPageSize: 100, concurrency: 8 });
     } catch (err) {
       console.error('Owned fetch error:', err);
     } finally {

@@ -168,6 +168,10 @@ export default function CollectionDetailScreen() {
       // remaining pages fan out in parallel and append as they land.
       // On a 100k-row binder this is ~3–5 s end-to-end (was ~30–50 s
       // with serial pagination).
+      // Tiny initial page (100 rows) makes the viewport paint in
+      // ~100 ms — the FlatList only renders ~20 visible items, so 100
+      // is more than enough for immediate interaction. Subsequent
+      // pages of 1,000 each stream in parallel with concurrency 8.
       let firstPainted = false;
       await fetchCollectionCardsStreamed(id, SELECT, (page) => {
         setEntries((prev) => [...prev, ...(page as unknown as CollectionEntry[])]);
@@ -175,7 +179,7 @@ export default function CollectionDetailScreen() {
           firstPainted = true;
           setIsLoading(false);
         }
-      }, { concurrency: 8 });
+      }, { initialPageSize: 100, concurrency: 8 });
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
