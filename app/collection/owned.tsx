@@ -115,8 +115,10 @@ export default function OwnedCardsScreen() {
           quantity_normal, quantity_foil, quantity_etched,
           cards (
             id, scryfall_id, oracle_id, name, set_name, set_code,
-            collector_number, rarity, type_line, cmc, is_legendary, image_uri_small,
-            image_uri_normal, price_usd, price_usd_foil, color_identity
+            collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
+            image_uri_small, image_uri_normal,
+            price_usd, price_usd_foil, price_eur, price_eur_foil,
+            color_identity, layout, card_faces, artist
           )
         `)
         .in('collection_id', binderIds)
