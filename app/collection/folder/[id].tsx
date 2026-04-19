@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchFolderContents,
+  fetchCollectionStats,
   deleteFolderWithContents,
   deleteCollection,
   duplicateCollection,
@@ -22,6 +23,7 @@ import {
   type CollectionSummary,
   type CollectionType,
 } from '../../../src/lib/collections';
+import { useImportJob } from '../../../src/components/collection/ImportJobProvider';
 import { MergeModal } from '../../../src/components/collection/MergeModal';
 import { ExportModal } from '../../../src/components/collection/ExportModal';
 import { ImportModal } from '../../../src/components/collection/ImportModal';
@@ -65,6 +67,33 @@ export default function FolderDetailScreen() {
   useFocusEffect(
     useCallback(() => { fetchContents(); }, [fetchContents])
   );
+
+  // Same pattern as the hub: when a background import finishes, patch
+  // just the affected row optimistically (sub-second) then reconcile.
+  const { job } = useImportJob();
+  useEffect(() => {
+    if (job?.status !== 'completed') return;
+    const targetId = job.collectionId;
+
+    (async () => {
+      try {
+        const stats = await fetchCollectionStats(targetId);
+        setItems((prev) =>
+          prev.map((c) =>
+            c.id === targetId
+              ? {
+                  ...c,
+                  card_count: stats.total_cards,
+                  unique_cards: stats.unique_cards,
+                  total_value: stats.total_value,
+                }
+              : c
+          )
+        );
+      } catch {}
+      fetchContents();
+    })();
+  }, [job?.status, job?.id, job?.collectionId, fetchContents]);
 
   function handleItemPress(item: CollectionSummary) {
     router.push({

@@ -18,6 +18,7 @@ import { supabase } from '../../src/lib/supabase';
 import {
   fetchCollectionSummaries,
   fetchOwnedCardStats,
+  fetchCollectionStats,
   fetchFolders,
   duplicateCollection,
   deleteCollection,
@@ -102,13 +103,37 @@ export default function CollectionHubScreen() {
     useCallback(() => { fetchAll(); }, [fetchAll])
   );
 
-  // Refresh the hub totals whenever a background import finishes, so the
-  // destination binder's "X Cards · Y unique" reflects the new state
-  // without needing a manual pull-to-refresh.
+  // Refresh the hub totals whenever a background import finishes. We
+  // target just the destination collection's stats first (sub-second
+  // response) so the user sees the row tick up immediately, then
+  // reconcile the rest of the hub in the background.
   const { job } = useImportJob();
   useEffect(() => {
-    if (job?.status === 'completed') fetchAll();
-  }, [job?.status, job?.id, fetchAll]);
+    if (job?.status !== 'completed') return;
+    const targetId = job.collectionId;
+
+    (async () => {
+      try {
+        const stats = await fetchCollectionStats(targetId);
+        const patch = (list: CollectionSummary[]) =>
+          list.map((c) =>
+            c.id === targetId
+              ? {
+                  ...c,
+                  card_count: stats.total_cards,
+                  unique_cards: stats.unique_cards,
+                  total_value: stats.total_value,
+                }
+              : c
+          );
+        setBinders((prev) => patch(prev));
+        setLists((prev) => patch(prev));
+      } catch {}
+      // Reconcile the full hub (owned stats, folder counts) after the
+      // optimistic row update has already painted.
+      fetchAll();
+    })();
+  }, [job?.status, job?.id, job?.collectionId, fetchAll]);
 
   function handleItemPress(item: CollectionSummary) {
     router.push({
