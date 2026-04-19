@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   View,
@@ -35,6 +35,7 @@ import { FolderListItem } from '../../src/components/collection/FolderListItem';
 import { CreateCollectionModal } from '../../src/components/collection/CreateCollectionModal';
 import { MarketHeaderCompact } from '../../src/components/collection/MarketHeaderCompact';
 import { InsightTabs } from '../../src/components/collection/InsightTabs';
+import { useImportJob } from '../../src/components/collection/ImportJobProvider';
 import { CollectionActionSheet } from '../../src/components/collection/CollectionActionSheet';
 import { EditCollectionInfoModal } from '../../src/components/collection/EditCollectionInfoModal';
 import { MergeModal } from '../../src/components/collection/MergeModal';
@@ -100,6 +101,14 @@ export default function CollectionHubScreen() {
   useFocusEffect(
     useCallback(() => { fetchAll(); }, [fetchAll])
   );
+
+  // Refresh the hub totals whenever a background import finishes, so the
+  // destination binder's "X Cards · Y unique" reflects the new state
+  // without needing a manual pull-to-refresh.
+  const { job } = useImportJob();
+  useEffect(() => {
+    if (job?.status === 'completed') fetchAll();
+  }, [job?.status, job?.id, fetchAll]);
 
   function handleItemPress(item: CollectionSummary) {
     router.push({

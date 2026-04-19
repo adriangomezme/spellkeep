@@ -150,51 +150,25 @@ export async function fetchFolders(userId: string, type?: CollectionType): Promi
  * Fetch binders/lists inside a specific folder.
  */
 export async function fetchFolderContents(folderId: string): Promise<CollectionSummary[]> {
-  const { data, error } = await supabase
-    .from('collections')
-    .select(`
-      id, name, type, folder_id, color,
-      collection_cards (
-        quantity_normal, quantity_foil, quantity_etched,
-        cards ( price_usd, price_usd_foil )
-      )
-    `)
-    .eq('folder_id', folderId)
-    .order('type')
-    .order('name');
+  // Server-side aggregation keeps counts correct regardless of collection
+  // size AND uses the canonical unique-variant definition (print × finish)
+  // so numbers agree with the binder detail header.
+  const { data, error } = await supabase.rpc('get_folder_contents_summary', {
+    p_folder_id: folderId,
+  });
 
   if (error) throw new Error(`Failed to fetch folder contents: ${error.message}`);
 
-  return (data ?? []).map((c: any) => {
-    let card_count = 0;
-    let total_value = 0;
-    const entries = c.collection_cards ?? [];
-
-    for (const cc of entries) {
-      const qty = (cc.quantity_normal ?? 0) + (cc.quantity_foil ?? 0) + (cc.quantity_etched ?? 0);
-      card_count += qty;
-
-      const card = cc.cards;
-      if (card?.price_usd) total_value += card.price_usd * (cc.quantity_normal ?? 0);
-      if (card?.price_usd_foil) {
-        total_value += card.price_usd_foil * (cc.quantity_foil ?? 0);
-        total_value += card.price_usd_foil * (cc.quantity_etched ?? 0);
-      } else if (card?.price_usd) {
-        total_value += card.price_usd * (cc.quantity_etched ?? 0);
-      }
-    }
-
-    return {
-      id: c.id,
-      name: c.name,
-      type: c.type as CollectionType,
-      folder_id: c.folder_id,
-      color: c.color ?? null,
-      card_count,
-      unique_cards: entries.length,
-      total_value,
-    };
-  });
+  return (data ?? []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    type: c.type as CollectionType,
+    folder_id: c.folder_id,
+    color: c.color ?? null,
+    card_count: Number(c.total_cards ?? 0),
+    unique_cards: Number(c.unique_cards ?? 0),
+    total_value: Number(c.total_value ?? 0),
+  }));
 }
 
 /**

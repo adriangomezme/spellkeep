@@ -168,7 +168,7 @@ function formatFormat(f: string): string {
     case 'spellkeep': return 'SpellKeep CSV';
     case 'plain': return 'Plain Text';
     case 'csv': return 'CSV';
-    case 'hevault': return 'HeVault CSV';
+    case 'hevault': return 'Hevault CSV';
     default: return f;
   }
 }

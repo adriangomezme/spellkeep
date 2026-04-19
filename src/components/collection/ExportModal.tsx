@@ -58,11 +58,14 @@ export function ExportModal({ visible, collectionId, collectionName, onClose }: 
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={['75%', '90%']}>
+    // Dynamic sizing — with only three formats the fixed 75% sheet was
+    // leaving huge blank space under the last row. The ScrollView still
+    // renders for future-proofing but no longer stretches to fill.
+    <BottomSheet visible={visible} onClose={onClose}>
       <Text style={styles.title}>Export</Text>
       <Text style={styles.subtitle}>{collectionName}</Text>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+      <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
         {SECTIONS.map((section) => {
           const sectionFormats = FORMATS.filter((f) => f.section === section.key);
           if (sectionFormats.length === 0) return null;

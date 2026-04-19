@@ -29,7 +29,7 @@ const FORMATS: FormatOption[] = [
   { key: 'spellkeep', label: 'SpellKeep CSV', description: 'CSV file exported by SpellKeep.\nIncludes full card data, finish, and layout.', allowPaste: false, section: 'spellkeep' },
   { key: 'plain', label: 'Plain Text', description: 'Simple text list with card name, set, and quantity.\nSupports foil and etched flags.', allowPaste: true, section: 'standard' },
   { key: 'csv', label: 'CSV', description: 'Standard CSV with header row.\nAuto-detects columns by name.', allowPaste: true, section: 'standard' },
-  { key: 'hevault', label: 'HeVault CSV', description: 'CSV file exported by HeVault.\nUses Scryfall IDs so language and etched variants stay distinct.', allowPaste: false, section: 'thirdparty' },
+  { key: 'hevault', label: 'Hevault CSV', description: 'CSV file exported by Hevault.\nUses Scryfall IDs so language and etched variants stay distinct.', allowPaste: false, section: 'thirdparty' },
 ];
 
 const SECTIONS: { key: string; label: string | null }[] = [
@@ -109,8 +109,17 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
     }
   }
 
+  // Format picker needs a tall fixed sheet so the list scrolls cleanly.
+  // The input step is much shorter (just a Choose File button, or that
+  // plus a small paste area) — use dynamic sizing there so the sheet
+  // hugs the content and doesn't leave hundreds of pixels of blank
+  // space below the CTA.
+  const snapPoints = step === 'format'
+    ? ['75%', '90%']
+    : allowPaste ? ['55%', '85%'] : undefined;
+
   return (
-    <BottomSheet visible={visible} onClose={handleClose} snapPoints={['75%', '90%']}>
+    <BottomSheet visible={visible} onClose={handleClose} snapPoints={snapPoints}>
       {step === 'format' ? (
         <>
           <Text style={styles.title}>Import</Text>
