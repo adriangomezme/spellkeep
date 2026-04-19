@@ -4,19 +4,26 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { colors } from '../src/constants';
 import { AuthProvider } from '../src/components/AuthProvider';
 import { PowerSyncProvider } from '../src/components/PowerSyncProvider';
+import { ImportJobProvider } from '../src/components/collection/ImportJobProvider';
+import { MinimizedImportPill } from '../src/components/collection/MinimizedImportPill';
+import { ImportStatusSheet } from '../src/components/collection/ImportStatusSheet';
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
       <AuthProvider>
         <PowerSyncProvider>
-          <StatusBar style="dark" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.background },
-            }}
-          />
+          <ImportJobProvider>
+            <StatusBar style="dark" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.background },
+              }}
+            />
+            <MinimizedImportPill />
+            <ImportStatusSheet />
+          </ImportJobProvider>
         </PowerSyncProvider>
       </AuthProvider>
     </GestureHandlerRootView>

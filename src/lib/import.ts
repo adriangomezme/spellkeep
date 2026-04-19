@@ -1,18 +1,27 @@
-import { searchCards, type ScryfallCard } from './scryfall';
+import { getCard, searchCards, type ScryfallCard } from './scryfall';
 import {
   batchResolveByPrint,
-  findCardByName,
+  batchResolveByName,
+  batchResolveByScryfallId,
+  batchSupabaseIdsByScryfallId,
   isCatalogReady,
   type BatchKey,
 } from './catalog/catalogQueries';
-import { addToCollection, type Condition, type Finish } from './collection';
+import { supabase } from './supabase';
+import { ensureCardExists } from './collection';
+import type { Condition, Finish } from './collection';
 
-export type ImportFormat = 'spellkeep' | 'plain' | 'csv' | 'tcgplayer' | 'cardsphere' | 'deckbox';
+export type ImportFormat = 'spellkeep' | 'plain' | 'csv' | 'hevault';
 
 type ParsedCard = {
   name: string;
+  // Scryfall ID when the source file provides it (e.g. HeVault exports). This
+  // is the canonical unique key — it distinguishes language variants, art
+  // variants, and foil/etched printings that share the same name+set+cn.
+  scryfall_id?: string;
   set_code?: string;
   collector_number?: string;
+  language?: string;
   quantity: number;
   finish: Finish;
   condition: Condition;
@@ -52,28 +61,6 @@ function parsePlainText(text: string): ParsedCard[] {
           condition: 'NM',
         });
       }
-    }
-  }
-  return cards;
-}
-
-function parseTCGPlayer(text: string): ParsedCard[] {
-  const cards: ParsedCard[] = [];
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Format: {qty} {name} [{set_code}] {collector_number}
-    const match = trimmed.match(/^(\d+)\s+(.+?)\s+\[(\w+)\]\s+(\S+)$/);
-    if (match) {
-      cards.push({
-        name: match[2],
-        set_code: match[3].toLowerCase(),
-        collector_number: match[4].split('/')[0], // handle "170/274" format
-        quantity: parseInt(match[1], 10),
-        finish: 'normal',
-        condition: 'NM',
-      });
     }
   }
   return cards;
@@ -166,60 +153,6 @@ function parseCSV(text: string): ParsedCard[] {
   return cards;
 }
 
-function parseCardsphere(text: string): ParsedCard[] {
-  const rows = parseCSVLines(text);
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  const cards: ParsedCard[] = [];
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const name = getCol(headers, row, 'Name');
-    if (!name) continue;
-
-    const qty = parseInt(getCol(headers, row, 'Tradelist Count') || '1', 10);
-    const foil = getCol(headers, row, 'Foil');
-    const etched = getCol(headers, row, 'Etched Foil');
-    const edition = getCol(headers, row, 'Edition');
-
-    cards.push({
-      name,
-      set_code: undefined, // Cardsphere uses full edition name, not code
-      quantity: isNaN(qty) ? 1 : qty,
-      finish: parseFinish(foil, etched),
-      condition: 'NM',
-    });
-  }
-  return cards;
-}
-
-function parseDeckbox(text: string): ParsedCard[] {
-  const rows = parseCSVLines(text);
-  if (rows.length < 2) return [];
-  const headers = rows[0];
-  const cards: ParsedCard[] = [];
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const name = getCol(headers, row, 'Name');
-    if (!name) continue;
-
-    const qty = parseInt(getCol(headers, row, 'Count') || '1', 10);
-    const colNum = getCol(headers, row, 'Card Number');
-    const foil = getCol(headers, row, 'Foil');
-    const etched = getCol(headers, row, 'Etched Foil');
-
-    cards.push({
-      name,
-      collector_number: colNum || undefined,
-      quantity: isNaN(qty) ? 1 : qty,
-      finish: parseFinish(foil, etched),
-      condition: 'NM',
-    });
-  }
-  return cards;
-}
-
 function parseSpellKeep(text: string): ParsedCard[] {
   const rows = parseCSVLines(text);
   if (rows.length < 2) return [];
@@ -248,20 +181,201 @@ function parseSpellKeep(text: string): ParsedCard[] {
   return cards;
 }
 
+// HeVault CSV export format. Columns observed:
+//   cmc,collector_number,color_identity,colors,estimated_price,extras,
+//   language,mana_cost,name,oracle_id,quantity,rarity,scryfall_id,
+//   set_code,set_name,type_line
+// The canonical unique key is `scryfall_id`; everything else is best-effort
+// metadata. `extras` is the finish marker: "foil", "etchedFoil", or empty.
+function parseHevault(text: string): ParsedCard[] {
+  const rows = parseCSVLines(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const cards: ParsedCard[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const scryfallId = getCol(headers, row, 'scryfall_id');
+    const name = getCol(headers, row, 'name');
+    if (!scryfallId && !name) continue;
+
+    const qty = parseInt(getCol(headers, row, 'quantity') || '1', 10);
+    const setCode = getCol(headers, row, 'set_code');
+    const colNum = getCol(headers, row, 'collector_number');
+    const language = getCol(headers, row, 'language');
+    const extras = getCol(headers, row, 'extras').toLowerCase();
+
+    let finish: Finish = 'normal';
+    if (extras === 'etchedfoil') finish = 'etched';
+    else if (extras === 'foil') finish = 'foil';
+
+    cards.push({
+      name,
+      scryfall_id: scryfallId || undefined,
+      set_code: setCode?.toLowerCase() || undefined,
+      collector_number: colNum || undefined,
+      language: language || undefined,
+      quantity: isNaN(qty) ? 1 : qty,
+      finish,
+      condition: 'NM',
+    });
+  }
+  return cards;
+}
+
 const PARSERS: Record<ImportFormat, (text: string) => ParsedCard[]> = {
   spellkeep: parseSpellKeep,
   plain: parsePlainText,
   csv: parseCSV,
-  tcgplayer: parseTCGPlayer,
-  cardsphere: parseCardsphere,
-  deckbox: parseDeckbox,
+  hevault: parseHevault,
 };
 
-// ── Resolver: find Scryfall card from parsed data ──
+// ── Import engine ────────────────────────────────────────────────────────
+
+export type ImportProgress = {
+  phase: 'parsing' | 'resolving' | 'resolving_online' | 'uploading' | 'done';
+  current: number;
+  total: number;
+};
+
+export type ImportResult = {
+  // Count of parsed source rows (lines in the CSV / text). Used by the
+  // progress UI as the denominator.
+  total: number;
+  // Count of unique variants saved to the collection. A variant is one
+  // (print × finish) combination — so a row with qty_normal=1 + qty_foil=1
+  // contributes 2 variants. Matches the definition used by the binder
+  // stats so the import counter agrees with the post-import header.
+  imported: number;
+  // Existing rows that already had the variant; we only bumped the quantity.
+  // These are variants the RPC counted as "updated" rather than inserted.
+  updated: number;
+  failed: string[];
+};
+
+// Collapse file rows that point at the same print and condition/finish before
+// we even hit the catalog. Playsets, multi-list files etc. commonly repeat
+// the same line — dedup here shaves both catalog and RPC work.
+type ParsedKey = {
+  groupKey: string;
+  parsed: ParsedCard;
+  // Running total for this (name/print, condition, finish) bucket.
+  quantity: number;
+};
+
+function parsedKeyFor(p: ParsedCard): string {
+  // scryfall_id is canonical when the source file provides it — it already
+  // encodes language, art variant, and foil/etched distinctions. Dedupe on
+  // (scryfall_id, condition, finish, language) so two rows for the same
+  // printing get merged while language/etched variants stay separate. The
+  // language bit is only load-bearing when multiple foreign-language rows
+  // collapse onto the same English card_id server-side (rare fallback).
+  const lang = (p.language ?? 'en').toLowerCase();
+  if (p.scryfall_id) {
+    return `sid:${p.scryfall_id}|${p.condition}|${p.finish}|${lang}`;
+  }
+  const set = p.set_code ?? '';
+  const cn = p.collector_number ?? '';
+  return `${p.name.toLowerCase()}|${set}|${cn}|${p.condition}|${p.finish}|${lang}`;
+}
+
+function dedupeParsed(parsed: ParsedCard[]): ParsedKey[] {
+  const map = new Map<string, ParsedKey>();
+  for (const p of parsed) {
+    const key = parsedKeyFor(p);
+    const existing = map.get(key);
+    if (existing) {
+      existing.quantity += p.quantity;
+    } else {
+      map.set(key, { groupKey: key, parsed: p, quantity: p.quantity });
+    }
+  }
+  return Array.from(map.values());
+}
+
+// Rows ready to send to the RPC. `scryfall_id` and `card_id` are both known
+// once resolution + supabase-id mapping finishes.
+type ResolvedRow = {
+  card_id: string;
+  condition: Condition;
+  language: string;
+  quantity_normal: number;
+  quantity_foil: number;
+  quantity_etched: number;
+};
+
+// Chunk size for RPC payloads. Each row is small JSON (~120 bytes), so 2k
+// rows ≈ 240 KB per request — comfortably under PostgREST's 1 MB limit and
+// under the Edge/API statement timeout of 60s for a single upsert.
+const RPC_CHUNK = 2000;
+
+// Limits online-only resolution parallelism for cards missing from the local
+// catalog. Keeps us under Scryfall's 10 req/s rate limit while avoiding
+// purely serial waits.
+const ONLINE_CONCURRENCY = 4;
+
+// Minimum gap between Scryfall API requests (ms). Scryfall asks clients to
+// cap at ~10 req/s; 120 ms * ONLINE_CONCURRENCY(4) = ~33 req/s worst case,
+// but practically less because responses take 100-200 ms themselves. Without
+// this throttle, DFC-heavy imports where the local catalog is stale were
+// burst-hitting Scryfall and getting silently 429'd.
+const SCRYFALL_MIN_GAP_MS = 120;
+let lastScryfallAt = 0;
+
+async function throttleScryfall(): Promise<void> {
+  const now = Date.now();
+  const wait = lastScryfallAt + SCRYFALL_MIN_GAP_MS - now;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastScryfallAt = Date.now();
+}
+
+/**
+ * Batch query Supabase directly for `scryfall_id → card_id` (Supabase UUID).
+ * Used as the middle layer between the local catalog and the Scryfall API:
+ * if the local snapshot is stale, Supabase still has the full card data —
+ * we only need the primary key to complete the import, no remote fetch and
+ * no chance of being rate-limited.
+ */
+async function fetchSupabaseCardIdsFromServer(
+  scryfallIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (scryfallIds.length === 0) return result;
+
+  const unique = Array.from(new Set(scryfallIds));
+  const CHUNK = 500;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const slice = unique.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('cards')
+      .select('id, scryfall_id')
+      .in('scryfall_id', slice);
+    if (error) continue; // soft-fail, falls through to Scryfall path
+    for (const row of data ?? []) {
+      if (row.scryfall_id && row.id) {
+        result.set(row.scryfall_id as string, row.id as string);
+      }
+    }
+  }
+  return result;
+}
 
 async function resolveCardViaApi(parsed: ParsedCard): Promise<ScryfallCard | null> {
+  // When the source file gives us a Scryfall ID, go straight to the single
+  // authoritative endpoint. This is the only way to pull non-English / art
+  // variants that aren't indexed by name+set+cn.
+  if (parsed.scryfall_id) {
+    try {
+      await throttleScryfall();
+      return await getCard(parsed.scryfall_id);
+    } catch {
+      return null;
+    }
+  }
+
   if (parsed.set_code && parsed.collector_number) {
     try {
+      await throttleScryfall();
       const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code} cn:${parsed.collector_number}`, 1);
       if (result?.data?.[0]) return result.data[0];
     } catch {}
@@ -269,12 +383,14 @@ async function resolveCardViaApi(parsed: ParsedCard): Promise<ScryfallCard | nul
 
   if (parsed.set_code) {
     try {
+      await throttleScryfall();
       const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code}`, 1);
       if (result?.data?.[0]) return result.data[0];
     } catch {}
   }
 
   try {
+    await throttleScryfall();
     const result = await searchCards(`!"${parsed.name}"`, 1);
     if (result?.data?.[0]) return result.data[0];
   } catch {}
@@ -282,80 +398,232 @@ async function resolveCardViaApi(parsed: ParsedCard): Promise<ScryfallCard | nul
   return null;
 }
 
-// ── Main import function ──
-
-export type ImportResult = {
-  total: number;
-  imported: number;
-  failed: string[];
-};
+async function runInPool<T, R>(
+  items: T[],
+  worker: (item: T, idx: number) => Promise<R>,
+  concurrency: number
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function pump() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= items.length) return;
+      results[idx] = await worker(items[idx], idx);
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, pump);
+  await Promise.all(workers);
+  return results;
+}
 
 export async function importToCollection(
   text: string,
   format: ImportFormat,
   collectionId: string,
-  onProgress?: (current: number, total: number) => void,
+  onProgress?: (progress: ImportProgress) => void,
 ): Promise<ImportResult> {
   const parser = PARSERS[format];
   const parsed = parser(text);
-  const result: ImportResult = { total: parsed.length, imported: 0, failed: [] };
+  const result: ImportResult = {
+    total: parsed.length,
+    imported: 0,
+    updated: 0,
+    failed: [],
+  };
+  if (parsed.length === 0) return result;
 
-  // Phase 1: pre-resolve everything we can from the local catalog in one pass.
-  // This is the common case — imports from TCGPlayer/Deckbox/etc have set+cn
-  // for most rows, and our local catalog has 100k+ printings. We should
-  // resolve ~99% here with a few grouped SELECTs.
-  const resolved = new Map<number, ScryfallCard>();
+  onProgress?.({ phase: 'parsing', current: parsed.length, total: parsed.length });
+
+  // 1. Dedupe file rows — multiple "4 Forest" lines collapse to one with qty=4
+  // before we spend catalog / RPC work on them.
+  const groups = dedupeParsed(parsed);
+
+  // 2. Local catalog resolution (the fast path; 99%+ of real imports).
+  //    Strategy is layered from most-specific to least:
+  //    (a) scryfall_id exact match — canonical, handles language/art/etched
+  //    (b) (set_code, collector_number) — handles plain-text imports
+  //    (c) name-only — last-resort fallback
+  const resolvedByGroup = new Map<string, ScryfallCard>();
   if (await isCatalogReady()) {
-    const withPrint: BatchKey[] = parsed
-      .map((p, idx) => ({ idx, p }))
-      .filter(({ p }) => p.set_code && p.collector_number)
-      .map(({ idx, p }) => ({
-        key: String(idx),
-        setCode: p.set_code!,
-        collectorNumber: p.collector_number!,
-      }));
-
-    const byPrint = await batchResolveByPrint(withPrint);
-    for (const { key } of withPrint) {
-      const hit = byPrint.get(key);
-      if (hit) resolved.set(Number(key), hit);
+    const sidList = groups
+      .filter((g) => g.parsed.scryfall_id)
+      .map((g) => g.parsed.scryfall_id!);
+    if (sidList.length > 0) {
+      const bySid = await batchResolveByScryfallId(sidList);
+      for (const g of groups) {
+        const sid = g.parsed.scryfall_id;
+        if (!sid) continue;
+        const hit = bySid.get(sid);
+        if (hit) resolvedByGroup.set(g.groupKey, hit);
+      }
     }
 
-    // Fallback pass: name-only for rows we didn't hit by print.
-    for (let i = 0; i < parsed.length; i++) {
-      if (resolved.has(i)) continue;
-      const p = parsed[i];
-      const hit = await findCardByName(p.name);
-      if (hit) resolved.set(i, hit);
+    const printKeys: BatchKey[] = [];
+    for (const g of groups) {
+      if (resolvedByGroup.has(g.groupKey)) continue;
+      if (g.parsed.set_code && g.parsed.collector_number) {
+        printKeys.push({
+          key: g.groupKey,
+          setCode: g.parsed.set_code,
+          collectorNumber: g.parsed.collector_number,
+        });
+      }
+    }
+    if (printKeys.length > 0) {
+      const byPrint = await batchResolveByPrint(printKeys);
+      for (const [key, card] of byPrint) resolvedByGroup.set(key, card);
+    }
+
+    const remainingNames = groups
+      .filter((g) => !resolvedByGroup.has(g.groupKey) && !g.parsed.scryfall_id)
+      .map((g) => g.parsed.name);
+    if (remainingNames.length > 0) {
+      const byName = await batchResolveByName(remainingNames);
+      for (const g of groups) {
+        if (resolvedByGroup.has(g.groupKey)) continue;
+        if (g.parsed.scryfall_id) continue; // don't substitute a wrong print
+        const hit = byName.get(g.parsed.name);
+        if (hit) resolvedByGroup.set(g.groupKey, hit);
+      }
     }
   }
 
-  // Phase 2: iterate, resolving via API only for misses, and inserting.
-  for (let i = 0; i < parsed.length; i++) {
-    const card = parsed[i];
-    onProgress?.(i + 1, parsed.length);
+  onProgress?.({ phase: 'resolving', current: resolvedByGroup.size, total: groups.length });
 
-    try {
-      let scryfallCard = resolved.get(i) ?? null;
+  // 3. Supabase bridge: for groups where we know the scryfall_id but the
+  //    local catalog missed (stale snapshot), ask Supabase directly for the
+  //    Supabase UUID. This avoids the previous behavior of falling all the
+  //    way to the Scryfall REST API for cards we already have server-side,
+  //    which was getting silently rate-limited and dropping ~60% of DFC /
+  //    reversible imports.
+  const supabaseIdMap = new Map<string, string>();
 
-      if (!scryfallCard) {
-        // Unknown to local catalog — fall back to Scryfall API.
-        // Rate limit between network calls only; local resolves are instant.
-        if (i > 0) await new Promise((r) => setTimeout(r, 100));
-        scryfallCard = await resolveCardViaApi(card);
+  // Start with the local-catalog-resolved cards (their UUID is already there).
+  const localSids = Array.from(resolvedByGroup.values()).map((c) => c.id);
+  if (localSids.length > 0) {
+    const localIdMap = await batchSupabaseIdsByScryfallId(localSids);
+    for (const [sid, uuid] of localIdMap) supabaseIdMap.set(sid, uuid);
+  }
+
+  // Now the server bridge for unresolved-but-scryfall-id-known groups.
+  const missingSids = Array.from(
+    new Set(
+      groups
+        .filter((g) => !resolvedByGroup.has(g.groupKey) && g.parsed.scryfall_id)
+        .map((g) => g.parsed.scryfall_id!)
+    )
+  );
+  if (missingSids.length > 0) {
+    const serverIdMap = await fetchSupabaseCardIdsFromServer(missingSids);
+    for (const [sid, uuid] of serverIdMap) supabaseIdMap.set(sid, uuid);
+  }
+
+  // 4. Online fallback: only for groups that are still unresolved AND not
+  //    already covered by the Supabase bridge. These are genuinely new cards
+  //    (spoilers that landed after the last catalog sync) or plain-text
+  //    imports where the name wasn't in the catalog either.
+  const unresolved = groups.filter((g) => {
+    if (resolvedByGroup.has(g.groupKey)) return false;
+    const sid = g.parsed.scryfall_id;
+    if (sid && supabaseIdMap.has(sid)) return false;
+    return true;
+  });
+  if (unresolved.length > 0) {
+    let completed = 0;
+    await runInPool(unresolved, async (g) => {
+      const card = await resolveCardViaApi(g.parsed);
+      if (card) resolvedByGroup.set(g.groupKey, card);
+      completed++;
+      if (completed % 25 === 0 || completed === unresolved.length) {
+        onProgress?.({
+          phase: 'resolving_online',
+          current: completed,
+          total: unresolved.length,
+        });
       }
+    }, ONLINE_CONCURRENCY);
+  }
 
-      if (!scryfallCard) {
-        result.failed.push(card.name);
-        continue;
-      }
-
-      await addToCollection(scryfallCard, card.condition, card.finish, card.quantity, collectionId);
-      result.imported++;
-    } catch {
-      result.failed.push(card.name);
+  // 5. Ensure-card for anything Supabase didn't have yet (brand-new cards
+  //    that came from the Scryfall fallback in step 4).
+  const needsEnsure: { groupKey: string; card: ScryfallCard }[] = [];
+  for (const g of groups) {
+    const card = resolvedByGroup.get(g.groupKey);
+    if (!card) continue;
+    if (!supabaseIdMap.has(card.id)) {
+      needsEnsure.push({ groupKey: g.groupKey, card });
     }
   }
 
+  if (needsEnsure.length > 0) {
+    await runInPool(needsEnsure, async ({ card }) => {
+      try {
+        const id = await ensureCardExists(card);
+        supabaseIdMap.set(card.id, id);
+      } catch {
+        // Silently skip; the group will end up in `failed` below when we
+        // can't find its supabase_id.
+      }
+    }, ONLINE_CONCURRENCY);
+  }
+
+  // 6. Build RPC payload. Collapse per (card_id, condition) with per-finish
+  //    quantity columns — this is the shape sp_bulk_upsert_collection_cards
+  //    expects. For scryfall_id-keyed groups we may not have a full
+  //    ScryfallCard (the Supabase bridge returns only the UUID), which is
+  //    fine — the RPC only needs `card_id`.
+  const rowMap = new Map<string, ResolvedRow>();
+  for (const g of groups) {
+    const scryfallCard = resolvedByGroup.get(g.groupKey);
+    const sidForLookup = scryfallCard?.id ?? g.parsed.scryfall_id;
+    const supabaseId = sidForLookup ? supabaseIdMap.get(sidForLookup) : undefined;
+    if (!supabaseId) {
+      for (let i = 0; i < g.quantity; i++) result.failed.push(g.parsed.name);
+      continue;
+    }
+
+    const language = (g.parsed.language ?? 'en').toLowerCase();
+    const rowKey = `${supabaseId}|${g.parsed.condition}|${language}`;
+    const existing = rowMap.get(rowKey);
+    const row = existing ?? {
+      card_id: supabaseId,
+      condition: g.parsed.condition,
+      language,
+      quantity_normal: 0,
+      quantity_foil: 0,
+      quantity_etched: 0,
+    };
+    if (g.parsed.finish === 'normal') row.quantity_normal += g.quantity;
+    else if (g.parsed.finish === 'foil') row.quantity_foil += g.quantity;
+    else row.quantity_etched += g.quantity;
+    rowMap.set(rowKey, row);
+  }
+
+  const rows = Array.from(rowMap.values());
+
+  // 6. Bulk upsert in chunks via the RPC. Each chunk is a single network
+  // round-trip and a single SQL statement; 100k cards turns into ~50
+  // requests instead of 300k.
+  let uploaded = 0;
+  for (let i = 0; i < rows.length; i += RPC_CHUNK) {
+    const chunk = rows.slice(i, i + RPC_CHUNK);
+    const { data, error } = await supabase.rpc('sp_bulk_upsert_collection_cards', {
+      p_collection_id: collectionId,
+      p_rows: chunk,
+    });
+    if (error) {
+      throw new Error(`Bulk upsert failed: ${error.message}`);
+    }
+    const stats = Array.isArray(data) ? data[0] : data;
+    if (stats) {
+      result.imported += Number(stats.inserted ?? 0);
+      result.updated += Number(stats.updated ?? 0);
+    }
+    uploaded += chunk.length;
+    onProgress?.({ phase: 'uploading', current: uploaded, total: rows.length });
+  }
+
+  onProgress?.({ phase: 'done', current: rows.length, total: rows.length });
   return result;
 }

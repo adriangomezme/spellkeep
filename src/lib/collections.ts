@@ -57,96 +57,55 @@ async function getUserId(): Promise<string> {
 }
 
 /**
- * Fetch all binders and lists with card counts and values.
+ * Fetch all binders and lists with card counts and values. Stats come from
+ * a server-side RPC so we don't hit PostgREST's default max_rows=1000 limit
+ * when summing child rows (collections with >1k unique entries used to show
+ * truncated totals — see bug fix in migration 00014).
  */
-export async function fetchCollectionSummaries(userId: string): Promise<CollectionSummary[]> {
-  const { data, error } = await supabase
-    .from('collections')
-    .select(`
-      id, name, type, folder_id, color,
-      collection_cards (
-        quantity_normal, quantity_foil, quantity_etched,
-        cards ( price_usd, price_usd_foil )
-      )
-    `)
-    .eq('user_id', userId)
-    .order('type')
-    .order('name');
-
+export async function fetchCollectionSummaries(_userId: string): Promise<CollectionSummary[]> {
+  const { data, error } = await supabase.rpc('get_user_collection_summaries', { p_type: null });
   if (error) throw new Error(`Failed to fetch collections: ${error.message}`);
 
-  return (data ?? []).map((c: any) => {
-    let card_count = 0;
-    let total_value = 0;
-    const entries = c.collection_cards ?? [];
-
-    for (const cc of entries) {
-      const qty = (cc.quantity_normal ?? 0) + (cc.quantity_foil ?? 0) + (cc.quantity_etched ?? 0);
-      card_count += qty;
-
-      const card = cc.cards;
-      if (card?.price_usd) total_value += card.price_usd * (cc.quantity_normal ?? 0);
-      if (card?.price_usd_foil) {
-        total_value += card.price_usd_foil * (cc.quantity_foil ?? 0);
-        total_value += card.price_usd_foil * (cc.quantity_etched ?? 0);
-      } else if (card?.price_usd) {
-        total_value += card.price_usd * (cc.quantity_etched ?? 0);
-      }
-    }
-
-    return {
-      id: c.id,
-      name: c.name,
-      type: c.type as CollectionType,
-      folder_id: c.folder_id,
-      color: c.color ?? null,
-      card_count,
-      unique_cards: entries.length,
-      total_value,
-    };
-  });
+  return (data ?? []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    type: c.type as CollectionType,
+    folder_id: c.folder_id,
+    color: c.color ?? null,
+    card_count: Number(c.total_cards ?? 0),
+    unique_cards: Number(c.unique_cards ?? 0),
+    total_value: Number(c.total_value ?? 0),
+  }));
 }
 
 /**
  * Fetch owned card stats — sum across ALL binders only (not lists).
+ * Uses the get_owned_stats RPC to avoid the 1000-row truncation bug.
  */
-export async function fetchOwnedCardStats(userId: string): Promise<OwnedCardStats> {
-  const { data, error } = await supabase
-    .from('collections')
-    .select(`
-      id, type,
-      collection_cards (
-        quantity_normal, quantity_foil, quantity_etched,
-        cards ( price_usd, price_usd_foil )
-      )
-    `)
-    .eq('user_id', userId)
-    .eq('type', 'binder');
-
+export async function fetchOwnedCardStats(_userId: string): Promise<OwnedCardStats> {
+  const { data, error } = await supabase.rpc('get_owned_stats');
   if (error) throw new Error(`Failed to fetch owned stats: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    total_cards: Number(row?.total_cards ?? 0),
+    unique_cards: Number(row?.unique_cards ?? 0),
+    total_value: Number(row?.total_value ?? 0),
+  };
+}
 
-  let total_cards = 0;
-  let unique_cards = 0;
-  let total_value = 0;
-
-  for (const binder of data ?? []) {
-    for (const cc of (binder as any).collection_cards ?? []) {
-      const qty = (cc.quantity_normal ?? 0) + (cc.quantity_foil ?? 0) + (cc.quantity_etched ?? 0);
-      total_cards += qty;
-      unique_cards += 1;
-
-      const card = cc.cards;
-      if (card?.price_usd) total_value += card.price_usd * (cc.quantity_normal ?? 0);
-      if (card?.price_usd_foil) {
-        total_value += card.price_usd_foil * (cc.quantity_foil ?? 0);
-        total_value += card.price_usd_foil * (cc.quantity_etched ?? 0);
-      } else if (card?.price_usd) {
-        total_value += card.price_usd * (cc.quantity_etched ?? 0);
-      }
-    }
-  }
-
-  return { total_cards, unique_cards, total_value };
+/**
+ * Stats for a single collection. Used by the detail screen header so the
+ * totals stay correct even before all rows finish loading.
+ */
+export async function fetchCollectionStats(collectionId: string): Promise<OwnedCardStats> {
+  const { data, error } = await supabase.rpc('get_collection_stats', { p_collection_id: collectionId });
+  if (error) throw new Error(`Failed to fetch collection stats: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    total_cards: Number(row?.total_cards ?? 0),
+    unique_cards: Number(row?.unique_cards ?? 0),
+    total_value: Number(row?.total_value ?? 0),
+  };
 }
 
 /**
@@ -236,6 +195,69 @@ export async function fetchFolderContents(folderId: string): Promise<CollectionS
       total_value,
     };
   });
+}
+
+/**
+ * Page through collection_cards for a single collection until PostgREST
+ * returns a short page. Returns all rows. Used by the detail screen when
+ * the collection is large (imports of 10k+ cards).
+ *
+ * PostgREST caps per-request rows at `db-max-rows` (1000 by default). We
+ * iterate via .range() so clients get the full set without needing the
+ * server config changed.
+ */
+export async function fetchAllCollectionCards(
+  collectionId: string,
+  select: string,
+  pageSize = 1000
+): Promise<any[]> {
+  const all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('collection_cards')
+      .select(select)
+      .eq('collection_id', collectionId)
+      .order('added_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw new Error(`Failed to page cards: ${error.message}`);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
+/**
+ * Same idea for the Owned view — pages across any set of collection ids.
+ */
+export async function fetchAllCollectionCardsIn(
+  collectionIds: string[],
+  select: string,
+  pageSize = 1000
+): Promise<any[]> {
+  if (collectionIds.length === 0) return [];
+  const all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('collection_cards')
+      .select(select)
+      .in('collection_id', collectionIds)
+      .order('added_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw new Error(`Failed to page cards: ${error.message}`);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
 }
 
 // ============================================================

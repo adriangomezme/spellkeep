@@ -30,7 +30,7 @@ const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
  * Uses fetch with anon key instead of supabase.functions.invoke because
  * PowerSync generates ES256 JWTs which Edge Functions don't support.
  */
-async function ensureCardExists(card: ScryfallCard): Promise<string> {
+export async function ensureCardExists(card: ScryfallCard): Promise<string> {
   // Fast path: local catalog usually has this card. The snapshot ships the
   // Supabase `id` UUID so we can short-circuit the network entirely.
   const localId = await findSupabaseIdByScryfallId(card.id);
@@ -121,6 +121,7 @@ export async function addToCollection(
     .eq('collection_id', targetId)
     .eq('card_id', cardId)
     .eq('condition', condition)
+    .eq('language', 'en')
     .single();
 
   if (existing) {
@@ -143,6 +144,7 @@ export async function addToCollection(
         collection_id: targetId,
         card_id: cardId,
         condition,
+        language: 'en',
         quantity_normal: finish === 'normal' ? quantity : 0,
         quantity_foil: finish === 'foil' ? quantity : 0,
         quantity_etched: finish === 'etched' ? quantity : 0,

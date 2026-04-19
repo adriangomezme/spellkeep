@@ -21,17 +21,9 @@ type ExportCard = {
   quantity_etched: number;
 };
 
-export type ExportFormat = 'spellkeep' | 'csv' | 'plain' | 'moxfield' | 'tcgplayer' | 'deckbox' | 'cardsphere';
+export type ExportFormat = 'spellkeep' | 'csv' | 'plain';
 
 const CONDITION_MAP: Record<string, string> = {
-  NM: 'Near Mint',
-  LP: 'Lightly Played',
-  MP: 'Moderately Played',
-  HP: 'Heavily Played',
-  DMG: 'Damaged',
-};
-
-const CONDITION_MOXFIELD: Record<string, string> = {
   NM: 'Near Mint',
   LP: 'Lightly Played',
   MP: 'Moderately Played',
@@ -79,10 +71,6 @@ function escapeCsv(value: string): string {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
-}
-
-function q(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
 }
 
 // ── Format: SpellKeep CSV (proprietary) ──
@@ -147,100 +135,16 @@ function formatPlainText(cards: ExportCard[]): string {
   return lines.join('\n');
 }
 
-// ── Format: Moxfield CSV ──
-function formatMoxfield(cards: ExportCard[]): string {
-  const header = '"Count","Tradelist Count","Name","Edition","Condition","Language","Foil","Tags","Last Modified","Collector Number","Alter","Proxy","Purchase Price"';
-  const rows: string[] = [header];
-  const now = new Date().toISOString().replace('T', ' ').slice(0, -1);
-
-  for (const c of cards) {
-    const cond = CONDITION_MOXFIELD[c.condition] ?? 'Near Mint';
-    if (c.quantity_normal > 0) {
-      rows.push(`${q(String(c.quantity_normal))},${q(String(c.quantity_normal))},${q(c.name)},${q(c.set_code)},${q(cond)},"English","","",${q(now)},${q(c.collector_number)},"False","False",""`);
-    }
-    if (c.quantity_foil > 0) {
-      rows.push(`${q(String(c.quantity_foil))},${q(String(c.quantity_foil))},${q(c.name)},${q(c.set_code)},${q(cond)},"English","foil","",${q(now)},${q(c.collector_number)},"False","False",""`);
-    }
-    if (c.quantity_etched > 0) {
-      rows.push(`${q(String(c.quantity_etched))},${q(String(c.quantity_etched))},${q(c.name)},${q(c.set_code)},${q(cond)},"English","etched","",${q(now)},${q(c.collector_number)},"False","False",""`);
-    }
-  }
-
-  return rows.join('\n');
-}
-
-// ── Format: TCGPlayer ──
-function formatTCGPlayer(cards: ExportCard[]): string {
-  const lines: string[] = [];
-
-  for (const c of cards) {
-    const total = c.quantity_normal + c.quantity_foil + c.quantity_etched;
-    if (total > 0) {
-      lines.push(`${total} ${c.name} [${c.set_code.toUpperCase()}] ${c.collector_number}`);
-    }
-  }
-
-  return lines.join('\n');
-}
-
-// ── Format: Deckbox CSV ──
-function formatDeckbox(cards: ExportCard[]): string {
-  const header = 'Card Number,Count,Edition,Etched Foil,Foil,Language,Name';
-  const rows: string[] = [header];
-
-  for (const c of cards) {
-    if (c.quantity_normal > 0) {
-      rows.push(`${q(c.collector_number)},${q(String(c.quantity_normal))},${q(c.set_name)},"","","English",${q(c.name)}`);
-    }
-    if (c.quantity_foil > 0) {
-      rows.push(`${q(c.collector_number)},${q(String(c.quantity_foil))},${q(c.set_name)},"","foil","English",${q(c.name)}`);
-    }
-    if (c.quantity_etched > 0) {
-      rows.push(`${q(c.collector_number)},${q(String(c.quantity_etched))},${q(c.set_name)},"etched","","English",${q(c.name)}`);
-    }
-  }
-
-  return rows.join('\n');
-}
-
-// ── Format: Cardsphere CSV ──
-function formatCardsphere(cards: ExportCard[]): string {
-  const header = 'Edition,Etched Foil,Foil,Language,Name,Scryfall ID,Tradelist Count';
-  const rows: string[] = [header];
-
-  for (const c of cards) {
-    if (c.quantity_normal > 0) {
-      rows.push(`${q(c.set_name)},"","","en",${q(c.name)},${q(c.scryfall_id)},${q(String(c.quantity_normal))}`);
-    }
-    if (c.quantity_foil > 0) {
-      rows.push(`${q(c.set_name)},"","foil","en",${q(c.name)},${q(c.scryfall_id)},${q(String(c.quantity_foil))}`);
-    }
-    if (c.quantity_etched > 0) {
-      rows.push(`${q(c.set_name)},"etched","","en",${q(c.name)},${q(c.scryfall_id)},${q(String(c.quantity_etched))}`);
-    }
-  }
-
-  return rows.join('\n');
-}
-
 const FORMATTERS: Record<ExportFormat, (cards: ExportCard[]) => string> = {
   spellkeep: formatSpellKeep,
   csv: formatCSV,
   plain: formatPlainText,
-  moxfield: formatMoxfield,
-  tcgplayer: formatTCGPlayer,
-  deckbox: formatDeckbox,
-  cardsphere: formatCardsphere,
 };
 
 const FILE_EXTENSIONS: Record<ExportFormat, string> = {
   spellkeep: '.csv',
   csv: '.csv',
   plain: '.txt',
-  moxfield: '.csv',
-  tcgplayer: '.txt',
-  deckbox: '.csv',
-  cardsphere: '.csv',
 };
 
 export async function exportCollection(

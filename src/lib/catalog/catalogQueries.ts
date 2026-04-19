@@ -193,6 +193,10 @@ export async function findSupabaseIdByScryfallId(scryfallId: string): Promise<st
 
 export type BatchKey = { key: string; setCode: string; collectorNumber: string };
 
+// SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999. We stay under with a
+// margin so the one extra bound param (set_code) doesn't push us over.
+const IN_CHUNK = 400;
+
 /**
  * Resolve a batch of imports against the catalog in a single grouped query
  * per set. Reduces 100k lookups to ~N distinct sets worth of round-trips
@@ -212,22 +216,122 @@ export async function batchResolveByPrint(keys: BatchKey[]): Promise<Map<string,
   }
 
   for (const [setCode, bucket] of bySet) {
-    const nums = bucket.map((b) => b.collectorNumber);
-    const placeholders = nums.map(() => '?').join(',');
-    const res = await db.execute(
-      `SELECT * FROM cards
-       WHERE set_code = ? AND collector_number IN (${placeholders})`,
-      [setCode, ...nums]
-    );
-    const rows = readAllRows(res);
-    const byNum = new Map(rows.map((r) => [r.collector_number as string, r]));
-    for (const b of bucket) {
-      const row = byNum.get(b.collectorNumber);
-      if (row) resolved.set(b.key, rowToScryfallCard(row));
+    for (let i = 0; i < bucket.length; i += IN_CHUNK) {
+      const slice = bucket.slice(i, i + IN_CHUNK);
+      const nums = slice.map((b) => b.collectorNumber);
+      const placeholders = nums.map(() => '?').join(',');
+      const res = await db.execute(
+        `SELECT * FROM cards
+         WHERE set_code = ? AND collector_number IN (${placeholders})`,
+        [setCode, ...nums]
+      );
+      const rows = readAllRows(res);
+      const byNum = new Map(rows.map((r) => [r.collector_number as string, r]));
+      for (const b of slice) {
+        const row = byNum.get(b.collectorNumber);
+        if (row) resolved.set(b.key, rowToScryfallCard(row));
+      }
     }
   }
 
   return resolved;
+}
+
+/**
+ * Batch name-only resolution. One grouped query per chunk of distinct names,
+ * picking the newest printing for each. Replaces N serial `findCardByName`
+ * calls in the import fallback path.
+ */
+export async function batchResolveByName(names: string[]): Promise<Map<string, ScryfallCard>> {
+  const resolved = new Map<string, ScryfallCard>();
+  const db = getCatalog();
+  if (!db || names.length === 0) return resolved;
+
+  const unique = Array.from(new Set(names));
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const slice = unique.slice(i, i + IN_CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    // Pick the newest printing per name. Subquery groups by name to get the
+    // max released_at, outer query joins back to fetch the full row.
+    const res = await db.execute(
+      `SELECT c.* FROM cards c
+       INNER JOIN (
+         SELECT name, MAX(released_at) as latest
+         FROM cards
+         WHERE name IN (${placeholders})
+         GROUP BY name
+       ) latest_row
+         ON c.name = latest_row.name
+        AND (c.released_at = latest_row.latest OR latest_row.latest IS NULL)
+       GROUP BY c.name`,
+      slice
+    );
+    for (const row of readAllRows(res)) {
+      resolved.set(row.name as string, rowToScryfallCard(row));
+    }
+  }
+
+  return resolved;
+}
+
+/**
+ * Batch resolve scryfall_id → ScryfallCard. Used by imports that ship a
+ * canonical Scryfall ID per row (HeVault, SpellKeep exports), so we can
+ * recover the catalog row in one grouped query per chunk.
+ */
+export async function batchResolveByScryfallId(
+  scryfallIds: string[]
+): Promise<Map<string, ScryfallCard>> {
+  const resolved = new Map<string, ScryfallCard>();
+  const db = getCatalog();
+  if (!db || scryfallIds.length === 0) return resolved;
+
+  const unique = Array.from(new Set(scryfallIds));
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const slice = unique.slice(i, i + IN_CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    const res = await db.execute(
+      `SELECT * FROM cards WHERE scryfall_id IN (${placeholders})`,
+      slice
+    );
+    for (const row of readAllRows(res)) {
+      if (row.scryfall_id) {
+        resolved.set(row.scryfall_id as string, rowToScryfallCard(row));
+      }
+    }
+  }
+
+  return resolved;
+}
+
+/**
+ * Batch mapping of scryfall_id → Supabase cards.id (UUID) for a set of cards.
+ * Used during bulk import to convert resolved ScryfallCard ids into the FK
+ * column that collection_cards expects, without a round-trip per row.
+ */
+export async function batchSupabaseIdsByScryfallId(
+  scryfallIds: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const db = getCatalog();
+  if (!db || scryfallIds.length === 0) return result;
+
+  const unique = Array.from(new Set(scryfallIds));
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const slice = unique.slice(i, i + IN_CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    const res = await db.execute(
+      `SELECT scryfall_id, id FROM cards WHERE scryfall_id IN (${placeholders})`,
+      slice
+    );
+    for (const row of readAllRows(res)) {
+      if (row.scryfall_id && row.id) {
+        result.set(row.scryfall_id as string, row.id as string);
+      }
+    }
+  }
+
+  return result;
 }
 
 // ── Row helpers ───────────────────────────────────────────────────────────

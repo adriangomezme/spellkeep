@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Alert,
   StyleSheet,
   Keyboard,
@@ -14,7 +13,8 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from '../BottomSheet';
-import { importToCollection, type ImportFormat, type ImportResult } from '../../lib/import';
+import type { ImportFormat } from '../../lib/import';
+import { useImportJob } from './ImportJobProvider';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 type FormatOption = {
@@ -29,9 +29,7 @@ const FORMATS: FormatOption[] = [
   { key: 'spellkeep', label: 'SpellKeep CSV', description: 'CSV file exported by SpellKeep.\nIncludes full card data, finish, and layout.', allowPaste: false, section: 'spellkeep' },
   { key: 'plain', label: 'Plain Text', description: 'Simple text list with card name, set, and quantity.\nSupports foil and etched flags.', allowPaste: true, section: 'standard' },
   { key: 'csv', label: 'CSV', description: 'Standard CSV with header row.\nAuto-detects columns by name.', allowPaste: true, section: 'standard' },
-  { key: 'tcgplayer', label: 'TCGPlayer CSV', description: 'CSV file exported by TCGPlayer.\nMust contain Quantity, Name, and Set columns.', allowPaste: false, section: 'thirdparty' },
-  { key: 'cardsphere', label: 'Cardsphere CSV', description: 'CSV file exported by Cardsphere.\nMust contain Name, Edition, and Tradelist Count.', allowPaste: false, section: 'thirdparty' },
-  { key: 'deckbox', label: 'DeckBox CSV', description: 'CSV file exported by DeckBox.\nMust contain Name, Count, and Edition columns.', allowPaste: false, section: 'thirdparty' },
+  { key: 'hevault', label: 'HeVault CSV', description: 'CSV file exported by HeVault.\nUses Scryfall IDs so language and etched variants stay distinct.', allowPaste: false, section: 'thirdparty' },
 ];
 
 const SECTIONS: { key: string; label: string | null }[] = [
@@ -50,12 +48,11 @@ type Props = {
   onImported: () => void;
 };
 
-export function ImportModal({ visible, collectionId, collectionName, onClose, onImported }: Props) {
+export function ImportModal({ visible, collectionId, collectionName, onClose }: Props) {
+  const { startImport } = useImportJob();
   const [step, setStep] = useState<Step>('format');
   const [format, setFormat] = useState<ImportFormat>('plain');
   const [pasteText, setPasteText] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const currentFormat = FORMATS.find((f) => f.key === format);
   const allowPaste = currentFormat?.allowPaste ?? false;
@@ -64,8 +61,6 @@ export function ImportModal({ visible, collectionId, collectionName, onClose, on
     setStep('format');
     setFormat('plain');
     setPasteText('');
-    setIsImporting(false);
-    setProgress({ current: 0, total: 0 });
   }
 
   function handleClose() {
@@ -75,13 +70,7 @@ export function ImportModal({ visible, collectionId, collectionName, onClose, on
 
   function handleFormatSelect(f: ImportFormat) {
     setFormat(f);
-    const fmt = FORMATS.find((x) => x.key === f);
-    if (fmt && !fmt.allowPaste) {
-      // File-only formats: go straight to file picker
-      setStep('input');
-    } else {
-      setStep('input');
-    }
+    setStep('input');
   }
 
   async function handleFile() {
@@ -110,30 +99,14 @@ export function ImportModal({ visible, collectionId, collectionName, onClose, on
   }
 
   async function runImport(text: string) {
-    setIsImporting(true);
     try {
-      const result = await importToCollection(
-        text,
-        format,
-        collectionId,
-        (current, total) => setProgress({ current, total }),
-      );
-      showResult(result);
+      await startImport({ text, format, collectionId, collectionName });
+      // Hand off to the global ImportStatusSheet; close the starter.
+      reset();
+      onClose();
     } catch (err: any) {
-      Alert.alert('Import Error', err.message ?? 'Failed to import');
-    } finally {
-      setIsImporting(false);
+      Alert.alert('Import Error', err.message ?? 'Failed to start import');
     }
-  }
-
-  function showResult(result: ImportResult) {
-    const msg = result.failed.length > 0
-      ? `${result.imported} of ${result.total} cards imported.\n\nFailed (${result.failed.length}):\n${result.failed.slice(0, 10).join('\n')}${result.failed.length > 10 ? `\n...and ${result.failed.length - 10} more` : ''}`
-      : `${result.imported} cards imported successfully!`;
-
-    Alert.alert('Import Complete', msg, [
-      { text: 'OK', onPress: () => { reset(); onImported(); } },
-    ]);
   }
 
   return (
@@ -171,14 +144,6 @@ export function ImportModal({ visible, collectionId, collectionName, onClose, on
             })}
           </ScrollView>
         </>
-      ) : isImporting ? (
-        <View style={styles.progressContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.progressText}>
-            Importing {progress.current} of {progress.total}...
-          </Text>
-          <Text style={styles.progressHint}>This may take a moment</Text>
-        </View>
       ) : (
         <>
           <View style={styles.inputHeader}>
@@ -189,13 +154,11 @@ export function ImportModal({ visible, collectionId, collectionName, onClose, on
             <View style={{ width: 24 }} />
           </View>
 
-          {/* From File */}
           <TouchableOpacity style={styles.fileButton} onPress={handleFile} activeOpacity={0.6}>
             <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
             <Text style={styles.fileButtonText}>Choose File</Text>
           </TouchableOpacity>
 
-          {/* Paste area — only for Plain Text and CSV */}
           {allowPaste && (
             <>
               <View style={styles.dividerRow}>
@@ -345,19 +308,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '600',
-  },
-  progressContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
-    gap: spacing.md,
-  },
-  progressText: {
-    color: colors.text,
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-  },
-  progressHint: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
   },
 });

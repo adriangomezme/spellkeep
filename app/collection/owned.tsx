@@ -16,7 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
 import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
+import {
+  fetchOwnedCardStats,
+  fetchAllCollectionCardsIn,
+  type OwnedCardStats,
+} from '../../src/lib/collections';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
+import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
@@ -33,6 +39,7 @@ type CollectionEntry = {
   id: string;
   card_id: string;
   condition: string;
+  language: string;
   added_at: string;
   quantity_normal: number;
   quantity_foil: number;
@@ -68,7 +75,7 @@ export default function OwnedCardsScreen() {
   const [entries, setEntries] = useState<CollectionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [totalValue, setTotalValue] = useState(0);
+  const [serverStats, setServerStats] = useState<OwnedCardStats | null>(null);
   const [editEntry, setEditEntry] = useState<{
     id: string;
     condition: string;
@@ -100,47 +107,30 @@ export default function OwnedCardsScreen() {
         .eq('user_id', user.id)
         .eq('type', 'binder');
 
-      if (!binders || binders.length === 0) {
-        setEntries([]);
-        setTotalValue(0);
-        return;
-      }
+      const binderIds = (binders ?? []).map((b) => b.id);
 
-      const binderIds = binders.map((b) => b.id);
+      const [stats, allRows] = await Promise.all([
+        fetchOwnedCardStats(user.id),
+        binderIds.length === 0
+          ? Promise.resolve([])
+          : fetchAllCollectionCardsIn(
+              binderIds,
+              `
+                id, card_id, condition, language, added_at, collection_id,
+                quantity_normal, quantity_foil, quantity_etched,
+                cards (
+                  id, scryfall_id, oracle_id, name, set_name, set_code,
+                  collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
+                  image_uri_small, image_uri_normal,
+                  price_usd, price_usd_foil,
+                  color_identity, layout, card_faces, artist
+                )
+              `
+            ),
+      ]);
 
-      const { data, error } = await supabase
-        .from('collection_cards')
-        .select(`
-          id, card_id, condition, added_at, collection_id,
-          quantity_normal, quantity_foil, quantity_etched,
-          cards (
-            id, scryfall_id, oracle_id, name, set_name, set_code,
-            collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
-            image_uri_small, image_uri_normal,
-            price_usd, price_usd_foil,
-            color_identity, layout, card_faces, artist
-          )
-        `)
-        .in('collection_id', binderIds)
-        .order('added_at', { ascending: false });
-
-      if (error) {
-        console.error('Fetch owned error:', error);
-        return;
-      }
-
-      const items = (data ?? []) as unknown as CollectionEntry[];
-      setEntries(items);
-
-      let value = 0;
-      for (const entry of items) {
-        const card = entry.cards;
-        if (card?.price_usd) value += card.price_usd * entry.quantity_normal;
-        if (card?.price_usd_foil) value += card.price_usd_foil * entry.quantity_foil;
-        const etchedPrice = card?.price_usd_foil ?? card?.price_usd;
-        if (etchedPrice) value += etchedPrice * entry.quantity_etched;
-      }
-      setTotalValue(value);
+      setServerStats(stats);
+      setEntries(allRows as unknown as CollectionEntry[]);
     } catch (err) {
       console.error('Owned fetch error:', err);
     } finally {
@@ -184,19 +174,33 @@ export default function OwnedCardsScreen() {
 
   const availableSets = useMemo(() => deriveAvailableSets(entries), [entries]);
 
+  const isFiltered =
+    searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
+
   const { totalCards, uniqueCards, displayValue } = useMemo(() => {
+    if (!isFiltered && serverStats) {
+      return {
+        totalCards: serverStats.total_cards,
+        uniqueCards: serverStats.unique_cards,
+        displayValue: serverStats.total_value,
+      };
+    }
     let cards = 0;
+    let unique = 0;
     let value = 0;
     for (const e of displayEntries) {
       cards += getTotalQuantity(e);
+      if (e.quantity_normal > 0) unique += 1;
+      if (e.quantity_foil > 0) unique += 1;
+      if (e.quantity_etched > 0) unique += 1;
       const c = e.cards;
       if (c?.price_usd) value += c.price_usd * e.quantity_normal;
       if (c?.price_usd_foil) value += c.price_usd_foil * e.quantity_foil;
       const ep = c?.price_usd_foil ?? c?.price_usd;
       if (ep) value += ep * e.quantity_etched;
     }
-    return { totalCards: cards, uniqueCards: displayEntries.length, displayValue: value };
-  }, [displayEntries]);
+    return { totalCards: cards, uniqueCards: unique, displayValue: value };
+  }, [displayEntries, isFiltered, serverStats]);
   const isGrid = viewMode !== 'list';
 
   const refreshControl = (
@@ -238,6 +242,7 @@ export default function OwnedCardsScreen() {
           contentFit="cover"
           transition={200}
         />
+        <LanguageBadge language={item.language} style="corner" />
         {qty > 1 && (
           <View style={styles.qtyBadge}>
             <Text style={styles.qtyBadgeText}>x{qty}</Text>
@@ -267,6 +272,7 @@ export default function OwnedCardsScreen() {
             contentFit="cover"
             transition={200}
           />
+          <LanguageBadge language={item.language} style="corner" />
           {qty > 1 && (
             <View style={styles.qtyBadge}>
               <Text style={styles.qtyBadgeText}>x{qty}</Text>
@@ -316,7 +322,7 @@ export default function OwnedCardsScreen() {
           <Text style={styles.listSet} numberOfLines={1}>
             {card.set_name} #{card.collector_number}
           </Text>
-          <Text style={styles.listLang}>English</Text>
+          <Text style={styles.listLang}>{(item.language ?? 'en').toUpperCase()}</Text>
           <Text style={styles.listFinish}>{finishParts.join(', ')}</Text>
         </View>
         <View style={styles.listRight}>
@@ -338,9 +344,9 @@ export default function OwnedCardsScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Owned Cards</Text>
-          {entries.length > 0 && (
+          {uniqueCards > 0 && (
             <Text style={styles.headerSubtitle}>
-              {totalCards} cards · {uniqueCards} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalCards.toLocaleString()} cards · {uniqueCards.toLocaleString()} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
         </View>

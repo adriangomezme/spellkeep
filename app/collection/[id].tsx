@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
@@ -24,11 +24,21 @@ import { MergeModal } from '../../src/components/collection/MergeModal';
 import { ExportModal } from '../../src/components/collection/ExportModal';
 import { ImportModal } from '../../src/components/collection/ImportModal';
 import { FolderPickerModal } from '../../src/components/collection/FolderPickerModal';
+import { useImportJob } from '../../src/components/collection/ImportJobProvider';
+import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
 import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
-import { duplicateCollection, deleteCollection, moveToFolder, type CollectionType } from '../../src/lib/collections';
+import {
+  duplicateCollection,
+  deleteCollection,
+  moveToFolder,
+  fetchCollectionStats,
+  fetchAllCollectionCards,
+  type CollectionType,
+  type OwnedCardStats,
+} from '../../src/lib/collections';
 import { filterAndSort, deriveAvailableSets } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -42,6 +52,7 @@ type CollectionEntry = {
   id: string;
   card_id: string;
   condition: string;
+  language: string;
   added_at: string;
   quantity_normal: number;
   quantity_foil: number;
@@ -85,7 +96,7 @@ export default function CollectionDetailScreen() {
   const [entries, setEntries] = useState<CollectionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [totalValue, setTotalValue] = useState(0);
+  const [serverStats, setServerStats] = useState<OwnedCardStats | null>(null);
   const [editEntry, setEditEntry] = useState<{
     id: string;
     condition: string;
@@ -119,45 +130,32 @@ export default function CollectionDetailScreen() {
   const fetchCards = useCallback(async () => {
     if (!id) return;
     try {
-      const { data: colData } = await supabase.from('collections').select('color, folder_id').eq('id', id).single();
+      const [{ data: colData }, stats, allRows] = await Promise.all([
+        supabase.from('collections').select('color, folder_id').eq('id', id).single(),
+        fetchCollectionStats(id),
+        fetchAllCollectionCards(
+          id,
+          `
+            id, card_id, condition, language, added_at,
+            quantity_normal, quantity_foil, quantity_etched,
+            cards (
+              id, scryfall_id, oracle_id, name, set_name, set_code,
+              collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
+              image_uri_small, image_uri_normal,
+              price_usd, price_usd_foil,
+              color_identity, layout, card_faces, artist
+            )
+          `
+        ),
+      ]);
+
       if (colData) {
         setCollectionColor(colData.color);
         setCollectionFolderId(colData.folder_id);
       }
 
-      const { data, error } = await supabase
-        .from('collection_cards')
-        .select(`
-          id, card_id, condition, added_at,
-          quantity_normal, quantity_foil, quantity_etched,
-          cards (
-            id, scryfall_id, oracle_id, name, set_name, set_code,
-            collector_number, rarity, type_line, mana_cost, cmc, is_legendary,
-            image_uri_small, image_uri_normal,
-            price_usd, price_usd_foil,
-            color_identity, layout, card_faces, artist
-          )
-        `)
-        .eq('collection_id', id)
-        .order('added_at', { ascending: false });
-
-      if (error) {
-        console.error('Fetch cards error:', error);
-        return;
-      }
-
-      const items = (data ?? []) as unknown as CollectionEntry[];
-      setEntries(items);
-
-      let value = 0;
-      for (const entry of items) {
-        const card = entry.cards;
-        if (card?.price_usd) value += card.price_usd * entry.quantity_normal;
-        if (card?.price_usd_foil) value += card.price_usd_foil * entry.quantity_foil;
-        const etchedPrice = card?.price_usd_foil ?? card?.price_usd;
-        if (etchedPrice) value += etchedPrice * entry.quantity_etched;
-      }
-      setTotalValue(value);
+      setServerStats(stats);
+      setEntries(allRows as unknown as CollectionEntry[]);
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -169,6 +167,17 @@ export default function CollectionDetailScreen() {
   useFocusEffect(
     useCallback(() => { fetchCards(); }, [fetchCards])
   );
+
+  // When a background import that targeted this collection finishes, pull
+  // the fresh totals + entries so the UI reflects the new state without
+  // requiring the user to pull-to-refresh.
+  const { job } = useImportJob();
+  useEffect(() => {
+    if (!job) return;
+    if (job.collectionId !== id) return;
+    if (job.status !== 'completed') return;
+    fetchCards();
+  }, [job, id, fetchCards]);
 
   function handleCardPress(entry: CollectionEntry) {
     router.push({
@@ -201,19 +210,38 @@ export default function CollectionDetailScreen() {
 
   const availableSets = useMemo(() => deriveAvailableSets(entries), [entries]);
 
+  const isFiltered =
+    searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
+
   const { totalCards, uniqueCards, displayValue } = useMemo(() => {
+    // While filters are off the server-side stats are authoritative — they
+    // reflect the full collection even before every page has streamed in.
+    // The client-side sum would under-count until the final page lands.
+    if (!isFiltered && serverStats) {
+      return {
+        totalCards: serverStats.total_cards,
+        uniqueCards: serverStats.unique_cards,
+        displayValue: serverStats.total_value,
+      };
+    }
     let cards = 0;
+    let unique = 0;
     let value = 0;
     for (const e of displayEntries) {
       cards += getTotalQuantity(e);
+      // Unique = distinct (print × finish) variants. One row with
+      // qty_normal=1 + qty_foil=1 contributes 2 unique, not 1.
+      if (e.quantity_normal > 0) unique += 1;
+      if (e.quantity_foil > 0) unique += 1;
+      if (e.quantity_etched > 0) unique += 1;
       const c = e.cards;
       if (c?.price_usd) value += c.price_usd * e.quantity_normal;
       if (c?.price_usd_foil) value += c.price_usd_foil * e.quantity_foil;
       const ep = c?.price_usd_foil ?? c?.price_usd;
       if (ep) value += ep * e.quantity_etched;
     }
-    return { totalCards: cards, uniqueCards: displayEntries.length, displayValue: value };
-  }, [displayEntries]);
+    return { totalCards: cards, uniqueCards: unique, displayValue: value };
+  }, [displayEntries, isFiltered, serverStats]);
   const isGrid = viewMode !== 'list';
 
   const refreshControl = (
@@ -255,6 +283,7 @@ export default function CollectionDetailScreen() {
           contentFit="cover"
           transition={200}
         />
+        <LanguageBadge language={item.language} style="corner" />
         {qty > 1 && (
           <View style={styles.qtyBadge}>
             <Text style={styles.qtyBadgeText}>x{qty}</Text>
@@ -284,6 +313,7 @@ export default function CollectionDetailScreen() {
             contentFit="cover"
             transition={200}
           />
+          <LanguageBadge language={item.language} style="corner" />
           {qty > 1 && (
             <View style={styles.qtyBadge}>
               <Text style={styles.qtyBadgeText}>x{qty}</Text>
@@ -333,7 +363,7 @@ export default function CollectionDetailScreen() {
           <Text style={styles.listSet} numberOfLines={1}>
             {card.set_name} #{card.collector_number}
           </Text>
-          <Text style={styles.listLang}>English</Text>
+          <Text style={styles.listLang}>{(item.language ?? 'en').toUpperCase()}</Text>
           <Text style={styles.listFinish}>{finishParts.join(', ')}</Text>
         </View>
         <View style={styles.listRight}>
@@ -355,9 +385,9 @@ export default function CollectionDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-          {entries.length > 0 && (
+          {uniqueCards > 0 && (
             <Text style={styles.headerSubtitle}>
-              {totalCards} cards · {uniqueCards} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalCards.toLocaleString()} cards · {uniqueCards.toLocaleString()} unique · ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
         </View>

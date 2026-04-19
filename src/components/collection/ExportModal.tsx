@@ -19,23 +19,18 @@ type FormatOption = {
   key: ExportFormat;
   label: string;
   description: string;
-  section: 'spellkeep' | 'standard' | 'thirdparty';
+  section: 'spellkeep' | 'standard';
 };
 
 const FORMATS: FormatOption[] = [
   { key: 'spellkeep', label: 'SpellKeep CSV', description: 'Full card data in SpellKeep proprietary format.\nIncludes type, colors, rarity, cost, and layout.', section: 'spellkeep' },
   { key: 'plain', label: 'Plain Text', description: 'Card name, set, quantity, and finish.\nSimple text format compatible with most apps.', section: 'standard' },
   { key: 'csv', label: 'CSV', description: 'Standard CSV with all card properties.\nIncludes condition, quantity, and Scryfall ID.', section: 'standard' },
-  { key: 'moxfield', label: 'Moxfield CSV', description: 'CSV file compatible with Moxfield.\nMust contain Count, Name, and Edition columns.', section: 'thirdparty' },
-  { key: 'tcgplayer', label: 'TCGPlayer CSV', description: 'Text file compatible with TCGPlayer.\nContains Quantity, Name, Set, and Collector Number.', section: 'thirdparty' },
-  { key: 'deckbox', label: 'DeckBox CSV', description: 'CSV file compatible with DeckBox.\nMust contain Name, Count, and Edition columns.', section: 'thirdparty' },
-  { key: 'cardsphere', label: 'Cardsphere CSV', description: 'CSV file compatible with Cardsphere.\nMust contain Name, Edition, and Tradelist Count.', section: 'thirdparty' },
 ];
 
 const SECTIONS: { key: string; label: string | null }[] = [
   { key: 'spellkeep', label: null },
   { key: 'standard', label: 'Standard' },
-  { key: 'thirdparty', label: 'Third Party' },
 ];
 
 type Props = {
