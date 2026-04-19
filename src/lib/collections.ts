@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { invalidateCache, invalidateNamespace } from './collectionsCache';
 
 const LAST_DESTINATION_KEY = 'spellkeep_last_destination';
 
@@ -457,6 +458,8 @@ export async function duplicateCollection(sourceId: string, newName?: string): P
   });
   if (error) throw new Error(`Failed to duplicate: ${error.message}`);
   if (!data) throw new Error('Duplicate returned no id');
+  // Source itself unchanged; owned view gains entries so invalidate it.
+  invalidateNamespace('owned');
   return data as string;
 }
 
@@ -471,6 +474,9 @@ export async function mergeCollections(sourceId: string, destinationId: string):
     p_dest_id: destinationId,
   });
   if (error) throw new Error(`Failed to merge: ${error.message}`);
+  invalidateCache('collection', sourceId);
+  invalidateCache('collection', destinationId);
+  invalidateNamespace('owned');
 }
 
 /**
@@ -483,6 +489,8 @@ export async function emptyCollection(collectionId: string): Promise<number> {
     p_collection_id: collectionId,
   });
   if (error) throw new Error(`Failed to empty collection: ${error.message}`);
+  invalidateCache('collection', collectionId);
+  invalidateNamespace('owned');
   return Number(data ?? 0);
 }
 

@@ -10,6 +10,7 @@ import {
 import { supabase } from './supabase';
 import { ensureCardExists } from './collection';
 import type { Condition, Finish } from './collection';
+import { invalidateCache, invalidateNamespace } from './collectionsCache';
 
 export type ImportFormat = 'spellkeep' | 'plain' | 'csv' | 'hevault';
 
@@ -638,6 +639,12 @@ export async function importToCollection(
     uploaded += chunk.length;
     onProgress?.({ phase: 'uploading', current: uploaded, total: rows.length });
   }
+
+  // Drop caches so the next open of this collection (or the owned view)
+  // refetches fresh data instead of showing the pre-import snapshot
+  // behind the SWR revalidation.
+  invalidateCache('collection', collectionId);
+  invalidateNamespace('owned');
 
   onProgress?.({ phase: 'done', current: rows.length, total: rows.length });
   return result;

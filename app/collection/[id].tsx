@@ -40,6 +40,11 @@ import {
   type CollectionType,
   type OwnedCardStats,
 } from '../../src/lib/collections';
+import {
+  getCachedEntries,
+  setCachedEntries,
+  invalidateCache,
+} from '../../src/lib/collectionsCache';
 import { filterAndSort, deriveAvailableSets } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -130,11 +135,20 @@ export default function CollectionDetailScreen() {
 
   const fetchCards = useCallback(async () => {
     if (!id) return;
-    // Reset so re-entries don't mix old and new rows visually.
-    setEntries([]);
+
+    // SWR cache: paint whatever we had last time immediately. The
+    // background refresh below will replace this view once the full
+    // server truth is in hand — any scan / edit / external import that
+    // happened since the last open shows up on the next completion.
+    const cached = getCachedEntries<CollectionEntry>('collection', id);
+    if (cached) {
+      setEntries(cached);
+      setIsLoading(false);
+    } else {
+      setEntries([]);
+    }
+
     try {
-      // Stats + color/folder metadata first — cheap queries that paint
-      // the header before the (potentially huge) entries list streams in.
       const [{ data: colData }, stats] = await Promise.all([
         supabase.from('collections').select('color, folder_id').eq('id', id).single(),
         fetchCollectionStats(id),
@@ -146,12 +160,8 @@ export default function CollectionDetailScreen() {
       }
       setServerStats(stats);
 
-      // Slimmed-down select: dropped card_faces and mana_cost from the
-      // list query. `card_faces` is a JSONB column that can carry tens of
-      // KB per double-faced card — a huge share of payload bytes on
-      // 10k+ row binders. The detail screen already refetches the full
-      // card from the local catalog / Scryfall on open, so nothing is
-      // lost functionally. mana_cost isn't rendered in grid or list.
+      // Slimmed-down select: card_faces (heavy JSONB) and mana_cost
+      // are not used in grid/list and are refetched on detail open.
       const SELECT = `
         id, card_id, condition, language, added_at,
         quantity_normal, quantity_foil, quantity_etched,
@@ -164,22 +174,26 @@ export default function CollectionDetailScreen() {
         )
       `;
 
-      // Streamed fetch: first 1k rows paint the FlatList immediately;
-      // remaining pages fan out in parallel and append as they land.
-      // On a 100k-row binder this is ~3–5 s end-to-end (was ~30–50 s
-      // with serial pagination).
-      // Tiny initial page (100 rows) makes the viewport paint in
-      // ~100 ms — the FlatList only renders ~20 visible items, so 100
-      // is more than enough for immediate interaction. Subsequent
-      // pages of 1,000 each stream in parallel with concurrency 8.
-      let firstPainted = false;
+      // If we have cached rows on screen, accumulate the refresh into a
+      // silent buffer and swap once fully loaded — prevents a mid-scroll
+      // flicker. Cold path (no cache) still paints progressively: first
+      // 100 rows in ~100 ms, subsequent 1k-row pages with concurrency 8.
+      const buffer: CollectionEntry[] = [];
+      let firstPainted = !!cached;
       await fetchCollectionCardsStreamed(id, SELECT, (page) => {
-        setEntries((prev) => [...prev, ...(page as unknown as CollectionEntry[])]);
-        if (!firstPainted) {
-          firstPainted = true;
-          setIsLoading(false);
+        const typed = page as unknown as CollectionEntry[];
+        buffer.push(...typed);
+        if (!cached) {
+          setEntries((prev) => [...prev, ...typed]);
+          if (!firstPainted) {
+            firstPainted = true;
+            setIsLoading(false);
+          }
         }
       }, { initialPageSize: 100, concurrency: 8 });
+
+      setEntries(buffer);
+      setCachedEntries('collection', id, buffer);
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -522,7 +536,10 @@ export default function CollectionDetailScreen() {
                   style: 'destructive',
                   onPress: () => {
                     emptyCollection(id!)
-                      .then(() => fetchCards())
+                      .then(() => {
+                        invalidateCache('collection', id!);
+                        fetchCards();
+                      })
                       .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
                   },
                 },

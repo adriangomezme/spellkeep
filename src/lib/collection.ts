@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { ScryfallCard } from './scryfall';
 import { getDefaultBinderId } from './collections';
 import { findSupabaseIdByScryfallId } from './catalog/catalogQueries';
+import { invalidateCache, invalidateNamespace } from './collectionsCache';
 
 export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 export type Finish = 'normal' | 'foil' | 'etched';
@@ -153,4 +154,11 @@ export async function addToCollection(
 
     if (error) throw new Error(`Failed to add to collection: ${error.message}`);
   }
+
+  // Any external add path (scan, search, manual edit) mutates this
+  // collection — drop its cache so the next open refetches fresh data
+  // instead of showing a pre-add snapshot until the SWR revalidation
+  // finishes.
+  invalidateCache('collection', targetId);
+  invalidateNamespace('owned');
 }

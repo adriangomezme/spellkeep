@@ -21,6 +21,7 @@ import {
   fetchCollectionCardsInStreamed,
   type OwnedCardStats,
 } from '../../src/lib/collections';
+import { getCachedEntries, setCachedEntries } from '../../src/lib/collectionsCache';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
@@ -97,13 +98,21 @@ export default function OwnedCardsScreen() {
   const [showFilter, setShowFilter] = useState(false);
 
   const fetchOwnedCards = useCallback(async () => {
-    setEntries([]);
+    // SWR: paint cache instantly (key is stable per user — "owned" here
+    // is a single global view, so we use a fixed key). Background
+    // refresh replaces the list when complete.
+    const cached = getCachedEntries<CollectionEntry>('owned', 'me');
+    if (cached) {
+      setEntries(cached);
+      setIsLoading(false);
+    } else {
+      setEntries([]);
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Resolve binders + aggregate stats first — cheap queries so the
-      // header paints immediately.
       const [{ data: binders }, stats] = await Promise.all([
         supabase
           .from('collections')
@@ -116,13 +125,12 @@ export default function OwnedCardsScreen() {
 
       const binderIds = (binders ?? []).map((b) => b.id);
       if (binderIds.length === 0) {
+        setEntries([]);
+        setCachedEntries('owned', 'me', []);
         setIsLoading(false);
         return;
       }
 
-      // Same slimmed select as the binder detail view. card_faces and
-      // mana_cost stay off the list query to cut payload bytes — detail
-      // refetches them on open.
       const SELECT = `
         id, card_id, condition, language, added_at, collection_id,
         quantity_normal, quantity_foil, quantity_etched,
@@ -135,14 +143,22 @@ export default function OwnedCardsScreen() {
         )
       `;
 
-      let firstPainted = false;
+      const buffer: CollectionEntry[] = [];
+      let firstPainted = !!cached;
       await fetchCollectionCardsInStreamed(binderIds, SELECT, (page) => {
-        setEntries((prev) => [...prev, ...(page as unknown as CollectionEntry[])]);
-        if (!firstPainted) {
-          firstPainted = true;
-          setIsLoading(false);
+        const typed = page as unknown as CollectionEntry[];
+        buffer.push(...typed);
+        if (!cached) {
+          setEntries((prev) => [...prev, ...typed]);
+          if (!firstPainted) {
+            firstPainted = true;
+            setIsLoading(false);
+          }
         }
       }, { initialPageSize: 100, concurrency: 8 });
+
+      setEntries(buffer);
+      setCachedEntries('owned', 'me', buffer);
     } catch (err) {
       console.error('Owned fetch error:', err);
     } finally {
