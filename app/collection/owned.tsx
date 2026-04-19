@@ -21,7 +21,12 @@ import {
   fetchCollectionCardsInStreamed,
   type OwnedCardStats,
 } from '../../src/lib/collections';
-import { getCachedEntries, setCachedEntries } from '../../src/lib/collectionsCache';
+import {
+  getCached,
+  setCached,
+  getCachedEntries,
+  setCachedEntries,
+} from '../../src/lib/collectionsCache';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
@@ -98,15 +103,19 @@ export default function OwnedCardsScreen() {
   const [showFilter, setShowFilter] = useState(false);
 
   const fetchOwnedCards = useCallback(async () => {
-    // SWR: paint cache instantly (key is stable per user — "owned" here
-    // is a single global view, so we use a fixed key). Background
-    // refresh replaces the list when complete.
+    // SWR: paint cache instantly — entries AND stats together so the
+    // header doesn't show a client-computed value for ~1 s before the
+    // server stats arrive.
     const cached = getCachedEntries<CollectionEntry>('owned', 'me');
+    const cachedStats = getCached<OwnedCardStats>('owned_stats', 'me');
     if (cached) {
       setEntries(cached);
       setIsLoading(false);
     } else {
       setEntries([]);
+    }
+    if (cachedStats) {
+      setServerStats(cachedStats);
     }
 
     try {
@@ -122,6 +131,7 @@ export default function OwnedCardsScreen() {
         fetchOwnedCardStats(user.id),
       ]);
       setServerStats(stats);
+      setCached<OwnedCardStats>('owned_stats', 'me', stats);
 
       const binderIds = (binders ?? []).map((b) => b.id);
       if (binderIds.length === 0) {

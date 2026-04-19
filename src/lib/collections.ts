@@ -460,6 +460,7 @@ export async function duplicateCollection(sourceId: string, newName?: string): P
   if (!data) throw new Error('Duplicate returned no id');
   // Source itself unchanged; owned view gains entries so invalidate it.
   invalidateNamespace('owned');
+  invalidateNamespace('owned_stats');
   return data as string;
 }
 
@@ -476,7 +477,10 @@ export async function mergeCollections(sourceId: string, destinationId: string):
   if (error) throw new Error(`Failed to merge: ${error.message}`);
   invalidateCache('collection', sourceId);
   invalidateCache('collection', destinationId);
+  invalidateCache('collection_stats', sourceId);
+  invalidateCache('collection_stats', destinationId);
   invalidateNamespace('owned');
+  invalidateNamespace('owned_stats');
 }
 
 /**
@@ -490,7 +494,9 @@ export async function emptyCollection(collectionId: string): Promise<number> {
   });
   if (error) throw new Error(`Failed to empty collection: ${error.message}`);
   invalidateCache('collection', collectionId);
+  invalidateCache('collection_stats', collectionId);
   invalidateNamespace('owned');
+  invalidateNamespace('owned_stats');
   return Number(data ?? 0);
 }
 

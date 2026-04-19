@@ -642,9 +642,12 @@ export async function importToCollection(
 
   // Drop caches so the next open of this collection (or the owned view)
   // refetches fresh data instead of showing the pre-import snapshot
-  // behind the SWR revalidation.
+  // behind the SWR revalidation. Includes the stats caches so the
+  // header doesn't flash old totals before the server stats come back.
   invalidateCache('collection', collectionId);
+  invalidateCache('collection_stats', collectionId);
   invalidateNamespace('owned');
+  invalidateNamespace('owned_stats');
 
   onProgress?.({ phase: 'done', current: rows.length, total: rows.length });
   return result;

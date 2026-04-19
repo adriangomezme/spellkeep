@@ -1,19 +1,19 @@
-// Lightweight in-memory cache for collection entries so re-opening a
-// binder feels instant. This is a true SWR cache: callers paint cached
-// data immediately, then run a background fetch that replaces the cache
-// once the full refresh completes. Any mutation from anywhere in the
-// app gets picked up by that background fetch on next open — we don't
-// chase invalidation events for scan / edit / import individually.
+// Lightweight in-memory cache for collection data so re-opening a
+// binder feels instant. SWR: callers paint cached values immediately,
+// then run a background fetch that replaces the cache when complete.
+// Any mutation from anywhere in the app shows up on that background
+// refresh; we don't chase invalidation events for scan / edit /
+// import individually.
 //
-// Bounded to a small LRU so a user bouncing through many binders doesn't
-// balloon RAM. Entries are dropped when evicted; the next open falls
-// back to the streamed fetch, which is already fast thanks to the 100-
-// row first page.
+// Bounded to a small LRU per namespace so a user bouncing through
+// many binders doesn't balloon RAM. Generic over the cached value
+// type so we can keep entries and stats in separate namespaces
+// without extra wrapping.
 
 const MAX_ENTRIES = 5;
 
 type CacheEntry<T> = {
-  rows: T[];
+  value: T;
   at: number;
 };
 
@@ -29,8 +29,8 @@ function getBucket(namespace: string): Map<string, CacheEntry<any>> {
 }
 
 function touch<T>(bucket: Map<string, CacheEntry<T>>, key: string, entry: CacheEntry<T>) {
-  // Re-insert to move to the tail of Map iteration order — Map keeps
-  // insertion order, so the oldest entry is the first key.
+  // Re-insert so the Map iteration order tracks LRU: oldest entry is
+  // the first key and gets evicted when the bucket overflows.
   bucket.delete(key);
   bucket.set(key, entry);
   while (bucket.size > MAX_ENTRIES) {
@@ -40,17 +40,26 @@ function touch<T>(bucket: Map<string, CacheEntry<T>>, key: string, entry: CacheE
   }
 }
 
-export function getCachedEntries<T = any>(namespace: string, key: string): T[] | null {
+export function getCached<T>(namespace: string, key: string): T | null {
   const bucket = getBucket(namespace);
   const entry = bucket.get(key);
   if (!entry) return null;
   touch(bucket, key, entry);
-  return entry.rows as T[];
+  return entry.value as T;
 }
 
-export function setCachedEntries<T = any>(namespace: string, key: string, rows: T[]): void {
+export function setCached<T>(namespace: string, key: string, value: T): void {
   const bucket = getBucket(namespace);
-  touch(bucket, key, { rows, at: Date.now() });
+  touch(bucket, key, { value, at: Date.now() });
+}
+
+// Back-compat aliases for the array-only flavour used in earlier
+// commits. Now just thin wrappers around the generic API.
+export function getCachedEntries<T = any>(namespace: string, key: string): T[] | null {
+  return getCached<T[]>(namespace, key);
+}
+export function setCachedEntries<T = any>(namespace: string, key: string, rows: T[]): void {
+  setCached<T[]>(namespace, key, rows);
 }
 
 /**

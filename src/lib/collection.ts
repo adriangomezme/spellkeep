@@ -158,7 +158,10 @@ export async function addToCollection(
   // Any external add path (scan, search, manual edit) mutates this
   // collection — drop its cache so the next open refetches fresh data
   // instead of showing a pre-add snapshot until the SWR revalidation
-  // finishes.
+  // finishes. Also dump the stats cache so the header doesn't flash
+  // an outdated number briefly before the server stats arrive.
   invalidateCache('collection', targetId);
+  invalidateCache('collection_stats', targetId);
   invalidateNamespace('owned');
+  invalidateNamespace('owned_stats');
 }

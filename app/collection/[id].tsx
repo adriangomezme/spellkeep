@@ -41,6 +41,8 @@ import {
   type OwnedCardStats,
 } from '../../src/lib/collections';
 import {
+  getCached,
+  setCached,
   getCachedEntries,
   setCachedEntries,
   invalidateCache,
@@ -136,16 +138,20 @@ export default function CollectionDetailScreen() {
   const fetchCards = useCallback(async () => {
     if (!id) return;
 
-    // SWR cache: paint whatever we had last time immediately. The
-    // background refresh below will replace this view once the full
-    // server truth is in hand — any scan / edit / external import that
-    // happened since the last open shows up on the next completion.
+    // SWR cache: paint whatever we had last time immediately — BOTH the
+    // entry rows AND the aggregated stats, so the header doesn't flash
+    // a client-computed value for ~1 s while waiting on
+    // fetchCollectionStats to come back.
     const cached = getCachedEntries<CollectionEntry>('collection', id);
+    const cachedStats = getCached<OwnedCardStats>('collection_stats', id);
     if (cached) {
       setEntries(cached);
       setIsLoading(false);
     } else {
       setEntries([]);
+    }
+    if (cachedStats) {
+      setServerStats(cachedStats);
     }
 
     try {
@@ -159,6 +165,7 @@ export default function CollectionDetailScreen() {
         setCollectionFolderId(colData.folder_id);
       }
       setServerStats(stats);
+      setCached<OwnedCardStats>('collection_stats', id, stats);
 
       // Slimmed-down select: card_faces (heavy JSONB) and mana_cost
       // are not used in grid/list and are refetched on detail open.
