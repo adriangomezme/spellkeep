@@ -59,7 +59,7 @@ export function CollectionActionSheet({ visible, itemName, itemType, inFolder, o
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '48%']}>
+    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '55%']}>
       <Text style={styles.title} numberOfLines={1}>{itemName}</Text>
 
       {/* Quick action buttons */}

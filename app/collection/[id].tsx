@@ -478,6 +478,11 @@ export default function CollectionDetailScreen() {
         inFolder={!!collectionFolderId}
         onAction={(key) => {
           setShowActions(false);
+          // Native Alerts can be swallowed while the bottom sheet is still
+          // animating closed. Defer confirmation prompts to the next tick
+          // so the sheet has finished its exit animation first.
+          const prompt = (cb: () => void) => setTimeout(cb, 250);
+
           if (key === 'edit') setShowEditInfo(true);
           else if (key === 'merge') setShowMerge(true);
           else if (key === 'import') setShowImport(true);
@@ -489,7 +494,7 @@ export default function CollectionDetailScreen() {
             duplicateCollection(id!).then(() => router.back()).catch(() => {});
           } else if (key === 'empty') {
             const label = (collectionType as 'binder' | 'list') === 'list' ? 'list' : 'binder';
-            Alert.alert(
+            prompt(() => Alert.alert(
               `Empty this ${label}?`,
               `All cards will be removed. The ${label} itself stays with its name and settings.`,
               [
@@ -504,14 +509,14 @@ export default function CollectionDetailScreen() {
                   },
                 },
               ]
-            );
+            ));
           } else if (key === 'delete') {
-            Alert.alert('Delete?', 'This will delete all cards inside.', [
+            prompt(() => Alert.alert('Delete?', 'This will delete all cards inside.', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Delete', style: 'destructive', onPress: () => {
                 deleteCollection(id!).then(() => router.back()).catch(() => {});
               }},
-            ]);
+            ]));
           }
         }}
         onClose={() => setShowActions(false)}
