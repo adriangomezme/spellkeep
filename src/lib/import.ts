@@ -242,13 +242,12 @@ export type ImportResult = {
   // Count of parsed source rows (lines in the CSV / text). Used by the
   // progress UI as the denominator.
   total: number;
-  // Count of unique variants saved to the collection. A variant is one
-  // (print × finish) combination — so a row with qty_normal=1 + qty_foil=1
-  // contributes 2 variants. Matches the definition used by the binder
-  // stats so the import counter agrees with the post-import header.
+  // Total card quantities added. `imported` counts the qty on rows that
+  // didn't exist in the destination collection; `updated` counts the qty
+  // delta applied to rows that did. Their sum = physical cards saved to
+  // the binder. Switched from variant counts so the displayed number
+  // matches what the user sees on the CSV.
   imported: number;
-  // Existing rows that already had the variant; we only bumped the quantity.
-  // These are variants the RPC counted as "updated" rather than inserted.
   updated: number;
   failed: string[];
 };

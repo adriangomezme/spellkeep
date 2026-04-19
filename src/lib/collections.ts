@@ -206,6 +206,72 @@ export async function fetchAllCollectionCards(
 }
 
 /**
+ * Streamed variant of fetchAllCollectionCards: returns the first page
+ * synchronously for an immediate paint, then loads the rest in parallel
+ * (configurable concurrency) invoking `onPage` with each new chunk.
+ *
+ * Callers typically set state on the first-page resolve and again on
+ * each onPage so the FlatList starts rendering right away while the
+ * remaining pages stream in the background. Eliminates the serial
+ * waterfall that made large binders feel unusably slow to open.
+ */
+export async function fetchCollectionCardsStreamed(
+  collectionId: string,
+  select: string,
+  onPage: (rows: any[]) => void,
+  opts?: { pageSize?: number; concurrency?: number }
+): Promise<void> {
+  const pageSize = opts?.pageSize ?? 1000;
+  const concurrency = opts?.concurrency ?? 6;
+
+  // Count the collection size cheaply so we can fan out pages without
+  // overshooting. `head: true` skips the body; we only want the Content-
+  // Range total.
+  const { count } = await supabase
+    .from('collection_cards')
+    .select('id', { count: 'exact', head: true })
+    .eq('collection_id', collectionId);
+
+  const total = count ?? 0;
+  if (total === 0) return;
+
+  const pages = Math.ceil(total / pageSize);
+
+  // Stable ordering so pages don't overlap or skip rows.
+  const fetchPage = async (pageIndex: number) => {
+    const offset = pageIndex * pageSize;
+    const { data, error } = await supabase
+      .from('collection_cards')
+      .select(select)
+      .eq('collection_id', collectionId)
+      .order('added_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error(`Failed to page cards: ${error.message}`);
+    if (data && data.length > 0) onPage(data);
+  };
+
+  // First page synchronous — caller can start rendering immediately.
+  await fetchPage(0);
+  if (pages <= 1) return;
+
+  // Remaining pages in a bounded concurrency pool so 100k-row binders
+  // don't launch 100 parallel requests against Supabase.
+  const remaining = Array.from({ length: pages - 1 }, (_, i) => i + 1);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= remaining.length) return;
+      await fetchPage(remaining[idx]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, remaining.length) }, worker)
+  );
+}
+
+/**
  * Same idea for the Owned view — pages across any set of collection ids.
  */
 export async function fetchAllCollectionCardsIn(
