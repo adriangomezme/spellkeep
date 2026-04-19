@@ -24,8 +24,6 @@ import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters, type SetInfo } from '../../src/components/collection/FilterSheet';
-import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
-import { OwnedLocationPicker, type OwnedLocation } from '../../src/components/collection/OwnedLocationPicker';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -100,20 +98,6 @@ export default function OwnedCardsScreen() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
-
-  // Edit flow: long-press a card → open binder picker (if >1 owns it) →
-  // open EditCollectionCardModal for the selected binder's row.
-  const [pendingEdit, setPendingEdit] = useState<OwnedRow | null>(null);
-  const [editEntry, setEditEntry] = useState<{
-    id: string;
-    condition: string;
-    quantity_normal: number;
-    quantity_foil: number;
-    quantity_etched: number;
-    cardName: string;
-    setName: string;
-    collectorNumber: string;
-  } | null>(null);
 
   // Debounce the search box so keystrokes don't each hit the server.
   useEffect(() => {
@@ -272,26 +256,6 @@ export default function OwnedCardsScreen() {
     loadFirstPage();
   }, [fetchOverallStats, fetchAllSets, fetchFilteredStats, loadFirstPage]);
 
-  function handleLongPressEdit(row: OwnedRow) {
-    setPendingEdit(row);
-  }
-
-  function handlePickLocation(loc: OwnedLocation) {
-    if (!pendingEdit) return;
-    const row = pendingEdit;
-    setPendingEdit(null);
-    setEditEntry({
-      id: loc.id,
-      condition: row.condition,
-      quantity_normal: loc.quantity_normal,
-      quantity_foil: loc.quantity_foil,
-      quantity_etched: loc.quantity_etched,
-      cardName: row.name,
-      setName: row.set_name,
-      collectorNumber: row.collector_number,
-    });
-  }
-
   function handleCardPress(row: OwnedRow) {
     router.push({
       pathname: '/card/[id]',
@@ -383,7 +347,6 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.gridCompactCard}
         onPress={() => handleCardPress(item)}
-        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.7}
       >
         <Image
@@ -409,7 +372,6 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.gridCard}
         onPress={() => handleCardPress(item)}
-        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.7}
       >
         <View style={styles.gridImageWrap}>
@@ -452,7 +414,6 @@ export default function OwnedCardsScreen() {
       <TouchableOpacity
         style={styles.listCard}
         onPress={() => handleCardPress(item)}
-        onLongPress={() => handleLongPressEdit(item)}
         activeOpacity={0.6}
       >
         <Image
@@ -570,33 +531,6 @@ export default function OwnedCardsScreen() {
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}
-      />
-
-      {/* Edit flow: long-press a card → pick which binder (if >1) →
-          open EditCollectionCardModal for that binder's row. The
-          picker auto-selects when only one binder owns the card. */}
-      <OwnedLocationPicker
-        visible={pendingEdit !== null}
-        cardName={pendingEdit?.name ?? ''}
-        cardId={pendingEdit?.card_id ?? null}
-        condition={pendingEdit?.condition ?? null}
-        language={pendingEdit?.language ?? null}
-        onClose={() => setPendingEdit(null)}
-        onPick={handlePickLocation}
-      />
-
-      <EditCollectionCardModal
-        visible={editEntry !== null}
-        entry={editEntry}
-        onClose={() => setEditEntry(null)}
-        onSaved={() => {
-          setEditEntry(null);
-          // Refresh the row list and both stats buckets so the
-          // updated quantity shows up immediately.
-          loadFirstPage();
-          fetchOverallStats();
-          fetchFilteredStats();
-        }}
       />
     </View>
   );
