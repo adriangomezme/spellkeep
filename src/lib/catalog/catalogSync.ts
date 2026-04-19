@@ -1,6 +1,5 @@
 import { InteractionManager } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import pako from 'pako';
 import { getMeta, setMeta } from './catalogMeta';
 import { CATALOG_DB_FILENAME, closeCatalog, openCatalog } from './catalogDb';
 import type { CatalogIndex, CatalogSyncState } from './types';
@@ -105,20 +104,24 @@ async function fetchIndex(): Promise<CatalogIndex | null> {
 }
 
 /**
- * Downloads the pre-compiled SQLite snapshot, ungzips it, and atomically
- * replaces the local catalog.db file.
+ * Streams the pre-compiled SQLite snapshot straight to the local catalog
+ * path on disk. No decompression, no base64 conversion, no JS-thread work
+ * — expo-file-system writes bytes natively and our role is limited to
+ * publishing progress updates.
  */
 async function installSnapshot(index: CatalogIndex): Promise<void> {
-  const gzPath = `${FileSystem.cacheDirectory}catalog-download.sqlite.gz`;
   const finalPath = `${FileSystem.documentDirectory}${CATALOG_DB_FILENAME}`;
+  const tmpPath = `${FileSystem.cacheDirectory}catalog-download.sqlite`;
 
-  // 1. Download .sqlite.gz with live progress.
+  // Close any existing connection so we can swap the file safely.
+  closeCatalog();
+
   publish({ status: 'downloading', progress: 0 });
 
-  await FileSystem.deleteAsync(gzPath, { idempotent: true });
+  await FileSystem.deleteAsync(tmpPath, { idempotent: true });
   const downloader = FileSystem.createDownloadResumable(
     index.snapshot_url!,
-    gzPath,
+    tmpPath,
     {},
     (p) => {
       if (p.totalBytesExpectedToWrite > 0) {
@@ -132,66 +135,15 @@ async function installSnapshot(index: CatalogIndex): Promise<void> {
   const dl = await downloader.downloadAsync();
   if (!dl) throw new Error('Snapshot download returned no result');
 
-  // 2. Decompress. This is the one unavoidable blocking step — pako is
-  // pure JS and we need the whole 20–40 MB gzip buffer in memory at
-  // once. Yielding right before it keeps the UI painted through the
-  // download phase; the actual inflate is ~2–4 s on a mid-range device.
-  publish({ status: 'applying', progress: 0 });
-  await yieldToUi();
-
-  const gzBase64 = await FileSystem.readAsStringAsync(gzPath, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const gzBytes = base64ToBytes(gzBase64);
-
-  publish({ status: 'applying', progress: 0.2 });
-  await yieldToUi();
-
-  const sqliteBytes = pako.ungzip(gzBytes);
-
   publish({ status: 'applying', progress: 0.5 });
-  await yieldToUi();
 
-  // 3. Close any existing catalog handle, remove old files, then write the
-  // new SQLite + leave no WAL/journal behind to confuse the engine.
-  closeCatalog();
+  // Clean out any stale file on the final path before moving the new one in.
   await FileSystem.deleteAsync(finalPath, { idempotent: true });
   await FileSystem.deleteAsync(`${finalPath}-wal`, { idempotent: true });
   await FileSystem.deleteAsync(`${finalPath}-shm`, { idempotent: true });
   await FileSystem.deleteAsync(`${finalPath}-journal`, { idempotent: true });
 
-  const sqliteBase64 = bytesToBase64(sqliteBytes);
-  publish({ status: 'applying', progress: 0.8 });
-  await yieldToUi();
+  await FileSystem.moveAsync({ from: tmpPath, to: finalPath });
 
-  await FileSystem.writeAsStringAsync(finalPath, sqliteBase64, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-
-  // 4. Clean up the download tmp file.
-  await FileSystem.deleteAsync(gzPath, { idempotent: true });
-}
-
-function yieldToUi(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const bin = globalThis.atob(base64);
-  const len = bin.length;
-  const out = new Uint8Array(len);
-  for (let i = 0; i < len; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  // Chunk the conversion to avoid passing a gigantic argument list to
-  // String.fromCharCode, which throws on large inputs in some engines.
-  const CHUNK = 0x8000;
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    const slice = bytes.subarray(i, i + CHUNK);
-    bin += String.fromCharCode.apply(null, Array.from(slice) as any);
-  }
-  return globalThis.btoa(bin);
+  publish({ status: 'applying', progress: 1 });
 }

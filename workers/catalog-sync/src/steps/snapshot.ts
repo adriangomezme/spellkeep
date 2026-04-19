@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
 import Database from 'better-sqlite3';
 import { supabase } from '../supabase.ts';
 import { config } from '../config.ts';
@@ -101,17 +100,21 @@ export async function buildSnapshot(): Promise<string | null> {
 
     const raw = readFileSync(dbPath);
     const sha256 = createHash('sha256').update(raw).digest('hex');
-    const gz = gzipSync(raw);
 
     console.log(
-      `[catalog-sync] snapshot: ${raw.byteLength} bytes raw, ${gz.byteLength} bytes gz, sha256=${sha256.slice(0, 12)}…`
+      `[catalog-sync] snapshot: ${raw.byteLength} bytes, sha256=${sha256.slice(0, 12)}…`
     );
 
-    const objectPath = `${today}.sqlite.gz`;
+    // Upload the raw .sqlite file. No gzip on our side: decompressing 80+ MB
+    // in pure JS on the device blocks the UI for 15–30 s, which defeats the
+    // whole point of a background catalog sync. Clients stream this file
+    // straight to disk via expo-file-system, then open it with quick-sqlite
+    // — zero JS-thread work during install.
+    const objectPath = `${today}.sqlite`;
     const { error: upErr } = await supabase.storage
       .from(SNAPSHOTS_BUCKET)
-      .upload(objectPath, gz, {
-        contentType: 'application/octet-stream',
+      .upload(objectPath, raw, {
+        contentType: 'application/vnd.sqlite3',
         cacheControl: '2592000, immutable',
         upsert: true,
       });
@@ -124,8 +127,7 @@ export async function buildSnapshot(): Promise<string | null> {
       snapshot_version: today,
       snapshot_url: snapshotUrl,
       snapshot_sha256: sha256,
-      snapshot_raw_bytes: raw.byteLength,
-      snapshot_gz_bytes: gz.byteLength,
+      snapshot_bytes: raw.byteLength,
       snapshot_card_count: cards.length,
       snapshot_set_count: sets.length,
     });
@@ -216,7 +218,6 @@ function serialize(value: unknown): string | number | null {
 }
 
 async function shouldRegenerate(): Promise<boolean> {
-  // Use the published index.json as the single source of truth for versioning.
   const { data } = await supabase.storage.from(DELTAS_INDEX_BUCKET).download(INDEX_PATH);
   if (!data) return true;
   try {
@@ -228,6 +229,24 @@ async function shouldRegenerate(): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+async function pruneStaleSnapshots(currentVersion: string): Promise<void> {
+  const { data: objects, error: listErr } = await supabase.storage
+    .from(SNAPSHOTS_BUCKET)
+    .list('', { limit: 1000 });
+  if (listErr || !objects) return;
+
+  const keep = `${currentVersion}.sqlite`;
+  const toRemove = objects.map((o) => o.name).filter((name) => name !== keep);
+
+  if (toRemove.length === 0) return;
+  const { error: delErr } = await supabase.storage.from(SNAPSHOTS_BUCKET).remove(toRemove);
+  if (delErr) {
+    console.warn(`[catalog-sync] prune warning: ${delErr.message}`);
+    return;
+  }
+  console.log(`[catalog-sync] pruned ${toRemove.length} stale snapshot files`);
 }
 
 async function fetchAllCards(): Promise<any[]> {
@@ -286,25 +305,3 @@ async function writeIndex(patch: Record<string, unknown>): Promise<void> {
   if (error) throw new Error(`index write failed: ${error.message}`);
 }
 
-async function pruneStaleSnapshots(currentVersion: string): Promise<void> {
-  // Keep the current snapshot and nothing else — old ones become orphans.
-  // Any client still on the previous version re-downloads the new one on
-  // next app open. Storage cost is negligible either way; this just keeps
-  // the bucket tidy.
-  const { data: objects, error: listErr } = await supabase.storage
-    .from(SNAPSHOTS_BUCKET)
-    .list('', { limit: 1000 });
-  if (listErr || !objects) return;
-
-  const toRemove = objects
-    .map((o) => o.name)
-    .filter((name) => name !== `${currentVersion}.sqlite.gz`);
-
-  if (toRemove.length === 0) return;
-  const { error: delErr } = await supabase.storage.from(SNAPSHOTS_BUCKET).remove(toRemove);
-  if (delErr) {
-    console.warn(`[catalog-sync] prune warning: ${delErr.message}`);
-    return;
-  }
-  console.log(`[catalog-sync] pruned ${toRemove.length} stale snapshot files`);
-}
