@@ -101,24 +101,22 @@ export default function CardDetailScreen() {
 
   const [card, setCard] = useState<ScryfallCard | null>(initialCard);
 
-  // Reset and lazy-refresh whenever the route changes (e.g., navigating
-  // to a different print). Local-cache JSON often lacks flavor_text,
-  // finishes, usd_etched, etc.; Scryfall is the source of truth.
-  //
-  // In parallel, fetch the "extras" (oracle_text, P/T, loyalty, legalities,
-  // flavor_text, artist, keywords, produced_mana) from Supabase — these
-  // are intentionally stripped from the offline catalog snapshot to keep
-  // it lean. Offline: silently no-op, affected sections render empty.
+  // Reset and lazy-refresh whenever the route changes. We resolve the
+  // card metadata and the detail-only "extras" in parallel, merge them
+  // together, then commit in a single setCard call so neither response
+  // can clobber the other. Offline: extras fails silently and the page
+  // renders with just the local catalog fields.
   useEffect(() => {
     setCard(initialCard);
     if (!id) return;
-    getCard(id).then(setCard).catch(() => {});
-    fetchCardExtras(id)
-      .then((extras) => {
-        if (!extras) return;
-        setCard((prev) => (prev ? { ...prev, ...extras } : prev));
-      })
-      .catch(() => {});
+    Promise.all([
+      getCard(id).catch(() => null),
+      fetchCardExtras(id).catch(() => null),
+    ]).then(([baseCard, extras]) => {
+      if (!baseCard && !extras) return;
+      if (!baseCard) return;
+      setCard(extras ? { ...baseCard, ...extras } : baseCard);
+    });
   }, [id, initialCard]);
 
   const [showAddSheet, setShowAddSheet] = useState(false);
