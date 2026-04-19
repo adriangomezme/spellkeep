@@ -290,12 +290,27 @@ async function fetchAllCards(): Promise<any[]> {
 }
 
 async function fetchAllSets(): Promise<any[]> {
-  const { data, error } = await supabase
-    .from('sets')
-    .select(SET_COLUMNS.join(','))
-    .range(0, 9999);
-  if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
-  return data ?? [];
+  // PostgREST caps responses at 1000 rows by default, so .range(0, 9999)
+  // silently truncates. Page through with keyset pagination on `code`
+  // (stable unique column) to be robust as the sets table grows.
+  const cols = SET_COLUMNS.join(',');
+  const all: any[] = [];
+  let lastCode: string | null = null;
+  while (true) {
+    let q = supabase
+      .from('sets')
+      .select(cols)
+      .order('code', { ascending: true })
+      .limit(PAGE);
+    if (lastCode !== null) q = q.gt('code', lastCode);
+    const { data, error } = await q;
+    if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    lastCode = (data[data.length - 1] as any).code;
+    if (data.length < PAGE) break;
+  }
+  return all;
 }
 
 async function writeIndex(patch: Record<string, unknown>): Promise<void> {

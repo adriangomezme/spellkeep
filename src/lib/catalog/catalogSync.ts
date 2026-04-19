@@ -9,6 +9,7 @@ const INDEX_URL = `${SUPABASE_URL}/storage/v1/object/public/catalog-deltas/index
 
 const META_KEYS = {
   snapshotVersion: 'snapshot_version',
+  snapshotSha256: 'snapshot_sha256',
   lastSyncAt: 'last_sync_at',
 } as const;
 
@@ -61,11 +62,17 @@ async function runSync(): Promise<void> {
   }
 
   const localVersion = await getMeta(META_KEYS.snapshotVersion);
+  const localSha = await getMeta(META_KEYS.snapshotSha256);
   const localFilePath = `${FileSystem.documentDirectory}${CATALOG_DB_FILENAME}`;
   const localFileExists = (await FileSystem.getInfoAsync(localFilePath)).exists;
 
-  // Up to date — just make sure the DB is open and bail.
-  if (localVersion === remoteIndex.snapshot_version && localFileExists) {
+  // Content-based staleness check: if the server publishes a new snapshot
+  // with the same version date but different bytes (e.g. we regenerated
+  // mid-day), the SHA-256 changes and we re-download. Version string is
+  // kept only for display.
+  const sameVersion = localVersion === remoteIndex.snapshot_version;
+  const sameContent = remoteIndex.snapshot_sha256 && localSha === remoteIndex.snapshot_sha256;
+  if (sameVersion && sameContent && localFileExists) {
     openCatalog();
     publish({
       status: 'ready',
@@ -80,6 +87,9 @@ async function runSync(): Promise<void> {
 
   const now = new Date().toISOString();
   await setMeta(META_KEYS.snapshotVersion, remoteIndex.snapshot_version);
+  if (remoteIndex.snapshot_sha256) {
+    await setMeta(META_KEYS.snapshotSha256, remoteIndex.snapshot_sha256);
+  }
   await setMeta(META_KEYS.lastSyncAt, now);
 
   openCatalog();
