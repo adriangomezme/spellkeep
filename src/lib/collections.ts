@@ -552,24 +552,12 @@ export async function duplicateCollection(sourceId: string, newName?: string): P
   );
 
   try {
-    const t0 = Date.now();
     const { data, error } = await supabase.rpc('sp_duplicate_collection', {
       p_source_id: sourceId,
       p_new_name: newName ?? null,
     });
-    const rpcMs = Date.now() - t0;
-    if (error) {
-      console.error('[duplicateCollection] failed', {
-        ms: rpcMs,
-        code: error.code,
-        message: error.message,
-        details: (error as any).details,
-        hint: (error as any).hint,
-      });
-      throw new Error(`Failed to duplicate: ${error.message}`);
-    }
+    if (error) throw new Error(`Failed to duplicate: ${error.message}`);
     if (!data) throw new Error('Duplicate returned no id');
-    console.log(`[duplicateCollection] RPC finished in ${rpcMs} ms`);
 
     overlay.update('Waiting for sync…');
     await waitForLocalSync(data as string, expected);
@@ -599,23 +587,11 @@ export async function mergeCollections(sourceId: string, destinationId: string):
   );
 
   try {
-    const t0 = Date.now();
     const { error } = await supabase.rpc('sp_merge_collections', {
       p_source_id: sourceId,
       p_dest_id: destinationId,
     });
-    const rpcMs = Date.now() - t0;
-    if (error) {
-      console.error('[mergeCollections] failed', {
-        ms: rpcMs,
-        code: error.code,
-        message: error.message,
-        details: (error as any).details,
-        hint: (error as any).hint,
-      });
-      throw new Error(`Failed to merge: ${error.message}`);
-    }
-    console.log(`[mergeCollections] RPC finished in ${rpcMs} ms`);
+    if (error) throw new Error(`Failed to merge: ${error.message}`);
 
     // Wait until source collection is drained locally (rows have been
     // deleted / moved) — signals the sync stream caught up. PowerSync

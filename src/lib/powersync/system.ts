@@ -35,29 +35,9 @@ export async function setupPowerSync() {
   for (const name of DEFAULT_STREAMS) {
     try {
       await db.syncStream(name).subscribe({ ttl: STREAM_TTL_SECONDS });
-      console.log(`[powersync] subscribed to ${name}`);
     } catch (err) {
       console.warn(`[powersync] subscribe ${name} failed`, err);
     }
-  }
-
-  // Diagnostic: dump the current local-table sizes so we can tell apart
-  // "local SQLite is empty" (stream stalled) from "hook isn't rendering"
-  // (my bug) when debugging local-first reads.
-  try {
-    const counts = await Promise.all([
-      db.getAll(`SELECT COUNT(*) as c FROM collections`),
-      db.getAll(`SELECT COUNT(*) as c FROM collection_cards`),
-      db.getAll(`SELECT COUNT(*) as c FROM collection_folders`),
-      db.getAll(`SELECT COUNT(*) as c FROM ps_crud`),
-    ]);
-    console.log('[powersync] local counts',
-      { collections: (counts[0] as any)[0]?.c,
-        collection_cards: (counts[1] as any)[0]?.c,
-        collection_folders: (counts[2] as any)[0]?.c,
-        pending_upload: (counts[3] as any)[0]?.c });
-  } catch (err) {
-    console.warn('[powersync] count probe failed', err);
   }
 }
 

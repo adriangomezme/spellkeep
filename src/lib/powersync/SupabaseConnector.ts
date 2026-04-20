@@ -61,13 +61,11 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       return;
     }
 
-    console.log(`[ps-upload] ${transaction.crud.length} ops`);
     let lastOp: CrudEntry | null = null;
 
     try {
       for (const op of transaction.crud) {
         lastOp = op;
-        console.log(`[ps-upload] ${op.op} ${op.table}`, op.opData);
         const table = supabase.from(op.table);
         let result: any;
 
@@ -94,7 +92,6 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       }
 
       await transaction.complete();
-      console.log('[ps-upload] transaction complete');
     } catch (ex: any) {
       console.error('[ps-upload] error', { code: ex?.code, message: ex?.message, lastOp });
 

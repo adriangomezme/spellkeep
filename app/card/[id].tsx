@@ -36,6 +36,7 @@ import { useQuery as usePowerSyncQuery } from '@powersync/react';
 import { DestinationPickerModal } from '../../src/components/DestinationPickerModal';
 import type { CollectionSummary, CollectionType } from '../../src/lib/collections';
 import { showToast } from '../../src/components/Toast';
+import { QuickAddButton, type QuickAddButtonHandle } from '../../src/components/QuickAddButton';
 import * as Haptics from 'expo-haptics';
 import {
   useOwnershipSummary,
@@ -140,6 +141,7 @@ export default function CardDetailScreen() {
   // (or first-time tap without target) opens a picker.
   const [showQuickAddPicker, setShowQuickAddPicker] = useState(false);
   const quickAddTargetId = useQuickAddTargetId();
+  const quickAddBtnRef = useRef<QuickAddButtonHandle | null>(null);
   // Two separate queries so the picker can paint instantly on long-
   // press. The collections SELECT is trivial (no JOIN), emits in a
   // tick; the counts aggregate may take a while on large datasets but
@@ -199,7 +201,7 @@ export default function CardDetailScreen() {
     [quickAddDestinations, quickAddTargetId]
   );
 
-  async function performQuickAdd(collectionId: string, targetName: string) {
+  async function performQuickAdd(collectionId: string, accentColor: string | null) {
     if (!card) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -213,7 +215,7 @@ export default function CardDetailScreen() {
         finish,
         quantity: 1,
       });
-      showToast(`Added to ${targetName}`);
+      quickAddBtnRef.current?.playSuccess(accentColor);
     } catch (err: any) {
       showToast(err?.message ?? 'Quick add failed');
     }
@@ -236,16 +238,16 @@ export default function CardDetailScreen() {
       return;
     }
 
-    // Otherwise proceed with the stored id. We may not have the name
-    // yet (useCollectionsHub still hydrating on a fresh mount); fall
-    // back to a generic label in the toast until it resolves.
-    performQuickAdd(quickAddTargetId, quickAddTarget?.name ?? 'collection');
+    // Otherwise proceed with the stored id. The accent color lights up
+    // the "+1" burst so users can tell which binder received the add
+    // without reading any text.
+    performQuickAdd(quickAddTargetId, quickAddTarget?.color ?? null);
   }
 
   async function handleQuickAddTargetPicked(id: string) {
     await setQuickAddTargetId(id);
     const picked = quickAddDestinations.find((d) => d.id === id);
-    if (picked) performQuickAdd(picked.id, picked.name);
+    if (picked) performQuickAdd(picked.id, picked.color ?? null);
   }
   const ownership: OwnershipSummary | null = useOwnershipSummary(card?.id) ?? null;
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
@@ -563,15 +565,12 @@ export default function CardDetailScreen() {
           <Ionicons name="add" size={20} color="#FFFFFF" />
           <Text style={styles.ctaText}>Add to collection</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickAddBtn}
+        <QuickAddButton
+          ref={quickAddBtnRef}
           onPress={handleQuickAddTap}
           onLongPress={() => setShowQuickAddPicker(true)}
-          activeOpacity={0.85}
           accessibilityLabel="Quick add to target binder or list"
-        >
-          <Ionicons name="flash" size={22} color="#FFFFFF" />
-        </TouchableOpacity>
+        />
       </View>
 
       <AddCardSheet
@@ -1802,14 +1801,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '700',
-  },
-  quickAddBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: 14,
-    ...shadows.md,
   },
 });
