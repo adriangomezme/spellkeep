@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Text,
   TouchableOpacity,
@@ -6,10 +6,17 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@powersync/react';
 import { BottomSheet } from '../BottomSheet';
-import { supabase } from '../../lib/supabase';
-import { fetchFolders, moveToFolder, type FolderSummary, type CollectionType } from '../../lib/collections';
+import { moveToFolderLocal } from '../../lib/collections.local';
+import type { CollectionType } from '../../lib/collections';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
+
+type FolderRow = {
+  id: string;
+  name: string;
+  color: string | null;
+};
 
 type Props = {
   visible: boolean;
@@ -20,26 +27,24 @@ type Props = {
 };
 
 export function FolderPickerModal({ visible, collectionId, collectionType, onClose, onMoved }: Props) {
-  const [folders, setFolders] = useState<FolderSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isMoving, setIsMoving] = useState(false);
 
-  useEffect(() => {
-    if (!visible) return;
-    (async () => {
-      setIsLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const f = await fetchFolders(user.id, collectionType);
-      setFolders(f);
-      setIsLoading(false);
-    })();
-  }, [visible, collectionType]);
+  // Local-first: folders come straight from SQLite so the picker works
+  // offline and paints instantly.
+  const folderRows = useQuery<FolderRow>(
+    `SELECT id, name, color
+       FROM collection_folders
+      WHERE type = ?
+      ORDER BY LOWER(name)`,
+    [collectionType]
+  );
+  const folders = (folderRows.data ?? []) as FolderRow[];
+  const isLoading = folderRows.isLoading;
 
   async function handleSelect(folderId: string) {
     setIsMoving(true);
     try {
-      await moveToFolder(collectionId, folderId);
+      await moveToFolderLocal(collectionId, folderId);
       onMoved();
     } catch (err) {
       console.error('Move error:', err);
