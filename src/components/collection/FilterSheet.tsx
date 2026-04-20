@@ -66,6 +66,7 @@ export type FilterState = {
   priceMode: PriceMode;
   priceValue: string;
   sets: string[];
+  languages: string[];
 };
 
 export const EMPTY_FILTERS: FilterState = {
@@ -77,6 +78,7 @@ export const EMPTY_FILTERS: FilterState = {
   priceMode: 'gte',
   priceValue: '',
   sets: [],
+  languages: [],
 };
 
 export function countActiveFilters(f: FilterState): number {
@@ -88,6 +90,7 @@ export function countActiveFilters(f: FilterState): number {
   if (f.isLegendary !== null) count++;
   if (f.priceValue.trim()) count++;
   if (f.sets.length) count++;
+  if (f.languages.length) count++;
   return count;
 }
 
@@ -97,21 +100,29 @@ export type SetInfo = {
   count: number;
 };
 
-type Tab = 'general' | 'set';
+export type LanguageInfo = {
+  code: string;
+  label: string;
+  count: number;
+};
+
+type Tab = 'general' | 'set' | 'language';
 
 type Props = {
   visible: boolean;
   filters: FilterState;
   availableSets: SetInfo[];
+  availableLanguages: LanguageInfo[];
   onApply: (filters: FilterState) => void;
   onReset: () => void;
   onClose: () => void;
 };
 
-export function FilterSheet({ visible, filters, availableSets, onApply, onReset, onClose }: Props) {
+export function FilterSheet({ visible, filters, availableSets, availableLanguages, onApply, onReset, onClose }: Props) {
   const [local, setLocal] = useState<FilterState>(filters);
   const [tab, setTab] = useState<Tab>('general');
   const [setSearch, setSetSearch] = useState('');
+  const [languageSearch, setLanguageSearch] = useState('');
   const [snapFraction, setSnapFraction] = useState(0.65);
 
   const SNAP_FRACTIONS = [0.65, 0.95];
@@ -121,6 +132,7 @@ export function FilterSheet({ visible, filters, availableSets, onApply, onReset,
       setLocal(filters);
       setTab('general');
       setSetSearch('');
+      setLanguageSearch('');
       setSnapFraction(0.65);
     }
   }, [visible]);
@@ -149,6 +161,14 @@ export function FilterSheet({ visible, filters, availableSets, onApply, onReset,
           s.code.toLowerCase().includes(setSearch.trim().toLowerCase()),
       )
     : availableSets;
+
+  const filteredLanguages = languageSearch.trim()
+    ? availableLanguages.filter(
+        (l) =>
+          l.label.toLowerCase().includes(languageSearch.trim().toLowerCase()) ||
+          l.code.toLowerCase().includes(languageSearch.trim().toLowerCase()),
+      )
+    : availableLanguages;
 
   return (
     <BottomSheet
@@ -190,6 +210,17 @@ export function FilterSheet({ visible, filters, availableSets, onApply, onReset,
             Set{local.sets.length > 0 ? ` (${local.sets.length})` : ''}
           </Text>
         </TouchableOpacity>
+        {availableLanguages.length > 1 && (
+          <TouchableOpacity
+            style={[styles.tab, tab === 'language' && styles.tabActive]}
+            onPress={() => setTab('language')}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.tabLabel, tab === 'language' && styles.tabLabelActive]}>
+              Language{local.languages.length > 0 ? ` (${local.languages.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Tab content ── */}
@@ -335,7 +366,7 @@ export function FilterSheet({ visible, filters, availableSets, onApply, onReset,
 
           <View style={{ height: spacing.xl }} />
         </ScrollView>
-      ) : (
+      ) : tab === 'set' ? (
         /* ── Set tab ── */
         <View style={{ flex: 1 }}>
           {/* Selected sets summary */}
@@ -397,6 +428,68 @@ export function FilterSheet({ visible, filters, availableSets, onApply, onReset,
             })}
             {filteredSets.length === 0 && setSearch.trim() !== '' && (
               <Text style={styles.setEmpty}>No sets match "{setSearch}"</Text>
+            )}
+          </ScrollView>
+        </View>
+      ) : (
+        /* ── Language tab ── */
+        <View style={{ flex: 1 }}>
+          {local.languages.length > 0 && (
+            <View style={styles.selectedSetsBar}>
+              <Text style={styles.selectedSetsText}>
+                {local.languages.length === 1
+                  ? availableLanguages.find((l) => l.code === local.languages[0])?.label ?? local.languages[0].toUpperCase()
+                  : `${local.languages.length} languages selected`}
+              </Text>
+              <TouchableOpacity onPress={() => setLocal({ ...local, languages: [] })} activeOpacity={0.6}>
+                <Text style={styles.selectedSetsClear}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.setSearchField}>
+            <Ionicons name="search" size={14} color={colors.textMuted} />
+            <TextInput
+              style={styles.setSearchInput}
+              placeholder="Search languages..."
+              placeholderTextColor={colors.textMuted}
+              value={languageSearch}
+              onChangeText={setLanguageSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {languageSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setLanguageSearch('')}>
+                <Ionicons name="close-circle" size={14} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <ScrollView style={{ maxHeight: getSetListMax(snapFraction, local.languages.length > 0) }} nestedScrollEnabled showsVerticalScrollIndicator>
+            {filteredLanguages.map((l) => {
+              const active = local.languages.includes(l.code);
+              return (
+                <TouchableOpacity
+                  key={l.code}
+                  style={styles.setRow}
+                  onPress={() => setLocal({ ...local, languages: toggleArray(local.languages, l.code) })}
+                  activeOpacity={0.5}
+                >
+                  <View style={[styles.setCheck, active && styles.setCheckActive]}>
+                    {active && <Ionicons name="checkmark" size={12} color="#FFF" />}
+                  </View>
+                  <View style={styles.setInfo}>
+                    <Text style={[styles.setName, active && { color: colors.primary }]} numberOfLines={1}>
+                      {l.label}
+                    </Text>
+                    <Text style={styles.setCode}>{l.code.toUpperCase()}</Text>
+                  </View>
+                  <Text style={styles.setCount}>{l.count}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {filteredLanguages.length === 0 && languageSearch.trim() !== '' && (
+              <Text style={styles.setEmpty}>No languages match "{languageSearch}"</Text>
             )}
           </ScrollView>
         </View>

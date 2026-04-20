@@ -40,7 +40,7 @@ import {
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
 import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
-import { filterAndSort, deriveAvailableSets, displayPriceForRow } from '../../src/lib/cardListUtils';
+import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -150,6 +150,7 @@ export default function CollectionDetailScreen() {
   );
 
   const availableSets = useMemo(() => deriveAvailableSets(entries), [entries]);
+  const availableLanguages = useMemo(() => deriveAvailableLanguages(entries), [entries]);
 
   const isFiltered =
     searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
@@ -228,11 +229,10 @@ export default function CollectionDetailScreen() {
     </View>
   );
 
-  /* ── Grid compact: image only ── */
+  /* ── Grid compact: pure card, no overlays ── */
   function renderGridCompactItem({ item }: { item: CollectionEntry }) {
     const card = item.cards;
     if (!card) return null;
-    const qty = getTotalQuantity(item);
 
     return (
       <TouchableOpacity
@@ -245,12 +245,6 @@ export default function CollectionDetailScreen() {
           uri={card.image_uri_normal || card.image_uri_small}
           style={styles.gridCompactImage}
         />
-        <LanguageBadge language={item.language} style="corner" />
-        {qty > 1 && (
-          <View style={styles.qtyBadge}>
-            <Text style={styles.qtyBadgeText}>x{qty}</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   }
@@ -437,6 +431,7 @@ export default function CollectionDetailScreen() {
         visible={showFilter}
         filters={filters}
         availableSets={availableSets}
+        availableLanguages={availableLanguages}
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}

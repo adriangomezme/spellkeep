@@ -65,6 +65,13 @@ export type CollectionSummary = {
   card_count: number;
   unique_cards: number;
   total_value: number;
+  /**
+   * True when we have either a live aggregate or a cached snapshot for
+   * this collection's counts. False when BOTH are still loading — the
+   * caller should avoid painting "0 Cards · 0 unique" in that window to
+   * prevent the blink-from-zero on folder open.
+   */
+  statsReady?: boolean;
 };
 
 export type FolderSummary = {

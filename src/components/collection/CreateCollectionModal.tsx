@@ -8,10 +8,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheetTextInput, BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { useQuery } from '@powersync/react';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 import {
-  fetchFolders,
   type CollectionType,
   type FolderSummary,
 } from '../../lib/collections';
@@ -57,7 +57,25 @@ export function CreateCollectionModal({
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
   const [folderFor, setFolderFor] = useState<CollectionType>('binder');
-  const [folders, setFolders] = useState<FolderSummary[]>([]);
+  // Read folders straight from local PowerSync SQLite so the picker has
+  // data on the first frame — going through supabase.auth.getUser() +
+  // fetchFolders used to stall the dropdown for 1-2 s on open.
+  const folderRows = useQuery<FolderSummary & { item_count: number }>(
+    `SELECT id, name, type, color,
+            (SELECT COUNT(*) FROM collections c WHERE c.folder_id = f.id) AS item_count
+       FROM collection_folders f
+      ORDER BY LOWER(f.name)`
+  );
+  const folders = useMemo<FolderSummary[]>(
+    () => (folderRows.data ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      color: r.color,
+      item_count: Number(r.item_count ?? 0),
+    })),
+    [folderRows.data]
+  );
   const [color, setColor] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [view, setView] = useState<ModalView>('form');
@@ -89,13 +107,6 @@ export function CreateCollectionModal({
       ?? (lockedType && lockedType !== undefined ? lockedType : undefined)
       ?? (defaultType && defaultType !== 'folder' ? (defaultType as CollectionType) : 'binder')
     );
-
-    (async () => {
-      const { data: { user } } = await (await import('../../lib/supabase')).supabase.auth.getUser();
-      if (!user) return;
-      const f = await fetchFolders(user.id);
-      setFolders(f);
-    })();
   }, [visible, lockedType, lockedFolderId, defaultType, defaultFolderFor]);
 
   const matchingFolders = useMemo(

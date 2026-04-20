@@ -8,6 +8,7 @@ import type { FilterState, SetInfo } from '../components/collection/FilterSheet'
 export type CardEntry = {
   id: string;
   added_at: string;
+  language?: string;
   quantity_normal: number;
   quantity_foil: number;
   quantity_etched: number;
@@ -103,6 +104,60 @@ export function deriveAvailableSets<T extends CardEntry>(entries: T[]): SetInfo[
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Scryfall language codes the filter UI knows how to label. The map is
+// intentionally small — anything outside it falls through to the code
+// in uppercase so an unexpected language still renders usefully.
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  ja: 'Japanese',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  it: 'Italian',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  ko: 'Korean',
+  zhs: 'Chinese Simplified',
+  zht: 'Chinese Traditional',
+  ph: 'Phyrexian',
+  ar: 'Arabic',
+  he: 'Hebrew',
+  la: 'Latin',
+  grc: 'Ancient Greek',
+  sa: 'Sanskrit',
+};
+
+export type LanguageInfo = {
+  code: string;
+  label: string;
+  count: number;
+};
+
+/**
+ * Derive available languages (+ counts) from the current card entries —
+ * mirror of deriveAvailableSets so the filter UI can list exactly the
+ * languages the user actually owns, sorted with English first, then the
+ * rest alphabetically by label.
+ */
+export function deriveAvailableLanguages<T extends CardEntry>(entries: T[]): LanguageInfo[] {
+  const map = new Map<string, number>();
+  for (const e of entries) {
+    const code = (e.language ?? 'en').toLowerCase();
+    map.set(code, (map.get(code) ?? 0) + 1);
+  }
+  return Array.from(map.entries())
+    .map(([code, count]) => ({
+      code,
+      label: LANGUAGE_LABELS[code] ?? code.toUpperCase(),
+      count,
+    }))
+    .sort((a, b) => {
+      if (a.code === 'en') return -1;
+      if (b.code === 'en') return 1;
+      return a.label.localeCompare(b.label);
+    });
+}
+
 export function filterAndSort<T extends CardEntry>(
   entries: T[],
   searchQuery: string,
@@ -178,6 +233,12 @@ export function filterAndSort<T extends CardEntry>(
 
   if (filters.sets.length > 0) {
     result = result.filter((e) => filters.sets.includes(e.cards.set_code));
+  }
+
+  if (filters.languages.length > 0) {
+    result = result.filter((e) =>
+      filters.languages.includes((e.language ?? 'en').toLowerCase())
+    );
   }
 
   // Sort

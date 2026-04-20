@@ -24,7 +24,7 @@ import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPre
 // binders. Uses a fixed UUID-shaped string so PowerSync is happy with
 // the id column type.
 const OWNED_CACHE_ID = '00000000-0000-0000-0000-000000006177';
-import { filterAndSort, deriveAvailableSets, displayPriceForRow } from '../../src/lib/cardListUtils';
+import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet } from '../../src/components/collection/SortSheet';
@@ -151,6 +151,10 @@ export default function OwnedCardsScreen() {
     const shaped = mergedRows.map((r) => ({
       id: rowKey(r),
       added_at: r.added_at,
+      // Needed by filterAndSort's language filter (CardEntry.language).
+      // Without this the Language tab in the filter sheet silently
+      // matches nothing in the owned view.
+      language: r.language,
       quantity_normal: r.quantity_normal,
       quantity_foil: r.quantity_foil,
       quantity_etched: r.quantity_etched,
@@ -216,6 +220,7 @@ export default function OwnedCardsScreen() {
   // local-first data we don't need a server RPC — same derivation as the
   // binder detail screen.
   const availableSets = useMemo(() => deriveAvailableSets(mergedRows as any), [mergedRows]);
+  const availableLanguages = useMemo(() => deriveAvailableLanguages(mergedRows as any), [mergedRows]);
 
   const isFilterActive =
     !!debouncedSearch || countActiveFilters(filters) > 0;
@@ -282,9 +287,8 @@ export default function OwnedCardsScreen() {
     </View>
   );
 
-  /* ── Grid compact ── */
+  /* ── Grid compact: pure card, no overlays ── */
   function renderGridCompactItem({ item }: { item: OwnedRow }) {
-    const qty = totalQty(item);
     const card = item.cards;
     return (
       <TouchableOpacity
@@ -296,12 +300,6 @@ export default function OwnedCardsScreen() {
           uri={card.image_uri_normal || card.image_uri_small}
           style={styles.gridCompactImage}
         />
-        <LanguageBadge language={item.language} style="corner" />
-        {qty > 1 && (
-          <View style={styles.qtyBadge}>
-            <Text style={styles.qtyBadgeText}>x{qty}</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   }
@@ -476,6 +474,7 @@ export default function OwnedCardsScreen() {
         visible={showFilter}
         filters={filters}
         availableSets={availableSets}
+        availableLanguages={availableLanguages}
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}

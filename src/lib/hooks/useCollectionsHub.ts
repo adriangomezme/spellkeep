@@ -3,6 +3,7 @@ import { useQuery } from '@powersync/react';
 import { batchResolveBySupabaseId } from '../catalog/catalogQueries';
 import { resolveCardsBySupabaseId } from '../catalog/resolveFromSupabase';
 import { subscribePriceOverrides } from '../pricing/priceOverrides';
+import { writeCollectionStatsCache } from './useCollectionStatsCache';
 import type {
   CollectionSummary,
   CollectionType,
@@ -169,6 +170,31 @@ export function useCollectionsHub() {
     return m;
   }, [countRows.data]);
 
+  // Fallback counts from the persistent cache so re-opening the app or
+  // entering a folder for the first time doesn't flash "0 Cards · 0
+  // unique" on each binder row while the live aggregate is computing.
+  // When the live aggregate catches up, it overrides (useMemo below).
+  const cachedStatsRows = useQuery<{
+    collection_id: string;
+    card_count: number;
+    unique_cards: number;
+    total_value: number;
+  }>(
+    `SELECT collection_id, card_count, unique_cards, total_value
+       FROM collection_stats_cache`
+  );
+  const cachedStatsById = useMemo(() => {
+    const m = new Map<string, { card_count: number; unique_cards: number; total_value: number }>();
+    for (const r of cachedStatsRows.data ?? []) {
+      m.set(r.collection_id, {
+        card_count: Number(r.card_count ?? 0),
+        unique_cards: Number(r.unique_cards ?? 0),
+        total_value: Number(r.total_value ?? 0),
+      });
+    }
+    return m;
+  }, [cachedStatsRows.data]);
+
   const priceCacheRef = useRef(new PriceCache(CACHE_CAP));
   const [priceMap, setPriceMap] = useState<Map<string, PriceRow>>(new Map());
   const [priceTick, setPriceTick] = useState(0);
@@ -259,28 +285,85 @@ export function useCollectionsHub() {
     return m;
   }, [valueRows.data, priceMap]);
 
+  const liveCountsReady = countRows.data !== undefined;
+
   const enrich = (row: CollectionRow): CollectionSummary => {
-    const c = countsById.get(row.id);
+    const live = countsById.get(row.id);
+    const cached = cachedStatsById.get(row.id);
+
+    // statsReady = we have per-collection numbers to show. A collection
+    // that just got created by a duplicate/import won't show up in the
+    // live aggregate until ALL its child rows have streamed down — if
+    // we used a global "liveReady" flag the row would flash
+    // "0 Cards · 0 unique" for 1-5 s. Per-collection: we only claim
+    // ready when we actually have numbers (live OR cached).
+    const statsReady = live != null || cached != null;
+
+    const card_count = live != null
+      ? Number(live.card_count ?? 0)
+      : (cached?.card_count ?? 0);
+    const unique_cards = live != null
+      ? Number(live.unique_cards ?? 0)
+      : (cached?.unique_cards ?? 0);
+
+    // Value: the live path depends on catalog enrichment, which is
+    // always later than counts. Prefer live when it's non-zero; else
+    // show the cached number so the header doesn't flash $0.00.
+    const liveValue = valueByCollection.get(row.id) ?? 0;
+    const total_value = liveValue > 0 ? liveValue : (cached?.total_value ?? 0);
+
     return {
       id: row.id,
       name: row.name,
       type: row.type,
       folder_id: row.folder_id,
       color: row.color,
-      card_count: Number(c?.card_count ?? 0),
-      unique_cards: Number(c?.unique_cards ?? 0),
-      total_value: valueByCollection.get(row.id) ?? 0,
+      card_count,
+      unique_cards,
+      total_value,
+      statsReady,
     };
   };
 
   const binders: CollectionSummary[] = useMemo(
     () => (collectionRows.data ?? []).filter((c) => c.type === 'binder').map(enrich),
-    [collectionRows.data, countsById, valueByCollection]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady]
   );
   const lists: CollectionSummary[] = useMemo(
     () => (collectionRows.data ?? []).filter((c) => c.type === 'list').map(enrich),
-    [collectionRows.data, countsById, valueByCollection]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady]
   );
+
+  // Write each collection's freshly-computed stats back to the local
+  // cache table so reopening the app — or entering any folder — shows
+  // the right numbers on the very first frame instead of a "0 / 0 / $0"
+  // blink. Skipped until the live aggregates are ready AND prices have
+  // resolved (otherwise we'd pollute the cache with half-computed
+  // zeroes). Throttled to once per collection per meaningful change.
+  const lastWrittenRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!liveCountsReady) return;
+    const allCollections = [...binders, ...lists];
+    if (allCollections.length === 0) return;
+    for (const c of allCollections) {
+      const signature = `${c.card_count}|${c.unique_cards}|${c.total_value}`;
+      if (lastWrittenRef.current.get(c.id) === signature) continue;
+      // Don't cache trivial "just counted zeros". Zero is a real state
+      // when the collection is genuinely empty; we just don't want the
+      // first-emit-before-prices state to get persisted.
+      if (c.card_count === 0 && c.unique_cards === 0 && c.total_value === 0) {
+        continue;
+      }
+      lastWrittenRef.current.set(c.id, signature);
+      writeCollectionStatsCache(c.id, {
+        card_count: c.card_count,
+        unique_cards: c.unique_cards,
+        total_value: c.total_value,
+      }).catch(() => {});
+    }
+  }, [binders, lists, liveCountsReady]);
 
   const binderFolders: FolderSummary[] = useMemo(
     () => (folderRows.data ?? []).filter((f) => f.type === 'binder'),

@@ -308,8 +308,10 @@ export default function CollectionHubScreen() {
             </View>
             <View style={styles.ownedInfo}>
               <Text style={styles.ownedTitle}>Owned Cards</Text>
-              <Text style={styles.ownedSubtitle}>
-                {ownedStats.total_cards} Cards · {ownedStats.unique_cards} unique
+              <Text style={[styles.ownedSubtitle, ownedStats.total_cards === 0 && { opacity: 0 }]}>
+                {ownedStats.total_cards > 0
+                  ? `${ownedStats.total_cards} Cards · ${ownedStats.unique_cards} unique`
+                  : '\u00A0'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -344,7 +346,9 @@ export default function CollectionHubScreen() {
                 name={item.name}
                 type={item.type}
                 color={item.color}
-                subtitle={`${item.card_count} Cards · ${item.unique_cards} unique`}
+                subtitle={item.statsReady
+                  ? `${item.card_count} Cards · ${item.unique_cards} unique`
+                  : '\u00A0'}
                 onPress={() => handleItemPress(item)}
                 onLongPress={() => setActionTarget({ kind: 'collection', item })}
                 onSwipeDelete={() => confirmDelete({ kind: 'collection', item })}

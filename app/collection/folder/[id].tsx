@@ -221,7 +221,9 @@ export default function FolderDetailScreen() {
                 name={item.name}
                 type={item.type}
                 color={item.color}
-                subtitle={`${item.card_count} Cards · ${item.unique_cards} unique`}
+                subtitle={item.statsReady
+                  ? `${item.card_count} Cards · ${item.unique_cards} unique`
+                  : '\u00A0'}
                 onPress={() => handleItemPress(item)}
                 onLongPress={() => { setSelectedItem(item); setShowItemActions(true); }}
                 onSwipeDelete={() => confirmDeleteItem(item)}
