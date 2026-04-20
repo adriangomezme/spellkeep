@@ -9,9 +9,9 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@powersync/react';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
-import { supabase } from '../../lib/supabase';
 import {
   mergeCollections,
   type CollectionType,
@@ -34,31 +34,24 @@ type Props = {
 };
 
 export function MergeModal({ visible, sourceId, sourceName, sourceType, onClose, onMerged }: Props) {
-  const [destinations, setDestinations] = useState<Destination[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isMerging, setIsMerging] = useState(false);
 
+  // Local-first: read candidate destinations from PowerSync's SQLite
+  // instead of Supabase. Works offline and paints instantly.
+  const destRows = useQuery<Destination>(
+    `SELECT id, name, type, color
+       FROM collections
+      WHERE type = ? AND id != ?
+      ORDER BY LOWER(name)`,
+    [sourceType, sourceId]
+  );
+  const destinations = (destRows.data ?? []) as Destination[];
+  const isLoading = destRows.isLoading;
+
   useEffect(() => {
-    if (!visible) { setSelectedId(null); return; }
-
-    (async () => {
-      setIsLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('collections')
-        .select('id, name, type, color')
-        .eq('user_id', user.id)
-        .eq('type', sourceType)
-        .neq('id', sourceId)
-        .order('name');
-
-      setDestinations((data ?? []) as Destination[]);
-      setIsLoading(false);
-    })();
-  }, [visible, sourceId, sourceType]);
+    if (!visible) setSelectedId(null);
+  }, [visible]);
 
   async function handleMerge() {
     if (!selectedId) return;

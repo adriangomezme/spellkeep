@@ -11,6 +11,7 @@ import { supabase } from './supabase';
 import { ensureCardExists } from './collection';
 import type { Condition, Finish } from './collection';
 import { invalidateCache, invalidateNamespace } from './collectionsCache';
+import { bulkUpsertCollectionCardsLocal } from './collections.local';
 
 export type ImportFormat = 'spellkeep' | 'plain' | 'csv' | 'hevault';
 
@@ -307,11 +308,6 @@ type ResolvedRow = {
   quantity_foil: number;
   quantity_etched: number;
 };
-
-// Chunk size for RPC payloads. Each row is small JSON (~120 bytes), so 2k
-// rows ≈ 240 KB per request — comfortably under PostgREST's 1 MB limit and
-// under the Edge/API statement timeout of 60s for a single upsert.
-const RPC_CHUNK = 2000;
 
 // Limits online-only resolution parallelism for cards missing from the local
 // catalog. Keeps us under Scryfall's 10 req/s rate limit while avoiding
@@ -616,29 +612,18 @@ export async function importToCollection(
 
   const rows = Array.from(rowMap.values());
 
-  // 6. Bulk upsert in chunks via the RPC. Each chunk is a single network
-  // round-trip and a single SQL statement; 100k cards turns into ~50
-  // requests instead of 300k.
-  let uploaded = 0;
-  for (let i = 0; i < rows.length; i += RPC_CHUNK) {
-    const chunk = rows.slice(i, i + RPC_CHUNK);
-    const { data, error } = await supabase.rpc('sp_bulk_upsert_collection_cards', {
-      p_collection_id: collectionId,
-      p_rows: chunk,
-    });
-    if (error) {
-      throw new Error(`Bulk upsert failed: ${error.message}`);
-    }
-    const stats = Array.isArray(data) ? data[0] : data;
-    if (stats) {
-      result.imported += Number(stats.inserted ?? 0);
-      result.updated += Number(stats.updated ?? 0);
-      result.imported_variants += Number(stats.inserted_variants ?? 0);
-      result.updated_variants += Number(stats.updated_variants ?? 0);
-    }
-    uploaded += chunk.length;
-    onProgress?.({ phase: 'uploading', current: uploaded, total: rows.length });
-  }
+  // 6. Local-first bulk upsert. Writes land in SQLite and the PowerSync
+  //    CRUD queue uploads them in the background using the batching
+  //    connector (PUT runs + DELETE runs, no PATCH). Works offline
+  //    whenever every parsed row resolves to a card_id from the local
+  //    catalog — which is the 99% case with a warm snapshot.
+  onProgress?.({ phase: 'uploading', current: 0, total: rows.length });
+  const stats = await bulkUpsertCollectionCardsLocal(collectionId, rows);
+  result.imported = stats.imported;
+  result.updated = stats.updated;
+  result.imported_variants = stats.imported_variants;
+  result.updated_variants = stats.updated_variants;
+  onProgress?.({ phase: 'uploading', current: rows.length, total: rows.length });
 
   // Drop caches so the next open of this collection (or the owned view)
   // refetches fresh data instead of showing the pre-import snapshot

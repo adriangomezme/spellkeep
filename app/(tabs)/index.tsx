@@ -16,13 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   fetchCollectionStats,
   duplicateCollection,
-  emptyCollection,
   type CollectionSummary,
   type FolderSummary,
 } from '../../src/lib/collections';
 import {
   deleteCollectionLocal,
   deleteFolderWithContentsLocal,
+  emptyCollectionLocal,
   moveToFolderLocal,
 } from '../../src/lib/collections.local';
 import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
@@ -141,8 +141,7 @@ export default function CollectionHubScreen() {
             text: 'Empty',
             style: 'destructive',
             onPress: () => {
-              emptyCollection(target.id)
-                .then(() => fetchAll())
+              emptyCollectionLocal(target.id)
                 .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
             },
           },

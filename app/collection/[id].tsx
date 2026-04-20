@@ -32,11 +32,11 @@ import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from
 import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
 import {
   duplicateCollection,
-  emptyCollection,
   type CollectionType,
 } from '../../src/lib/collections';
 import {
   deleteCollectionLocal,
+  emptyCollectionLocal,
   moveToFolderLocal,
 } from '../../src/lib/collections.local';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
@@ -491,7 +491,7 @@ export default function CollectionDetailScreen() {
                   text: 'Empty',
                   style: 'destructive',
                   onPress: () => {
-                    emptyCollection(id!)
+                    emptyCollectionLocal(id!)
                       .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
                   },
                 },

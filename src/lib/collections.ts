@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import { invalidateCache, invalidateNamespace } from './collectionsCache';
 import { db } from './powersync';
 import { overlay } from './uiStore';
+import { duplicateCollectionLocal, mergeCollectionsLocal } from './collections.local';
 
 // How long to wait for PowerSync to stream freshly-created rows to local
 // SQLite after a server-side bulk RPC. The overlay stays up during this
@@ -537,48 +538,43 @@ export async function deleteFolder(id: string): Promise<void> {
  * Duplicate a collection (binder or list) with all its cards.
  * New name = `${original} Copy` unless a custom name is passed.
  *
- * Runs as a single server-side RPC — one SQL statement inserts all the
- * child rows regardless of scale, so a 100k-card binder copies in the
- * same time as a 10-card one.
+ * Local-first: parent + all children are inserted into SQLite in a single
+ * transaction; the hub picks the new collection up on the next useQuery
+ * tick (reactive). The PowerSync CRUD queue uploads the rows in the
+ * background — on a 100k-card binder the upload is slow but non-blocking
+ * and fully offline-capable, which is the whole point.
  */
 export async function duplicateCollection(sourceId: string, newName?: string): Promise<string> {
-  // Source row count drives both the server INSERT scale AND how many
-  // rows we'll wait to see land locally before dismissing the overlay.
+  // For the overlay copy only; the actual insert count comes from the
+  // local query inside duplicateCollectionLocal.
   const expected = await localCountForCollection(sourceId);
 
   overlay.show(
     'Duplicating collection',
-    expected > 0 ? `Preparing ${expected.toLocaleString()} cards…` : 'Preparing…'
+    expected > 0 ? `Copying ${expected.toLocaleString()} cards…` : 'Preparing…'
   );
 
   try {
-    const { data, error } = await supabase.rpc('sp_duplicate_collection', {
-      p_source_id: sourceId,
-      p_new_name: newName ?? null,
-    });
-    if (error) throw new Error(`Failed to duplicate: ${error.message}`);
-    if (!data) throw new Error('Duplicate returned no id');
-
-    overlay.update('Waiting for sync…');
-    await waitForLocalSync(data as string, expected);
-
+    const newId = await duplicateCollectionLocal(sourceId, newName);
     invalidateNamespace('owned');
     invalidateNamespace('owned_stats');
-    return data as string;
+    return newId;
   } finally {
     overlay.hide();
   }
 }
 
 /**
- * Merge source collection into destination. Quantities sum on conflict.
- * Source is deleted after merge. Runs as a single server-side RPC so
- * even binders with hundreds of thousands of entries finish in seconds.
+ * Merge source collection into destination. Quantities sum on conflict
+ * (same card_id / condition / language). Source is deleted after merge.
+ *
+ * Local-first: all writes land in SQLite in a single writeTransaction;
+ * the batching connector uploads them in the background. Works offline.
+ * We deliberately do NOT call the server-side merge RPC — unlike delete
+ * or empty, merge SUMS quantities and is not idempotent, so running both
+ * local and remote would double the moved totals.
  */
 export async function mergeCollections(sourceId: string, destinationId: string): Promise<void> {
-  // Target count = dest current + source's contribution. Upper bound —
-  // ON CONFLICT sums can collapse pairs so actual new row count may be
-  // lower; we stop waiting as soon as source is drained locally.
   const sourceCount = await localCountForCollection(sourceId);
 
   overlay.show(
@@ -587,22 +583,7 @@ export async function mergeCollections(sourceId: string, destinationId: string):
   );
 
   try {
-    const { error } = await supabase.rpc('sp_merge_collections', {
-      p_source_id: sourceId,
-      p_dest_id: destinationId,
-    });
-    if (error) throw new Error(`Failed to merge: ${error.message}`);
-
-    // Wait until source collection is drained locally (rows have been
-    // deleted / moved) — signals the sync stream caught up. PowerSync
-    // commits atomically so we just wait; no meaningful progress bar.
-    overlay.update('Waiting for sync…');
-    const start = Date.now();
-    while (Date.now() - start < SYNC_WAIT_MAX_MS) {
-      const local = await localCountForCollection(sourceId);
-      if (local === 0) break;
-      await new Promise((r) => setTimeout(r, SYNC_WAIT_POLL_MS));
-    }
+    await mergeCollectionsLocal(sourceId, destinationId);
 
     invalidateCache('collection', sourceId);
     invalidateCache('collection', destinationId);

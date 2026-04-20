@@ -8,8 +8,12 @@ import {
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
-import { renameCollection, renameFolder } from '../../lib/collections';
-import { supabase } from '../../lib/supabase';
+import {
+  renameCollectionLocal,
+  renameFolderLocal,
+  updateCollectionColorLocal,
+  updateFolderColorLocal,
+} from '../../lib/collections.local';
 import { ColorPicker } from './ColorPicker';
 
 type Props = {
@@ -41,11 +45,11 @@ export function EditCollectionInfoModal({ visible, itemId, itemName, itemColor, 
     setIsSaving(true);
     try {
       if (itemType === 'folder') {
-        await renameFolder(itemId, trimmed);
-        await supabase.from('collection_folders').update({ color: color ?? null }).eq('id', itemId);
+        await renameFolderLocal(itemId, trimmed);
+        await updateFolderColorLocal(itemId, color ?? null);
       } else {
-        await renameCollection(itemId, trimmed);
-        await supabase.from('collections').update({ color: color ?? null }).eq('id', itemId);
+        await renameCollectionLocal(itemId, trimmed);
+        await updateCollectionColorLocal(itemId, color ?? null);
       }
       onSaved();
     } catch (err) {

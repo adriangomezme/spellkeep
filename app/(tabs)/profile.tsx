@@ -232,27 +232,44 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Pending Sync Queue */}
-        {(storage.pendingUploads ?? 0) > 0 && (
-          <TouchableOpacity
-            style={styles.row}
-            activeOpacity={0.6}
-            onPress={handleClearPending}
-          >
-            <View style={[styles.iconCircle, { backgroundColor: '#EF44441A' }]}>
-              <Ionicons name="alert-circle" size={20} color="#EF4444" />
-            </View>
-            <View style={styles.rowInfo}>
-              <Text style={styles.rowTitle}>Pending Uploads</Text>
-              <Text style={styles.rowSubtitle} numberOfLines={1}>
-                {storage.pendingUploads!.toLocaleString()} queued · tap to cancel
-              </Text>
-            </View>
-            <View style={styles.rowTrailing}>
-              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-            </View>
-          </TouchableOpacity>
-        )}
+        {/* Pending Sync Queue — always visible for debug visibility. */}
+        {(() => {
+          const count = storage.pendingUploads ?? 0;
+          const hasQueue = count > 0;
+          return (
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.6}
+              onPress={handleClearPending}
+            >
+              <View
+                style={[
+                  styles.iconCircle,
+                  { backgroundColor: hasQueue ? '#EF44441A' : colors.surfaceSecondary },
+                ]}
+              >
+                <Ionicons
+                  name={hasQueue ? 'alert-circle' : 'checkmark-circle'}
+                  size={20}
+                  color={hasQueue ? '#EF4444' : colors.textMuted}
+                />
+              </View>
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowTitle}>Pending Uploads</Text>
+                <Text style={styles.rowSubtitle} numberOfLines={1}>
+                  {hasQueue
+                    ? `${count.toLocaleString()} queued · tap to cancel`
+                    : 'Queue empty'}
+                </Text>
+              </View>
+              {hasQueue && (
+                <View style={styles.rowTrailing}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })()}
 
         {/* Cached Images */}
         <TouchableOpacity
