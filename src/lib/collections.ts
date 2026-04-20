@@ -111,28 +111,6 @@ async function getUserId(): Promise<string> {
 }
 
 /**
- * Fetch all binders and lists with card counts and values. Stats come from
- * a server-side RPC so we don't hit PostgREST's default max_rows=1000 limit
- * when summing child rows (collections with >1k unique entries used to show
- * truncated totals — see bug fix in migration 00014).
- */
-export async function fetchCollectionSummaries(_userId: string): Promise<CollectionSummary[]> {
-  const { data, error } = await supabase.rpc('get_user_collection_summaries', { p_type: null });
-  if (error) throw new Error(`Failed to fetch collections: ${error.message}`);
-
-  return (data ?? []).map((c: any) => ({
-    id: c.id,
-    name: c.name,
-    type: c.type as CollectionType,
-    folder_id: c.folder_id,
-    color: c.color ?? null,
-    card_count: Number(c.total_cards ?? 0),
-    unique_cards: Number(c.unique_cards ?? 0),
-    total_value: Number(c.total_value ?? 0),
-  }));
-}
-
-/**
  * Fetch owned card stats — sum across ALL binders only (not lists).
  *
  * Split into two RPCs: a fast quantities aggregation (no join to cards)
@@ -726,21 +704,3 @@ export async function deleteFolderWithContents(folderId: string): Promise<void> 
   await deleteFolder(folderId);
 }
 
-/**
- * Get the user's default binder ID ("My Cards").
- * This replaces the old getDefaultCollectionId().
- */
-export async function getDefaultBinderId(): Promise<string> {
-  const userId = await getUserId();
-
-  const { data, error } = await supabase
-    .from('collections')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('type', 'binder')
-    .eq('name', 'My Cards')
-    .single();
-
-  if (error || !data) throw new Error('Default binder not found');
-  return data.id;
-}

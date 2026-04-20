@@ -1,6 +1,9 @@
 import { db } from './powersync/system';
 import { supabase } from './supabase';
 import type { CollectionType } from './collections';
+import type { ScryfallCard } from './scryfall';
+import type { Condition, Finish } from './collection';
+import { ensureCardExists } from './collection';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Local-first variants of the folder / collection mutations. Writes land
@@ -160,4 +163,168 @@ export async function moveToFolderLocal(
     `UPDATE collections SET folder_id = ?, updated_at = ? WHERE id = ?`,
     [folderId, now, collectionId]
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Card mutations — local-first alternatives to src/lib/collection.ts
+// addToCollection / adjustOwnershipQuantity. These write straight to the
+// PowerSync SQLite so the UI updates on the next render (useQuery is
+// reactive). The CRUD queue uploads to Supabase in the background.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type AddCardParams = {
+  card: ScryfallCard;
+  collectionId: string;
+  condition: Condition;
+  finish: Finish;
+  quantity: number;
+  language?: string;
+  purchasePrice?: number | null;
+};
+
+/**
+ * Add a card to a collection without blocking on the network.
+ *
+ * Flow:
+ *   1. Resolve card_id from catalog.db — 99% of cards land here with zero
+ *      network round-trips.
+ *   2. Only if the card isn't in the local snapshot (new spoiler), fall
+ *      through to ensureCardExists (Supabase + ensure-card Edge Function).
+ *   3. Run SELECT + UPDATE-or-INSERT inside a write transaction so double-
+ *      taps don't race each other into two rows for the same variant.
+ */
+export async function addCardToCollectionLocal(params: AddCardParams): Promise<void> {
+  const {
+    card,
+    collectionId,
+    condition,
+    finish,
+    quantity,
+    purchasePrice = null,
+  } = params;
+
+  if (quantity <= 0) return;
+
+  // Prefer an explicit language on the call, else the card's own
+  // language (Scryfall exposes this per print — a JP Mox Opal has a
+  // distinct scryfall_id AND `lang='ja'`). Last-resort default is 'en'
+  // so pre-backfill catalog rows without `lang` still insert cleanly.
+  const language = params.language ?? card.lang ?? 'en';
+
+  // ensureCardExists hits catalog.db first; only falls back to network when
+  // the card is truly new. This is the one potentially-networked step in
+  // the whole flow — everything else is local SQLite.
+  const cardId = await ensureCardExists(card);
+  const userId = await getUserId();
+  const now = new Date().toISOString();
+
+  await db.writeTransaction(async (tx) => {
+    const existing = await tx.getAll<{
+      id: string;
+      quantity_normal: number;
+      quantity_foil: number;
+      quantity_etched: number;
+      purchase_price: number | null;
+    }>(
+      `SELECT id, quantity_normal, quantity_foil, quantity_etched, purchase_price
+         FROM collection_cards
+        WHERE collection_id = ? AND card_id = ? AND condition = ? AND language = ?
+        LIMIT 1`,
+      [collectionId, cardId, condition, language]
+    );
+
+    if (existing.length > 0) {
+      const row = existing[0];
+      const nextNormal = (row.quantity_normal ?? 0) + (finish === 'normal' ? quantity : 0);
+      const nextFoil = (row.quantity_foil ?? 0) + (finish === 'foil' ? quantity : 0);
+      const nextEtched = (row.quantity_etched ?? 0) + (finish === 'etched' ? quantity : 0);
+      const nextPrice = purchasePrice != null ? purchasePrice : row.purchase_price;
+      await tx.execute(
+        `UPDATE collection_cards
+            SET quantity_normal = ?, quantity_foil = ?, quantity_etched = ?,
+                purchase_price = ?, updated_at = ?
+          WHERE id = ?`,
+        [nextNormal, nextFoil, nextEtched, nextPrice, now, row.id]
+      );
+    } else {
+      await tx.execute(
+        `INSERT INTO collection_cards
+           (id, user_id, collection_id, card_id, condition, language,
+            quantity_normal, quantity_foil, quantity_etched,
+            purchase_price, added_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newId(),
+          userId,
+          collectionId,
+          cardId,
+          condition,
+          language,
+          finish === 'normal' ? quantity : 0,
+          finish === 'foil' ? quantity : 0,
+          finish === 'etched' ? quantity : 0,
+          purchasePrice,
+          now,
+          now,
+        ]
+      );
+    }
+  });
+}
+
+/**
+ * Bump one finish on an existing collection_cards row by a signed delta.
+ * When all three finishes reach zero the row is deleted — matches the
+ * server constraint `qty_normal + qty_foil + qty_etched > 0`.
+ */
+export async function adjustOwnershipQuantityLocal(
+  entryId: string,
+  finish: Finish,
+  delta: number
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  await db.writeTransaction(async (tx) => {
+    const rows = await tx.getAll<{
+      quantity_normal: number;
+      quantity_foil: number;
+      quantity_etched: number;
+    }>(
+      `SELECT quantity_normal, quantity_foil, quantity_etched
+         FROM collection_cards
+        WHERE id = ?
+        LIMIT 1`,
+      [entryId]
+    );
+    if (rows.length === 0) return;
+
+    const row = rows[0];
+    const col =
+      finish === 'normal' ? 'quantity_normal'
+      : finish === 'foil' ? 'quantity_foil'
+      : 'quantity_etched';
+    const current = row[col] ?? 0;
+    const next = Math.max(0, current + delta);
+
+    const projected = {
+      quantity_normal: row.quantity_normal ?? 0,
+      quantity_foil: row.quantity_foil ?? 0,
+      quantity_etched: row.quantity_etched ?? 0,
+      [col]: next,
+    };
+    const total =
+      projected.quantity_normal + projected.quantity_foil + projected.quantity_etched;
+
+    if (total <= 0) {
+      await tx.execute(`DELETE FROM collection_cards WHERE id = ?`, [entryId]);
+      return;
+    }
+
+    await tx.execute(
+      `UPDATE collection_cards
+          SET ${col} = ?, updated_at = ?
+        WHERE id = ?`,
+      [next, now, entryId]
+    );
+  });
 }

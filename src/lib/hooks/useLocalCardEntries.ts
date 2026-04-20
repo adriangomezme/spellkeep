@@ -70,6 +70,7 @@ export type EnrichedEntry = {
     price_usd_foil: number | null;
     price_usd_etched: number | null;
     color_identity: string[];
+    lang?: string;
     layout?: string;
     artist?: string;
   };
@@ -124,6 +125,7 @@ function cardShape(card_id: string, card: ScryfallCard | undefined): EnrichedEnt
       price_usd_foil: null,
       price_usd_etched: null,
       color_identity: [],
+      lang: undefined,
     };
   }
   const priceUsd = card.prices?.usd ? Number(card.prices.usd) : null;
@@ -147,6 +149,7 @@ function cardShape(card_id: string, card: ScryfallCard | undefined): EnrichedEnt
     price_usd_foil: Number.isFinite(priceUsdFoil as number) ? priceUsdFoil : null,
     price_usd_etched: Number.isFinite(priceUsdEtched as number) ? priceUsdEtched : null,
     color_identity: card.color_identity ?? [],
+    lang: card.lang,
     layout: card.layout,
     artist: card.artist,
   };

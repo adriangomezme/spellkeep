@@ -15,19 +15,17 @@ import { DestinationPickerModal } from './DestinationPickerModal';
 import { PrintPickerModal } from './PrintPickerModal';
 import { ScryfallCard, getCardImageUri, formatUSD } from '../lib/scryfall';
 import {
-  addToCollection,
   Condition,
   Finish,
   CONDITIONS,
 } from '../lib/collection';
+import { addCardToCollectionLocal } from '../lib/collections.local';
 import {
   getLastUsedDestination,
   setLastUsedDestination,
-  getDefaultBinderId,
-  fetchCollectionSummaries,
   type CollectionSummary,
 } from '../lib/collections';
-import { supabase } from '../lib/supabase';
+import { useCollectionsHub } from '../lib/hooks/useCollectionsHub';
 import { colors, spacing, fontSize, borderRadius } from '../constants';
 
 type Props = {
@@ -36,6 +34,13 @@ type Props = {
   prints?: ScryfallCard[];
   onClose: () => void;
   onSuccess: () => void;
+  /**
+   * When the sheet is opened from inside a specific binder/list detail
+   * view, the caller passes that id here so the picker pre-selects it.
+   * Takes precedence over the last-used destination so the user doesn't
+   * have to re-pick the binder they were already browsing.
+   */
+  preferredDestinationId?: string | null;
 };
 
 const DEST_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -76,7 +81,14 @@ function getMarketPrice(card: ScryfallCard, finish: Finish): number | null {
   return raw ? parseFloat(raw) : null;
 }
 
-export function AddCardSheet({ visible, card, prints, onClose, onSuccess }: Props) {
+export function AddCardSheet({
+  visible,
+  card,
+  prints,
+  onClose,
+  onSuccess,
+  preferredDestinationId,
+}: Props) {
   const [selectedCard, setSelectedCard] = useState<ScryfallCard>(card);
   const availableFinishes = useMemo(
     () => getAvailableFinishes(selectedCard),
@@ -89,9 +101,18 @@ export function AddCardSheet({ visible, card, prints, onClose, onSuccess }: Prop
   const [priceText, setPriceText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [destinationId, setDestinationId] = useState<string | null>(null);
-  const [destinations, setDestinations] = useState<CollectionSummary[]>([]);
   const [showDestPicker, setShowDestPicker] = useState(false);
   const [showPrintPicker, setShowPrintPicker] = useState(false);
+
+  // Destinations come from the local hub — instant on open, reactive
+  // to renames / creates, and fully offline. Previously this hit
+  // fetchCollectionSummaries (Supabase RPC), which lagged ~1 s online
+  // and blocked the sheet entirely on airplane mode.
+  const { binders, lists } = useCollectionsHub();
+  const destinations = useMemo<CollectionSummary[]>(
+    () => [...binders, ...lists],
+    [binders, lists]
+  );
 
   const selectedDest = destinations.find((d) => d.id === destinationId);
   const marketPrice = getMarketPrice(selectedCard, finish);
@@ -105,25 +126,41 @@ export function AddCardSheet({ visible, card, prints, onClose, onSuccess }: Prop
     setPriceText('');
     setShowDestPicker(false);
     setShowPrintPicker(false);
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const summaries = await fetchCollectionSummaries(user.id);
-      setDestinations(summaries);
+  }, [visible, card]);
 
+  // Pick an initial destination once the hub list is populated.
+  //   1. `preferredDestinationId` — set when opened from a specific
+  //      binder/list detail. Wins so the user doesn't have to re-pick
+  //      the binder they were already browsing.
+  //   2. `lastUsedDestination` saved in AsyncStorage across sessions.
+  //   3. First binder in the list.
+  //   4. First entry of any type (covers users with only lists).
+  // Split into its own effect so it re-runs when destinations hydrate
+  // without clobbering a user's manual mid-sheet selection.
+  useEffect(() => {
+    if (!visible) return;
+    if (destinationId && destinations.some((d) => d.id === destinationId)) return;
+    if (destinations.length === 0) return;
+
+    if (preferredDestinationId && destinations.some((d) => d.id === preferredDestinationId)) {
+      setDestinationId(preferredDestinationId);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
       const last = await getLastUsedDestination();
-      if (last && summaries.some((s) => s.id === last)) {
+      if (cancelled) return;
+      if (last && destinations.some((s) => s.id === last)) {
         setDestinationId(last);
         return;
       }
-      try {
-        setDestinationId(await getDefaultBinderId());
-      } catch {
-        const firstBinder = summaries.find((s) => s.type === 'binder');
-        if (firstBinder) setDestinationId(firstBinder.id);
-      }
+      const firstBinder = destinations.find((s) => s.type === 'binder');
+      const fallback = firstBinder ?? destinations[0];
+      if (!cancelled && fallback) setDestinationId(fallback.id);
     })();
-  }, [visible, card]);
+    return () => { cancelled = true; };
+  }, [visible, destinations, destinationId, preferredDestinationId]);
 
   useEffect(() => {
     if (!availableFinishes.includes(finish)) {
@@ -140,7 +177,14 @@ export function AddCardSheet({ visible, card, prints, onClose, onSuccess }: Prop
     try {
       const parsed = parseFloat(priceText.replace(/[^0-9.]/g, ''));
       const purchasePrice = isFinite(parsed) && parsed > 0 ? parsed : null;
-      await addToCollection(selectedCard, condition, finish, quantity, destinationId, purchasePrice);
+      await addCardToCollectionLocal({
+        card: selectedCard,
+        collectionId: destinationId,
+        condition,
+        finish,
+        quantity,
+        purchasePrice,
+      });
       await setLastUsedDestination(destinationId);
       onSuccess();
     } catch (err: any) {

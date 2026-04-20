@@ -33,6 +33,7 @@ const cards = new Table({
   set_code: column.text,
   set_name: column.text,
   collector_number: column.text,
+  lang: column.text,
   image_uri_small: column.text,
   image_uri_normal: column.text,
   image_uri_large: column.text,

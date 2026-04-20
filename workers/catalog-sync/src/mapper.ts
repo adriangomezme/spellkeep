@@ -25,6 +25,7 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
     set_code: card.set,
     set_name: card.set_name,
     collector_number: card.collector_number,
+    lang: card.lang ?? 'en',
     image_uri_small: card.image_uris?.small ?? faces?.[0]?.image_uris?.small ?? null,
     image_uri_normal: card.image_uris?.normal ?? faces?.[0]?.image_uris?.normal ?? null,
     image_uri_large: card.image_uris?.large ?? faces?.[0]?.image_uris?.large ?? null,

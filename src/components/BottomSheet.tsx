@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useMemo } from 'react';
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Keyboard, Platform } from 'react-native';
 import GorhomBottomSheet, {
   BottomSheetBackdrop,
@@ -17,16 +17,28 @@ type Props = {
   onSnapChange?: (index: number) => void;
 };
 
+// Gorhom's close animation lasts ~250 ms. We keep the sheet mounted for
+// that long after `visible` flips to false so the drop-down actually
+// animates instead of vanishing in a frame.
+const CLOSE_ANIMATION_MS = 300;
+
 export function BottomSheet({ visible, onClose, children, snapPoints, onSnapChange }: Props) {
   const sheetRef = useRef<GorhomBottomSheet>(null);
   const memoizedSnapPoints = useMemo(() => snapPoints, [snapPoints?.join(',')]);
 
+  // Mount tracker: stays true from the moment `visible` flips on, and
+  // flips off only after the close animation has had time to run.
+  const [mounted, setMounted] = useState(visible);
+
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       sheetRef.current?.expand();
-    } else {
-      sheetRef.current?.close();
+      return;
     }
+    sheetRef.current?.close();
+    const t = setTimeout(() => setMounted(false), CLOSE_ANIMATION_MS);
+    return () => clearTimeout(t);
   }, [visible]);
 
   const handleClose = useCallback(() => {
@@ -47,7 +59,7 @@ export function BottomSheet({ visible, onClose, children, snapPoints, onSnapChan
     []
   );
 
-  if (!visible) return null;
+  if (!mounted) return null;
 
   const useDynamic = !memoizedSnapPoints;
 

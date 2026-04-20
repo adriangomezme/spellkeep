@@ -421,6 +421,7 @@ function rowToScryfallCard(row: any): ScryfallCard {
     set: row.set_code ?? '',
     set_name: row.set_name ?? '',
     collector_number: row.collector_number ?? '',
+    lang: row.lang ?? undefined,
     image_uris: row.image_uri_small
       ? {
           small: row.image_uri_small,

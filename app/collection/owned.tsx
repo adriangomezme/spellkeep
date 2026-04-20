@@ -197,6 +197,7 @@ export default function OwnedCardsScreen() {
           scryfall_id: card.scryfall_id,
           oracle_id: card.oracle_id,
           name: card.name,
+          lang: card.lang,
           set_name: card.set_name,
           set_code: card.set_code,
           collector_number: card.collector_number,

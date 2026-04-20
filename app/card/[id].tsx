@@ -26,15 +26,17 @@ import {
 } from '../../src/lib/scryfall';
 import { AddCardSheet } from '../../src/components/AddCardSheet';
 import {
-  adjustOwnershipQuantity,
   fetchCardExtras,
-  fetchOwnedQtyByOracleId,
-  fetchOwnershipByScryfallId,
   fetchSetIcon,
   fetchSetIcons,
+} from '../../src/lib/cardDetail';
+import { adjustOwnershipQuantityLocal } from '../../src/lib/collections.local';
+import {
+  useOwnershipSummary,
+  useOwnedQtyByOracleId,
   type OwnershipEntry,
   type OwnershipSummary,
-} from '../../src/lib/cardDetail';
+} from '../../src/lib/hooks/useOwnershipSummary';
 import { ensureSetIconsLoaded, getSetIconSync } from '../../src/lib/catalog/catalogDb';
 import { CONDITIONS, type Condition, type Finish } from '../../src/lib/collection';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
@@ -88,7 +90,14 @@ function isFinishAvailable(card: ScryfallCard, finish: 'normal' | 'foil' | 'etch
 }
 
 export default function CardDetailScreen() {
-  const { id, cardJson } = useLocalSearchParams<{ id: string; cardJson: string }>();
+  const { id, cardJson, fromCollectionId } = useLocalSearchParams<{
+    id: string;
+    cardJson: string;
+    // When the card is opened from inside a specific binder/list detail,
+    // the caller passes that collection id here so the AddCardSheet
+    // pre-selects it as the destination.
+    fromCollectionId?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -121,7 +130,7 @@ export default function CardDetailScreen() {
   }, [id, initialCard]);
 
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const [ownership, setOwnership] = useState<OwnershipSummary | null>(null);
+  const ownership: OwnershipSummary | null = useOwnershipSummary(card?.id) ?? null;
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
   const [printsLoading, setPrintsLoading] = useState(false);
   // Seed the set icon from the in-memory catalog cache so the glyph paints
@@ -130,14 +139,9 @@ export default function CardDetailScreen() {
     initialCard?.set ? getSetIconSync(initialCard.set) : null
   );
   const [printSetIcons, setPrintSetIcons] = useState<Record<string, string>>({});
-  const [printOwned, setPrintOwned] = useState<Record<string, number>>({});
+  const printOwned = useOwnedQtyByOracleId(card?.oracle_id);
   const [rulings, setRulings] = useState<ScryfallRuling[] | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    if (!card) return;
-    fetchOwnershipByScryfallId(card.id).then(setOwnership).catch(() => setOwnership(null));
-  }, [card?.id, refreshKey]);
 
   useEffect(() => {
     if (!card?.oracle_id) return;
@@ -180,13 +184,7 @@ export default function CardDetailScreen() {
     fetchSetIcons(codes).then(setPrintSetIcons).catch(() => setPrintSetIcons({}));
   }, [prints]);
 
-  // Find which prints the user owns (across all binders/lists)
-  useEffect(() => {
-    if (!card?.oracle_id) return;
-    fetchOwnedQtyByOracleId(card.oracle_id)
-      .then(setPrintOwned)
-      .catch(() => setPrintOwned({}));
-  }, [card?.oracle_id, refreshKey]);
+  // printOwned is derived via useOwnedQtyByOracleId — live update on +/-.
 
   if (!card) {
     return (
@@ -454,6 +452,7 @@ export default function CardDetailScreen() {
         visible={showAddSheet}
         card={card}
         prints={prints}
+        preferredDestinationId={fromCollectionId ?? null}
         onClose={() => setShowAddSheet(false)}
         onSuccess={() => {
           setShowAddSheet(false);
@@ -816,7 +815,7 @@ function FinishStepper({
     if (busy) return;
     setBusy(true);
     try {
-      await adjustOwnershipQuantity(entry, finish, delta);
+      await adjustOwnershipQuantityLocal(entry.id, finish, delta);
       onChanged();
     } catch {
       // ignore — onChanged will refresh and reflect actual state

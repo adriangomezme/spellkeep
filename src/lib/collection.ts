@@ -1,8 +1,6 @@
 import { supabase } from './supabase';
 import { ScryfallCard } from './scryfall';
-import { getDefaultBinderId } from './collections';
 import { findSupabaseIdByScryfallId } from './catalog/catalogQueries';
-import { invalidateCache, invalidateNamespace } from './collectionsCache';
 
 export type Condition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
 export type Finish = 'normal' | 'foil' | 'etched';
@@ -99,69 +97,3 @@ export async function ensureCardExists(card: ScryfallCard): Promise<string> {
   return body.card_id;
 }
 
-/**
- * Add a card to a collection, binder, or list.
- * If collectionId is omitted, uses the user's default binder ("My Cards").
- *
- * `purchasePrice` is per-row and last-write-wins on merges.
- */
-export async function addToCollection(
-  card: ScryfallCard,
-  condition: Condition,
-  finish: Finish,
-  quantity: number,
-  collectionId?: string,
-  purchasePrice?: number | null
-): Promise<void> {
-  const cardId = await ensureCardExists(card);
-  const targetId = collectionId ?? await getDefaultBinderId();
-
-  const { data: existing } = await supabase
-    .from('collection_cards')
-    .select('id, quantity_normal, quantity_foil, quantity_etched')
-    .eq('collection_id', targetId)
-    .eq('card_id', cardId)
-    .eq('condition', condition)
-    .eq('language', 'en')
-    .single();
-
-  if (existing) {
-    const updates: Record<string, number | null> = {};
-    if (finish === 'normal') updates.quantity_normal = existing.quantity_normal + quantity;
-    if (finish === 'foil') updates.quantity_foil = existing.quantity_foil + quantity;
-    if (finish === 'etched') updates.quantity_etched = existing.quantity_etched + quantity;
-    if (purchasePrice != null) updates.purchase_price = purchasePrice;
-
-    const { error } = await supabase
-      .from('collection_cards')
-      .update(updates)
-      .eq('id', existing.id);
-
-    if (error) throw new Error(`Failed to update collection: ${error.message}`);
-  } else {
-    const { error } = await supabase
-      .from('collection_cards')
-      .insert({
-        collection_id: targetId,
-        card_id: cardId,
-        condition,
-        language: 'en',
-        quantity_normal: finish === 'normal' ? quantity : 0,
-        quantity_foil: finish === 'foil' ? quantity : 0,
-        quantity_etched: finish === 'etched' ? quantity : 0,
-        purchase_price: purchasePrice ?? null,
-      });
-
-    if (error) throw new Error(`Failed to add to collection: ${error.message}`);
-  }
-
-  // Any external add path (scan, search, manual edit) mutates this
-  // collection — drop its cache so the next open refetches fresh data
-  // instead of showing a pre-add snapshot until the SWR revalidation
-  // finishes. Also dump the stats cache so the header doesn't flash
-  // an outdated number briefly before the server stats arrive.
-  invalidateCache('collection', targetId);
-  invalidateCache('collection_stats', targetId);
-  invalidateNamespace('owned');
-  invalidateNamespace('owned_stats');
-}

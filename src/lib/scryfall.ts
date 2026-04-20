@@ -29,6 +29,7 @@ export type ScryfallCard = {
   id: string;
   oracle_id: string;
   name: string;
+  lang?: string;
   mana_cost?: string;
   cmc: number;
   type_line: string;

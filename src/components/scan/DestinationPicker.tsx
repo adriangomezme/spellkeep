@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import {
   View,
   Text,
   Modal,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../lib/supabase';
+import { useQuery } from '@powersync/react';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
 
 type Destination = {
@@ -31,28 +30,15 @@ type Props = {
 };
 
 export function DestinationPicker({ visible, cardCount, onSelect, onClose }: Props) {
-  const [destinations, setDestinations] = useState<Destination[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (!visible) return;
-
-    (async () => {
-      setIsLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data } = await supabase
-        .from('collections')
-        .select('id, name, type')
-        .eq('user_id', user.id)
-        .order('type')
-        .order('name');
-
-      setDestinations((data ?? []) as Destination[]);
-      setIsLoading(false);
-    })();
-  }, [visible]);
+  // Destinations come straight from local PowerSync SQLite — no Supabase
+  // round-trip, works offline, appears instantly on open.
+  const rows = useQuery<Destination>(
+    `SELECT id, name, type
+       FROM collections
+      ORDER BY CASE type WHEN 'binder' THEN 0 ELSE 1 END,
+               LOWER(name)`
+  );
+  const destinations = useMemo<Destination[]>(() => rows.data ?? [], [rows.data]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -63,33 +49,34 @@ export function DestinationPicker({ visible, cardCount, onSelect, onClose }: Pro
             Add {cardCount} card{cardCount !== 1 ? 's' : ''} to...
           </Text>
 
-          {isLoading ? (
-            <ActivityIndicator color={colors.primary} style={styles.loader} />
-          ) : (
-            <FlatList
-              data={destinations}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.destinationRow}
-                  onPress={() => onSelect(item.id)}
-                  activeOpacity={0.6}
-                >
-                  <Ionicons
-                    name={TYPE_ICONS[item.type] ?? 'folder'}
-                    size={22}
-                    color={colors.primary}
-                  />
-                  <View style={styles.destinationInfo}>
-                    <Text style={styles.destinationName}>{item.name}</Text>
-                    <Text style={styles.destinationType}>{item.type}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                </TouchableOpacity>
-              )}
-              style={styles.list}
-            />
-          )}
+          <FlatList
+            data={destinations}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.destinationRow}
+                onPress={() => onSelect(item.id)}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name={TYPE_ICONS[item.type] ?? 'folder'}
+                  size={22}
+                  color={colors.primary}
+                />
+                <View style={styles.destinationInfo}>
+                  <Text style={styles.destinationName}>{item.name}</Text>
+                  <Text style={styles.destinationType}>{item.type}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+            style={styles.list}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>
+                No binders or lists yet. Create one first.
+              </Text>
+            }
+          />
 
           <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -129,7 +116,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: spacing.lg,
   },
-  loader: {
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
     paddingVertical: spacing.xl,
   },
   list: {

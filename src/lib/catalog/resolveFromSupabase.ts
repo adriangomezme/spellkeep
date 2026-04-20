@@ -19,7 +19,7 @@ import type { ScryfallCard } from '../scryfall';
 const SELECT = `
   id, scryfall_id, oracle_id, name, mana_cost, cmc, type_line,
   colors, color_identity, keywords, rarity, set_code, set_name,
-  collector_number, image_uri_small, image_uri_normal, image_uri_large,
+  collector_number, lang, image_uri_small, image_uri_normal, image_uri_large,
   image_uri_art_crop, price_usd, price_usd_foil, price_usd_etched,
   price_eur, price_eur_foil, released_at, artist, layout, card_faces
 `;
@@ -71,6 +71,7 @@ function mapRow(row: any): ScryfallCard | null {
     set: row.set_code ?? '',
     set_name: row.set_name ?? '',
     collector_number: row.collector_number ?? '',
+    lang: row.lang ?? undefined,
     image_uris: row.image_uri_small
       ? {
           small: row.image_uri_small,

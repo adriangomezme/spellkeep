@@ -126,6 +126,10 @@ export default function CollectionDetailScreen() {
       params: {
         id: entry.cards.scryfall_id,
         cardJson: serializeCardForNavigation(entry.cards as any),
+        // Stickily pre-select this binder/list as the default destination
+        // when the user taps "+ Add to collection" from the card detail
+        // that opened via this screen.
+        fromCollectionId: id!,
       },
     });
   }

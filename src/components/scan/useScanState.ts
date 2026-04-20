@@ -4,7 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { ScryfallCard } from '../../lib/scryfall';
 import { matchCard, validateMTGLayout } from '../../lib/card-matcher';
-import { addToCollection, Condition, Finish } from '../../lib/collection';
+import { Condition, Finish } from '../../lib/collection';
+import { addCardToCollectionLocal } from '../../lib/collections.local';
 import { setLastUsedDestination } from '../../lib/collections';
 
 export type ScanTrayItem = {
@@ -371,7 +372,13 @@ export function useScanState() {
 
     const results = await Promise.allSettled(
       trayItems.map((item) =>
-        addToCollection(item.card, item.condition, item.finish, item.quantity, collectionId)
+        addCardToCollectionLocal({
+          card: item.card,
+          collectionId,
+          condition: item.condition,
+          finish: item.finish,
+          quantity: item.quantity,
+        })
       )
     );
 
