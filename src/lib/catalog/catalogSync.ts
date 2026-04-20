@@ -2,6 +2,7 @@ import { InteractionManager } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getMeta, setMeta } from './catalogMeta';
 import { CATALOG_DB_FILENAME, closeCatalog, openCatalog } from './catalogDb';
+import { clearAllPriceOverrides } from '../pricing/priceOverrides';
 import type { CatalogIndex, CatalogSyncState } from './types';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -91,6 +92,11 @@ async function runSync(): Promise<void> {
     await setMeta(META_KEYS.snapshotSha256, remoteIndex.snapshot_sha256);
   }
   await setMeta(META_KEYS.lastSyncAt, now);
+
+  // Fresh snapshot carries prices at least as recent as any manual override
+  // the user may have stashed since the previous sync. Drop them so the
+  // snapshot is the single source of truth again until the next manual refresh.
+  await clearAllPriceOverrides().catch(() => {});
 
   openCatalog();
 

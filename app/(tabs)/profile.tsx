@@ -19,7 +19,13 @@ import {
   getCatalogSyncState,
   subscribeCatalogSync,
 } from '../../src/lib/catalog/catalogSync';
+import { clearPendingUploads, getPendingUploadCount } from '../../src/lib/powersync';
 import type { CatalogSyncState } from '../../src/lib/catalog/types';
+import {
+  getLatestOverrideAt,
+  subscribePriceOverrides,
+} from '../../src/lib/pricing/priceOverrides';
+import { refreshCollectionPrices, type RefreshProgress } from '../../src/lib/pricing/refresh';
 import {
   getImportHistory,
   subscribeImportHistory,
@@ -31,6 +37,7 @@ type StorageSnapshot = {
   catalogVersion?: string;
   catalogLastSyncAt?: string;
   imageCacheBytes?: number;
+  pendingUploads?: number;
 };
 
 export default function ProfileScreen() {
@@ -40,17 +47,21 @@ export default function ProfileScreen() {
   const [catalogState, setCatalogState] = useState<CatalogSyncState>(() => getCatalogSyncState());
   const [refreshing, setRefreshing] = useState(false);
   const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
+  const [priceRefreshedAt, setPriceRefreshedAt] = useState<string | null>(() => getLatestOverrideAt());
+  const [priceProgress, setPriceProgress] = useState<RefreshProgress | null>(null);
 
   const loadStorage = useCallback(async () => {
-    const [meta, imageCacheBytes, history] = await Promise.all([
+    const [meta, imageCacheBytes, history, pendingUploads] = await Promise.all([
       getAllMeta(),
       measureImageCacheBytes(),
       getImportHistory(),
+      getPendingUploadCount(),
     ]);
     setStorage({
       catalogVersion: meta.snapshot_version,
       catalogLastSyncAt: meta.last_sync_at,
       imageCacheBytes,
+      pendingUploads,
     });
     setImportHistory(history);
   }, []);
@@ -63,6 +74,10 @@ export default function ProfileScreen() {
 
   useEffect(() => subscribeCatalogSync(setCatalogState), []);
   useEffect(() => subscribeImportHistory(setImportHistory), []);
+  useEffect(
+    () => subscribePriceOverrides(() => setPriceRefreshedAt(getLatestOverrideAt())),
+    []
+  );
 
   async function onPullRefresh() {
     setRefreshing(true);
@@ -96,6 +111,52 @@ export default function ProfileScreen() {
       await ensureCatalogFresh();
     } catch {}
     await loadStorage();
+  }
+
+  async function handleClearPending() {
+    const count = storage.pendingUploads ?? 0;
+    if (count === 0) {
+      Alert.alert('Nothing to clear', 'There are no pending uploads.');
+      return;
+    }
+    Alert.alert(
+      'Cancel pending uploads?',
+      `Drops ${count.toLocaleString()} queued mutations without sending them. The server is the source of truth — local data will reconcile from sync. Use only if you know a queued bulk delete/import is stuck.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear queue',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearPendingUploads();
+            } catch (err: any) {
+              Alert.alert('Clear failed', err?.message ?? 'Please try again.');
+            }
+            await loadStorage();
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleRefreshPrices() {
+    if (priceProgress) return;
+    setPriceProgress({ total: 0, completed: 0 });
+    try {
+      const result = await refreshCollectionPrices((p) => setPriceProgress(p));
+      if (result.scanned === 0) {
+        Alert.alert(
+          'Nothing to update',
+          'No cards in your collection were found locally. Wait for sync to finish and try again.'
+        );
+      }
+    } catch (err: any) {
+      console.error('[handleRefreshPrices]', err);
+      Alert.alert('Could not update prices', err?.message ?? 'Please try again later.');
+    } finally {
+      setPriceProgress(null);
+    }
   }
 
   const catalogBusy =
@@ -145,6 +206,53 @@ export default function ProfileScreen() {
             )}
           </View>
         </TouchableOpacity>
+
+        {/* Prices */}
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.6}
+          onPress={handleRefreshPrices}
+          disabled={!!priceProgress}
+        >
+          <View style={[styles.iconCircle, { backgroundColor: '#22C55E1A' }]}>
+            <Ionicons name="cash" size={20} color="#22C55E" />
+          </View>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Prices</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>
+              {describePrices(priceRefreshedAt, storage.catalogLastSyncAt, priceProgress)}
+            </Text>
+          </View>
+          <View style={styles.rowTrailing}>
+            {priceProgress ? (
+              <Text style={styles.rowValue}>{formatPriceProgress(priceProgress)}</Text>
+            ) : (
+              <Ionicons name="refresh" size={18} color={colors.textMuted} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {/* Pending Sync Queue */}
+        {(storage.pendingUploads ?? 0) > 0 && (
+          <TouchableOpacity
+            style={styles.row}
+            activeOpacity={0.6}
+            onPress={handleClearPending}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#EF44441A' }]}>
+              <Ionicons name="alert-circle" size={20} color="#EF4444" />
+            </View>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Pending Uploads</Text>
+              <Text style={styles.rowSubtitle} numberOfLines={1}>
+                {storage.pendingUploads!.toLocaleString()} queued · tap to cancel
+              </Text>
+            </View>
+            <View style={styles.rowTrailing}>
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Cached Images */}
         <TouchableOpacity
@@ -249,6 +357,32 @@ function describeCatalog(storage: StorageSnapshot, state: CatalogSyncState): str
 function formatProgress(state: CatalogSyncState): string {
   if (state.progress == null) return '…';
   return `${Math.round(state.progress * 100)}%`;
+}
+
+function describePrices(
+  overrideAt: string | null,
+  snapshotAt: string | undefined,
+  progress: RefreshProgress | null
+): string {
+  if (progress) {
+    if (progress.total === 0) return 'Preparing…';
+    return `Updating ${progress.completed} / ${progress.total}`;
+  }
+  const best = latestTimestamp(overrideAt, snapshotAt);
+  if (!best) return 'Never updated · tap to update';
+  return `Updated ${formatRelativeTime(best)}`;
+}
+
+function formatPriceProgress(progress: RefreshProgress): string {
+  if (progress.total === 0) return '…';
+  return `${Math.round((progress.completed / progress.total) * 100)}%`;
+}
+
+function latestTimestamp(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a && !b) return null;
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
 }
 
 function formatBytes(bytes?: number): string {

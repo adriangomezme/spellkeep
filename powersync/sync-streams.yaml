@@ -1,27 +1,39 @@
 config:
     edition: 3
-with:
-    user_collection_ids: "SELECT id as collection_id FROM collections WHERE user_id = auth.user_id()"
-    user_deck_ids: "SELECT id as deck_id FROM decks WHERE user_id = auth.user_id()"
 streams:
+    # Scryfall set metadata — small, same for all users.
     global_sets:
         query: "SELECT id, scryfall_id, code, name, set_type, released_at, card_count, icon_svg_uri, updated_at FROM sets"
+    # Profile row for the signed-in user.
     user_profile:
         query: "SELECT * FROM profiles WHERE id = auth.user_id()"
+    # Folders + binders/lists + the cards inside them.
     user_collection_folders:
         query: "SELECT * FROM collection_folders WHERE user_id = auth.user_id()"
     user_collections:
         queries:
             - "SELECT * FROM collections WHERE user_id = auth.user_id()"
-            - "SELECT cc.* FROM collection_cards cc INNER JOIN collections c ON cc.collection_id = c.id WHERE c.user_id = auth.user_id()"
-    user_collection_cards:
-        query: "SELECT * FROM cards WHERE id IN (SELECT card_id FROM collection_cards WHERE collection_id IN user_collection_ids)"
+            # collection_cards carries its own user_id column (migration
+            # 00024) so we avoid the INNER JOIN → parameter-subquery path
+            # that hits PowerSync edition-3's 1000-row cap (PSYNC_S2305).
+            - "SELECT * FROM collection_cards WHERE user_id = auth.user_id()"
+    # Deck folders + decks + deck cards.
     user_decks:
         queries:
             - "SELECT * FROM deck_folders WHERE user_id = auth.user_id()"
             - "SELECT * FROM decks WHERE user_id = auth.user_id()"
             - "SELECT dc.* FROM deck_cards dc INNER JOIN decks d ON dc.deck_id = d.id WHERE d.user_id = auth.user_id()"
-    user_deck_cards:
-        query: "SELECT * FROM cards WHERE id IN (SELECT card_id FROM deck_cards WHERE deck_id IN user_deck_ids)"
+    # Scan history.
     user_scans:
         query: "SELECT * FROM scan_history WHERE user_id = auth.user_id()"
+
+# NOTE: the previous user_collection_cards / user_deck_cards streams
+# synced rows from the `cards` table to the device based on what the user
+# owns. They've been removed because:
+#   1. Card metadata already lives in the local catalog.db SQLite snapshot,
+#      which the worker regenerates daily and the app downloads in full.
+#   2. The WHERE id IN (SELECT ... FROM collection_cards ...) pattern used
+#      a parameter subquery that hits PowerSync edition-3's 1000-row cap
+#      (error PSYNC_S2305) for any user with 1000+ unique cards — blocking
+#      sync entirely. Any app code that previously joined the PowerSync
+#      `cards` table should query catalog.db instead.

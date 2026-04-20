@@ -95,9 +95,11 @@ const collections = new Table({
 }, { indexes: { user_id: ['user_id'], folder_id: ['folder_id'] } });
 
 const collection_cards = new Table({
+  user_id: column.text,
   collection_id: column.text,
   card_id: column.text,
   condition: column.text,
+  language: column.text,
   quantity_normal: column.integer,
   quantity_foil: column.integer,
   quantity_etched: column.integer,
@@ -108,6 +110,7 @@ const collection_cards = new Table({
   updated_at: column.text,
 }, {
   indexes: {
+    user_id: ['user_id'],
     collection_id: ['collection_id'],
     card_id: ['card_id'],
   }
@@ -172,6 +175,21 @@ const catalog_meta = new Table({
   indexes: { key: ['key'] }
 });
 
+// Price overrides (local-only)
+// Written by the manual "Update now" action. Override wins over the snapshot
+// for as long as it lives; the catalog-sync step purges overrides after
+// installing a fresh snapshot, since the new snapshot is by definition at
+// least as fresh as any prior override.
+const price_overrides = new Table({
+  scryfall_id: column.text,
+  price_usd: column.real,
+  price_usd_foil: column.real,
+  refreshed_at: column.text,
+}, {
+  localOnly: true,
+  indexes: { scryfall_id: ['scryfall_id'] }
+});
+
 // ============================================================
 // Scan history (user-scoped, synced)
 // ============================================================
@@ -202,6 +220,7 @@ export const AppSchema = new Schema({
   deck_cards,
   scan_history,
   catalog_meta,
+  price_overrides,
 });
 
 export type Database = (typeof AppSchema)['types'];

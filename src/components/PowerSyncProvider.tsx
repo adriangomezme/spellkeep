@@ -16,6 +16,8 @@ export function PowerSyncProvider({ children }: Props) {
       try {
         const { setupPowerSync } = await import('../lib/powersync');
         await setupPowerSync();
+        const { initPriceOverrides } = await import('../lib/pricing/priceOverrides');
+        await initPriceOverrides();
       } catch (err) {
         console.error('PowerSync setup error:', err);
       } finally {

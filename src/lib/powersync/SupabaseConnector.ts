@@ -61,11 +61,13 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
       return;
     }
 
+    console.log(`[ps-upload] ${transaction.crud.length} ops`);
     let lastOp: CrudEntry | null = null;
 
     try {
       for (const op of transaction.crud) {
         lastOp = op;
+        console.log(`[ps-upload] ${op.op} ${op.table}`, op.opData);
         const table = supabase.from(op.table);
         let result: any;
 
@@ -86,24 +88,23 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
         }
 
         if (result?.error) {
+          console.error('[ps-upload] op failed', { table: op.table, code: result.error.code, message: result.error.message });
           throw result.error;
         }
       }
 
       await transaction.complete();
+      console.log('[ps-upload] transaction complete');
     } catch (ex: any) {
-      console.error('Upload error:', ex);
+      console.error('[ps-upload] error', { code: ex?.code, message: ex?.message, lastOp });
 
       if (
         typeof ex.code === 'string' &&
         FATAL_RESPONSE_CODES.some((regex) => regex.test(ex.code))
       ) {
-        // Fatal error (constraint violation, etc.) — discard the transaction
-        // to avoid blocking the upload queue
-        console.error('Fatal upload error — discarding transaction:', lastOp, ex);
+        console.error('[ps-upload] fatal — discarding transaction');
         await transaction.complete();
       } else {
-        // Retriable error — re-throw so PowerSync retries later
         throw ex;
       }
     }

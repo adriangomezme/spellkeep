@@ -11,12 +11,11 @@ import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 import {
-  createCollection,
-  createFolder,
   fetchFolders,
   type CollectionType,
   type FolderSummary,
 } from '../../lib/collections';
+import { createCollectionLocal, createFolderLocal } from '../../lib/collections.local';
 import { ColorPicker } from './ColorPicker';
 
 type CreateType = 'binder' | 'list' | 'folder';
@@ -77,18 +76,20 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
     setIsSaving(true);
     try {
       if (type === 'folder') {
-        await createFolder(trimmed, folderFor, color ?? undefined);
+        await createFolderLocal(trimmed, folderFor, color ?? null);
       } else {
-        await createCollection({
+        await createCollectionLocal({
           name: trimmed,
           type: type as CollectionType,
-          folderId: folderId ?? undefined,
-          color: color ?? undefined,
+          folderId: folderId ?? null,
+          color: color ?? null,
         });
       }
       onCreated();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Create error:', err);
+      const { Alert } = require('react-native');
+      Alert.alert('Create failed', err?.message ?? String(err));
     } finally {
       setIsSaving(false);
     }

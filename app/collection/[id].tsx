@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
+import { useQuery } from '@powersync/react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -12,9 +13,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../src/lib/supabase';
+import { CardImage } from '../../src/components/collection/CardImage';
 import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
@@ -24,7 +24,6 @@ import { MergeModal } from '../../src/components/collection/MergeModal';
 import { ExportModal } from '../../src/components/collection/ExportModal';
 import { ImportModal } from '../../src/components/collection/ImportModal';
 import { FolderPickerModal } from '../../src/components/collection/FolderPickerModal';
-import { useImportJob } from '../../src/components/collection/ImportJobProvider';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
@@ -32,21 +31,14 @@ import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from
 import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
 import {
   duplicateCollection,
-  deleteCollection,
   emptyCollection,
-  moveToFolder,
-  fetchCollectionStats,
-  fetchCollectionCardsStreamed,
   type CollectionType,
-  type OwnedCardStats,
 } from '../../src/lib/collections';
 import {
-  getCached,
-  setCached,
-  getCachedEntries,
-  setCachedEntries,
-  invalidateCache,
-} from '../../src/lib/collectionsCache';
+  deleteCollectionLocal,
+  moveToFolderLocal,
+} from '../../src/lib/collections.local';
+import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { filterAndSort, deriveAvailableSets } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -56,34 +48,7 @@ const GRID_PADDING = spacing.lg;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 const CARD_IMAGE_RATIO = 1.395; // MTG card ratio (h/w)
 
-type CollectionEntry = {
-  id: string;
-  card_id: string;
-  condition: string;
-  language: string;
-  added_at: string;
-  quantity_normal: number;
-  quantity_foil: number;
-  quantity_etched: number;
-  cards: {
-    id: string;
-    scryfall_id: string;
-    oracle_id: string;
-    name: string;
-    set_name: string;
-    set_code: string;
-    collector_number: string;
-    rarity: string;
-    type_line: string;
-    cmc: number | null;
-    is_legendary: number | null;
-    image_uri_small: string;
-    image_uri_normal: string;
-    price_usd: number | null;
-    price_usd_foil: number | null;
-    color_identity: string[];
-  };
-};
+type CollectionEntry = EnrichedEntry;
 
 function getTotalQuantity(entry: CollectionEntry): number {
   return entry.quantity_normal + entry.quantity_foil + entry.quantity_etched;
@@ -101,10 +66,7 @@ export default function CollectionDetailScreen() {
   const { id, name: collectionName, type: collectionType } = useLocalSearchParams<{ id: string; name: string; type?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [entries, setEntries] = useState<CollectionEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [serverStats, setServerStats] = useState<OwnedCardStats | null>(null);
   const [editEntry, setEditEntry] = useState<{
     id: string;
     condition: string;
@@ -132,97 +94,25 @@ export default function CollectionDetailScreen() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
-  const [collectionColor, setCollectionColor] = useState<string | null>(null);
-  const [collectionFolderId, setCollectionFolderId] = useState<string | null>(null);
 
-  const fetchCards = useCallback(async () => {
-    if (!id) return;
-
-    // SWR cache: paint whatever we had last time immediately — BOTH the
-    // entry rows AND the aggregated stats, so the header doesn't flash
-    // a client-computed value for ~1 s while waiting on
-    // fetchCollectionStats to come back.
-    const cached = getCachedEntries<CollectionEntry>('collection', id);
-    const cachedStats = getCached<OwnedCardStats>('collection_stats', id);
-    if (cached) {
-      setEntries(cached);
-      setIsLoading(false);
-    } else {
-      setEntries([]);
-    }
-    if (cachedStats) {
-      setServerStats(cachedStats);
-    }
-
-    try {
-      const [{ data: colData }, stats] = await Promise.all([
-        supabase.from('collections').select('color, folder_id').eq('id', id).single(),
-        fetchCollectionStats(id),
-      ]);
-
-      if (colData) {
-        setCollectionColor(colData.color);
-        setCollectionFolderId(colData.folder_id);
-      }
-      setServerStats(stats);
-      setCached<OwnedCardStats>('collection_stats', id, stats);
-
-      // Slimmed-down select: card_faces (heavy JSONB) and mana_cost
-      // are not used in grid/list and are refetched on detail open.
-      const SELECT = `
-        id, card_id, condition, language, added_at,
-        quantity_normal, quantity_foil, quantity_etched,
-        cards (
-          id, scryfall_id, oracle_id, name, set_name, set_code,
-          collector_number, rarity, type_line, cmc, is_legendary,
-          image_uri_small, image_uri_normal,
-          price_usd, price_usd_foil,
-          color_identity, layout, artist
-        )
-      `;
-
-      // Paint the first page so the FlatList wakes up, then let later
-      // pages accumulate silently and swap to the full buffer at the
-      // end. Progressive appends during the fetch caused the list to
-      // visibly grow mid-search and mid-scroll — one atomic swap when
-      // streaming completes is stabler even though the loading state
-      // lasts a bit longer.
-      const buffer: CollectionEntry[] = [];
-      let firstPainted = !!cached;
-      await fetchCollectionCardsStreamed(id, SELECT, (page) => {
-        const typed = page as unknown as CollectionEntry[];
-        buffer.push(...typed);
-        if (!cached && !firstPainted) {
-          setEntries(typed);
-          firstPainted = true;
-          setIsLoading(false);
-        }
-      }, { initialPageSize: 100, concurrency: 8 });
-
-      setEntries(buffer);
-      setCachedEntries('collection', id, buffer);
-    } catch (err) {
-      console.error('Fetch error:', err);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [id]);
-
-  useFocusEffect(
-    useCallback(() => { fetchCards(); }, [fetchCards])
+  // Watch the collection row itself for color / folder_id. Local query so
+  // rename/move/color-edit propagate without a refetch.
+  const collectionRow = useQuery<{ color: string | null; folder_id: string | null }>(
+    `SELECT color, folder_id FROM collections WHERE id = ? LIMIT 1`,
+    [id]
   );
+  const collectionColor = collectionRow.data?.[0]?.color ?? null;
+  const collectionFolderId = collectionRow.data?.[0]?.folder_id ?? null;
 
-  // When a background import that targeted this collection finishes, pull
-  // the fresh totals + entries so the UI reflects the new state without
-  // requiring the user to pull-to-refresh.
-  const { job } = useImportJob();
-  useEffect(() => {
-    if (!job) return;
-    if (job.collectionId !== id) return;
-    if (job.status !== 'completed') return;
-    fetchCards();
-  }, [job, id, fetchCards]);
+  // Local-first entries. useQuery watches collection_cards WHERE
+  // collection_id = ?, and the hook enriches each row against catalog.db
+  // (price overrides layered on top). Reads are instant from SQLite;
+  // writes via collections.local.ts mutate the same table and propagate
+  // through this hook automatically.
+  const { entries, isInitializing } = useLocalCardEntries({
+    where: `collection_id = ?`,
+    params: [id],
+  });
 
   function handleCardPress(entry: CollectionEntry) {
     router.push({
@@ -258,21 +148,16 @@ export default function CollectionDetailScreen() {
   const isFiltered =
     searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
 
+  // Stats computed locally from the current (filtered or full) entries.
+  // With local-first reads we always have every row available, so there's
+  // no need for a server RPC for the header — the sum is always consistent
+  // with what the list renders below.
   const { totalCards, uniqueCards, displayValue } = useMemo(() => {
-    // While filters are off the server-side stats are authoritative — they
-    // reflect the full collection even before every page has streamed in.
-    // The client-side sum would under-count until the final page lands.
-    if (!isFiltered && serverStats) {
-      return {
-        totalCards: serverStats.total_cards,
-        uniqueCards: serverStats.unique_cards,
-        displayValue: serverStats.total_value,
-      };
-    }
+    const source = isFiltered ? displayEntries : entries;
     let cards = 0;
     let unique = 0;
     let value = 0;
-    for (const e of displayEntries) {
+    for (const e of source) {
       cards += getTotalQuantity(e);
       // Unique = distinct (print × finish) variants. One row with
       // qty_normal=1 + qty_foil=1 contributes 2 unique, not 1.
@@ -286,13 +171,23 @@ export default function CollectionDetailScreen() {
       if (ep) value += ep * e.quantity_etched;
     }
     return { totalCards: cards, uniqueCards: unique, displayValue: value };
-  }, [displayEntries, isFiltered, serverStats]);
+  }, [entries, displayEntries, isFiltered]);
   const isGrid = viewMode !== 'list';
+
+  const isLoading = isInitializing;
+
+  // Pull-to-refresh is now a cosmetic gesture — the data is always live
+  // from the local DB. We flash the indicator for a frame so the
+  // interaction still feels responsive, then release.
+  const handlePullRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    requestAnimationFrame(() => setIsRefreshing(false));
+  }, []);
 
   const refreshControl = (
     <RefreshControl
       refreshing={isRefreshing}
-      onRefresh={() => { setIsRefreshing(true); fetchCards(); }}
+      onRefresh={handlePullRefresh}
       tintColor={colors.primary}
     />
   );
@@ -322,11 +217,9 @@ export default function CollectionDetailScreen() {
         onLongPress={() => handleEditPress(item)}
         activeOpacity={0.7}
       >
-        <Image
-          source={{ uri: card.image_uri_normal || card.image_uri_small }}
+        <CardImage
+          uri={card.image_uri_normal || card.image_uri_small}
           style={styles.gridCompactImage}
-          contentFit="cover"
-          transition={200}
         />
         <LanguageBadge language={item.language} style="corner" />
         {qty > 1 && (
@@ -352,11 +245,9 @@ export default function CollectionDetailScreen() {
         activeOpacity={0.7}
       >
         <View style={styles.gridImageWrap}>
-          <Image
-            source={{ uri: card.image_uri_normal || card.image_uri_small }}
+          <CardImage
+            uri={card.image_uri_normal || card.image_uri_small}
             style={styles.gridImage}
-            contentFit="cover"
-            transition={200}
           />
           <LanguageBadge language={item.language} style="corner" />
           {qty > 1 && (
@@ -397,12 +288,7 @@ export default function CollectionDetailScreen() {
         onLongPress={() => handleEditPress(item)}
         activeOpacity={0.6}
       >
-        <Image
-          source={{ uri: card.image_uri_small }}
-          style={styles.listImage}
-          contentFit="cover"
-          transition={200}
-        />
+        <CardImage uri={card.image_uri_small} style={styles.listImage} />
         <View style={styles.listInfo}>
           <Text style={styles.listName} numberOfLines={1}>{card.name}</Text>
           <Text style={styles.listSet} numberOfLines={1}>
@@ -519,7 +405,7 @@ export default function CollectionDetailScreen() {
         visible={editEntry !== null}
         entry={editEntry}
         onClose={() => setEditEntry(null)}
-        onSaved={() => { setEditEntry(null); fetchCards(); }}
+        onSaved={() => { setEditEntry(null); }}
       />
 
       <CollectionActionSheet
@@ -535,9 +421,11 @@ export default function CollectionDetailScreen() {
           else if (key === 'export') setShowExport(true);
           else if (key === 'move-to-folder') setShowFolderPicker(true);
           else if (key === 'remove-from-folder') {
-            moveToFolder(id!, null).then(() => { setCollectionFolderId(null); }).catch(() => {});
+            moveToFolderLocal(id!, null).catch(() => {});
           } else if (key === 'duplicate') {
-            duplicateCollection(id!).then(() => router.back()).catch(() => {});
+            duplicateCollection(id!)
+              .then(() => router.back())
+              .catch((err) => Alert.alert('Duplicate failed', err?.message ?? 'Unknown error'));
           } else if (key === 'empty') {
             const label = (collectionType as 'binder' | 'list') === 'list' ? 'list' : 'binder';
             Alert.alert(
@@ -550,10 +438,6 @@ export default function CollectionDetailScreen() {
                   style: 'destructive',
                   onPress: () => {
                     emptyCollection(id!)
-                      .then(() => {
-                        invalidateCache('collection', id!);
-                        fetchCards();
-                      })
                       .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
                   },
                 },
@@ -563,7 +447,7 @@ export default function CollectionDetailScreen() {
             Alert.alert('Delete?', 'This will delete all cards inside.', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Delete', style: 'destructive', onPress: () => {
-                deleteCollection(id!).then(() => router.back()).catch(() => {});
+                deleteCollectionLocal(id!).then(() => router.back()).catch(() => {});
               }},
             ]);
           }
@@ -578,7 +462,7 @@ export default function CollectionDetailScreen() {
         itemColor={collectionColor}
         itemType={(collectionType as 'binder' | 'list') ?? 'binder'}
         onClose={() => setShowEditInfo(false)}
-        onSaved={() => { setShowEditInfo(false); fetchCards(); }}
+        onSaved={() => { setShowEditInfo(false); }}
       />
 
       {id && (
@@ -604,7 +488,7 @@ export default function CollectionDetailScreen() {
         collectionId={id!}
         collectionName={collectionName ?? ''}
         onClose={() => setShowImport(false)}
-        onImported={() => { setShowImport(false); fetchCards(); }}
+        onImported={() => setShowImport(false)}
       />
 
       <FolderPickerModal
@@ -612,7 +496,7 @@ export default function CollectionDetailScreen() {
         collectionId={id!}
         collectionType={(collectionType as CollectionType) ?? 'binder'}
         onClose={() => setShowFolderPicker(false)}
-        onMoved={() => { setShowFolderPicker(false); setCollectionFolderId('moved'); }}
+        onMoved={() => setShowFolderPicker(false)}
       />
     </View>
   );

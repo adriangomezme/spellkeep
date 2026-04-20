@@ -1,4 +1,5 @@
 import { getCatalog } from './catalogDb';
+import { getPriceOverride } from '../pricing/priceOverrides';
 import type { ScryfallCard } from '../scryfall';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -305,6 +306,37 @@ export async function batchResolveByScryfallId(
 }
 
 /**
+ * Batch resolve Supabase cards.id (UUID) → full ScryfallCard row. Mirrors
+ * batchResolveByScryfallId but keyed on the FK that collection_cards stores,
+ * so the binder / owned screens can enrich their local rows without going
+ * through scryfall_id first.
+ */
+export async function batchResolveBySupabaseId(
+  ids: string[]
+): Promise<Map<string, ScryfallCard>> {
+  const resolved = new Map<string, ScryfallCard>();
+  const db = getCatalog();
+  if (!db || ids.length === 0) return resolved;
+
+  const unique = Array.from(new Set(ids));
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const slice = unique.slice(i, i + IN_CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    const res = await db.execute(
+      `SELECT * FROM cards WHERE id IN (${placeholders})`,
+      slice
+    );
+    for (const row of readAllRows(res)) {
+      if (row.id) {
+        resolved.set(row.id as string, rowToScryfallCard(row));
+      }
+    }
+  }
+
+  return resolved;
+}
+
+/**
  * Batch mapping of scryfall_id → Supabase cards.id (UUID) for a set of cards.
  * Used during bulk import to convert resolved ScryfallCard ids into the FK
  * column that collection_cards expects, without a round-trip per row.
@@ -371,6 +403,9 @@ function rowToScryfallCard(row: any): ScryfallCard {
   const colors = parseJsonArray<string>(row.colors);
   const colorIdentity = parseJsonArray<string>(row.color_identity);
   const cardFaces = parseJsonValue<ScryfallCard['card_faces']>(row.card_faces);
+  const override = getPriceOverride(row.scryfall_id);
+  const priceUsd = override ? override.price_usd : row.price_usd;
+  const priceUsdFoil = override ? override.price_usd_foil : row.price_usd_foil;
 
   return {
     id: row.scryfall_id,
@@ -397,8 +432,8 @@ function rowToScryfallCard(row: any): ScryfallCard {
     card_faces: cardFaces ?? undefined,
     artist: row.artist ?? undefined,
     prices: {
-      usd: row.price_usd != null ? String(row.price_usd) : undefined,
-      usd_foil: row.price_usd_foil != null ? String(row.price_usd_foil) : undefined,
+      usd: priceUsd != null ? String(priceUsd) : undefined,
+      usd_foil: priceUsdFoil != null ? String(priceUsdFoil) : undefined,
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },

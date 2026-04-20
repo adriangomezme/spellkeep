@@ -1,11 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   StyleSheet,
@@ -13,16 +12,18 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  fetchFolderContents,
   fetchCollectionStats,
-  deleteFolderWithContents,
-  deleteCollection,
   duplicateCollection,
   emptyCollection,
-  moveToFolder,
   type CollectionSummary,
   type CollectionType,
 } from '../../../src/lib/collections';
+import {
+  deleteCollectionLocal,
+  deleteFolderWithContentsLocal,
+  moveToFolderLocal,
+} from '../../../src/lib/collections.local';
+import { useCollectionsHub } from '../../../src/lib/hooks/useCollectionsHub';
 import { useImportJob } from '../../../src/components/collection/ImportJobProvider';
 import { MergeModal } from '../../../src/components/collection/MergeModal';
 import { ExportModal } from '../../../src/components/collection/ExportModal';
@@ -38,8 +39,11 @@ export default function FolderDetailScreen() {
     useLocalSearchParams<{ id: string; name: string; color?: string; folderType?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [items, setItems] = useState<CollectionSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { binders, lists, revalidate } = useCollectionsHub();
+  const items = useMemo<CollectionSummary[]>(
+    () => [...binders, ...lists].filter((c) => c.folder_id === id),
+    [binders, lists, id]
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -51,49 +55,19 @@ export default function FolderDetailScreen() {
   const [showItemExport, setShowItemExport] = useState(false);
   const [showItemImport, setShowItemImport] = useState(false);
 
-  const fetchContents = useCallback(async () => {
-    if (!id) return;
-    try {
-      const data = await fetchFolderContents(id);
-      setItems(data);
-    } catch (err) {
-      console.error('Fetch folder error:', err);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [id]);
+  const refresh = useCallback(async () => {
+    revalidate();
+    setIsRefreshing(false);
+  }, [revalidate]);
 
-  useFocusEffect(
-    useCallback(() => { fetchContents(); }, [fetchContents])
-  );
+  useFocusEffect(useCallback(() => { revalidate(); }, [revalidate]));
 
-  // Same pattern as the hub: when a background import finishes, patch
-  // just the affected row optimistically (sub-second) then reconcile.
   const { job } = useImportJob();
   useEffect(() => {
     if (job?.status !== 'completed') return;
-    const targetId = job.collectionId;
-
-    (async () => {
-      try {
-        const stats = await fetchCollectionStats(targetId);
-        setItems((prev) =>
-          prev.map((c) =>
-            c.id === targetId
-              ? {
-                  ...c,
-                  card_count: stats.total_cards,
-                  unique_cards: stats.unique_cards,
-                  total_value: stats.total_value,
-                }
-              : c
-          )
-        );
-      } catch {}
-      fetchContents();
-    })();
-  }, [job?.status, job?.id, job?.collectionId, fetchContents]);
+    fetchCollectionStats(job.collectionId).catch(() => {});
+    revalidate();
+  }, [job?.status, job?.id, job?.collectionId, revalidate]);
 
   function handleItemPress(item: CollectionSummary) {
     router.push({
@@ -110,7 +84,7 @@ export default function FolderDetailScreen() {
     Alert.alert(`Delete ${item.name}?`, 'This will delete all cards inside.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => {
-        deleteCollection(item.id).then(() => fetchContents()).catch(() => {});
+        deleteCollectionLocal(item.id).catch(() => {});
       }},
     ]);
   }
@@ -132,11 +106,13 @@ export default function FolderDetailScreen() {
     } else if (key === 'duplicate') {
       setShowItemActions(false);
       setSelectedItem(null);
-      duplicateCollection(selectedItem.id).then(() => fetchContents()).catch(() => {});
+      duplicateCollection(selectedItem.id)
+        .then(() => revalidate())
+        .catch((err) => Alert.alert('Duplicate failed', err?.message ?? 'Unknown error'));
     } else if (key === 'remove-from-folder') {
       setShowItemActions(false);
       setSelectedItem(null);
-      moveToFolder(selectedItem.id, null).then(() => fetchContents()).catch(() => {});
+      moveToFolderLocal(selectedItem.id, null).catch(() => {});
     } else if (key === 'empty') {
       const item = selectedItem;
       setShowItemActions(false);
@@ -152,19 +128,20 @@ export default function FolderDetailScreen() {
             style: 'destructive',
             onPress: () => {
               emptyCollection(item.id)
-                .then(() => fetchContents())
+                .then(() => revalidate())
                 .catch((err) => Alert.alert('Error', err?.message ?? 'Failed to empty'));
             },
           },
         ]
       );
     } else if (key === 'delete') {
+      const item = selectedItem;
       setShowItemActions(false);
       setSelectedItem(null);
       Alert.alert('Delete?', 'This will delete all cards inside.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => {
-          deleteCollection(selectedItem.id).then(() => fetchContents()).catch(() => {});
+          deleteCollectionLocal(item.id).catch(() => {});
         }},
       ]);
     } else {
@@ -187,7 +164,7 @@ export default function FolderDetailScreen() {
             text: 'Delete', style: 'destructive',
             onPress: async () => {
               try {
-                await deleteFolderWithContents(id!);
+                await deleteFolderWithContentsLocal(id!);
                 router.back();
               } catch (err) {
                 Alert.alert('Error', 'Failed to delete folder');
@@ -217,17 +194,12 @@ export default function FolderDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <ScrollView
+      <ScrollView
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={() => { setIsRefreshing(true); fetchContents(); }}
+              onRefresh={() => { setIsRefreshing(true); refresh(); }}
               tintColor={colors.primary}
             />
           }
@@ -257,7 +229,6 @@ export default function FolderDetailScreen() {
             ))
           )}
         </ScrollView>
-      )}
 
       <CollectionActionSheet
         visible={showActions && !showEdit}
@@ -272,7 +243,7 @@ export default function FolderDetailScreen() {
         lockedType={(folderType as CollectionType) || 'binder'}
         lockedFolderId={id}
         onClose={() => setShowCreate(false)}
-        onCreated={() => { setShowCreate(false); fetchContents(); }}
+        onCreated={() => { setShowCreate(false); revalidate(); }}
       />
 
       <EditCollectionInfoModal
@@ -303,7 +274,7 @@ export default function FolderDetailScreen() {
           itemColor={selectedItem.color}
           itemType={selectedItem.type}
           onClose={() => { setShowItemEdit(false); setSelectedItem(null); }}
-          onSaved={() => { setShowItemEdit(false); setSelectedItem(null); fetchContents(); }}
+          onSaved={() => { setShowItemEdit(false); setSelectedItem(null); revalidate(); }}
         />
       )}
 
@@ -314,7 +285,7 @@ export default function FolderDetailScreen() {
           sourceName={selectedItem.name}
           sourceType={selectedItem.type}
           onClose={() => { setShowItemMerge(false); setSelectedItem(null); }}
-          onMerged={() => { setShowItemMerge(false); setSelectedItem(null); fetchContents(); }}
+          onMerged={() => { setShowItemMerge(false); setSelectedItem(null); revalidate(); }}
         />
       )}
 
@@ -333,7 +304,7 @@ export default function FolderDetailScreen() {
           collectionId={selectedItem.id}
           collectionName={selectedItem.name}
           onClose={() => { setShowItemImport(false); setSelectedItem(null); }}
-          onImported={() => { setShowItemImport(false); setSelectedItem(null); fetchContents(); }}
+          onImported={() => { setShowItemImport(false); setSelectedItem(null); revalidate(); }}
         />
       )}
     </View>

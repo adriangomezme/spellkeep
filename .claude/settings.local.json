@@ -83,7 +83,21 @@
       "Bash(git -C /Users/adriangomez/Desktop/DEV/SpellKeep add -A supabase/functions/sync-scryfall)",
       "Bash(git -C /Users/adriangomez/Desktop/DEV/SpellKeep add workers/catalog-sync/src/steps/delta.ts workers/catalog-sync/src/steps/snapshot.ts)",
       "Bash(git *)",
-      "Bash(gunzip -c /tmp/snapshot.json.gz)"
+      "Bash(gunzip -c /tmp/snapshot.json.gz)",
+      "Bash(echo \"---exit $?---\")",
+      "Bash(awk 'NF==0 || /^[[:space:]]+$/ {print NR\": [BLANK]\"; next}' /Users/adriangomez/Downloads/cardList.txt)",
+      "Bash(awk 'NF==0 || /^[[:space:]]+$/ {c++} END {print \"blank/whitespace-only lines:\", c+0}' /Users/adriangomez/Downloads/cardList.txt)",
+      "Bash(awk 'BEGIN{RS=\"\\\\0\"} END{c=gsub\\(/\\\\r/,\"\\\\r\",$0\\); print c+0}' /Users/adriangomez/Downloads/cardList.txt)",
+      "Bash(awk -F, 'NR==1 { for \\(i=1;i<=NF;i++\\) print i, $i }' '/Users/adriangomez/Downloads/Secret Lair.csv')",
+      "Bash(awk -F',' 'NR>1 {gsub\\(/\"/,\"\",$6\\); print $6}' \"/Users/adriangomez/Downloads/Secret Lair.csv\")",
+      "Bash(awk -F',' 'NR>1 {gsub\\(/\"/,\"\",$7\\); print $7}' \"/Users/adriangomez/Downloads/Secret Lair.csv\")",
+      "Bash(awk -F',' 'NR>1 {gsub\\(/\"/,\"\",$12\\); print $12}' \"/Users/adriangomez/Downloads/Secret Lair.csv\")",
+      "Bash(awk -F',' '{ gsub\\(/\"/,\"\",$13\\); print $13 }')",
+      "mcp__supabase__deploy_edge_function",
+      "Bash(~/bin/supabase db *)",
+      "Bash(tee /tmp/tsc.out)",
+      "Bash(echo \"---exit $?\")",
+      "Bash(echo \"exit: $?\")"
     ]
   },
   "enableAllProjectMcpServers": true,

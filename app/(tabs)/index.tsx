@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   StyleSheet,
@@ -14,22 +13,19 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../src/lib/supabase';
 import {
-  fetchCollectionSummaries,
-  fetchOwnedCardStats,
   fetchCollectionStats,
-  fetchFolders,
   duplicateCollection,
-  deleteCollection,
-  deleteFolderWithContents,
   emptyCollection,
-  moveToFolder,
   type CollectionSummary,
-  type CollectionType,
   type FolderSummary,
-  type OwnedCardStats,
 } from '../../src/lib/collections';
+import {
+  deleteCollectionLocal,
+  deleteFolderWithContentsLocal,
+  moveToFolderLocal,
+} from '../../src/lib/collections.local';
+import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
 import { CatalogBadge } from '../../src/components/CatalogBadge';
 import { CollectionListItem } from '../../src/components/collection/CollectionListItem';
 import { FolderListItem } from '../../src/components/collection/FolderListItem';
@@ -55,12 +51,14 @@ export default function CollectionHubScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('binder');
-  const [ownedStats, setOwnedStats] = useState<OwnedCardStats>({ total_cards: 0, unique_cards: 0, total_value: 0 });
-  const [binders, setBinders] = useState<CollectionSummary[]>([]);
-  const [lists, setLists] = useState<CollectionSummary[]>([]);
-  const [binderFolders, setBinderFolders] = useState<FolderSummary[]>([]);
-  const [listFolders, setListFolders] = useState<FolderSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    binders,
+    lists,
+    binderFolders,
+    listFolders,
+    ownedStats,
+    revalidate,
+  } = useCollectionsHub();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
@@ -75,65 +73,23 @@ export default function CollectionHubScreen() {
   const [showImport, setShowImport] = useState(false);
 
   const fetchAll = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const [summaries, stats, bFolders, lFolders] = await Promise.all([
-        fetchCollectionSummaries(user.id),
-        fetchOwnedCardStats(user.id),
-        fetchFolders(user.id, 'binder'),
-        fetchFolders(user.id, 'list'),
-      ]);
-
-      setBinders(summaries.filter((c) => c.type === 'binder' && !c.folder_id));
-      setLists(summaries.filter((c) => c.type === 'list' && !c.folder_id));
-      setBinderFolders(bFolders);
-      setListFolders(lFolders);
-      setOwnedStats(stats);
-    } catch (err) {
-      console.error('Hub fetch error:', err);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
+    revalidate();
+    setIsRefreshing(false);
+  }, [revalidate]);
 
   useFocusEffect(
-    useCallback(() => { fetchAll(); }, [fetchAll])
+    useCallback(() => { revalidate(); }, [revalidate])
   );
 
-  // Refresh the hub totals whenever a background import finishes. We
-  // target just the destination collection's stats first (sub-second
-  // response) so the user sees the row tick up immediately, then
-  // reconcile the rest of the hub in the background.
+  // Reconcile hub stats whenever a background import finishes.
   const { job } = useImportJob();
   useEffect(() => {
     if (job?.status !== 'completed') return;
-    const targetId = job.collectionId;
-
-    (async () => {
-      try {
-        const stats = await fetchCollectionStats(targetId);
-        const patch = (list: CollectionSummary[]) =>
-          list.map((c) =>
-            c.id === targetId
-              ? {
-                  ...c,
-                  card_count: stats.total_cards,
-                  unique_cards: stats.unique_cards,
-                  total_value: stats.total_value,
-                }
-              : c
-          );
-        setBinders((prev) => patch(prev));
-        setLists((prev) => patch(prev));
-      } catch {}
-      // Reconcile the full hub (owned stats, folder counts) after the
-      // optimistic row update has already painted.
-      fetchAll();
-    })();
-  }, [job?.status, job?.id, job?.collectionId, fetchAll]);
+    // Touch the destination's stats first so the server-side aggregates
+    // refresh quickly, then full revalidate pulls owned totals.
+    fetchCollectionStats(job.collectionId).catch(() => {});
+    revalidate();
+  }, [job?.status, job?.id, job?.collectionId, revalidate]);
 
   function handleItemPress(item: CollectionSummary) {
     router.push({
@@ -167,7 +123,7 @@ export default function CollectionHubScreen() {
       setShowFolderPicker(true);
     } else if (key === 'remove-from-folder' && actionTarget.kind === 'collection') {
       setActionTarget(null);
-      moveToFolder(actionTarget.item.id, null).then(() => fetchAll()).catch(() => {});
+      moveToFolderLocal(actionTarget.item.id, null).catch(() => {});
     } else if (key === 'empty' && actionTarget.kind === 'collection') {
       const target = actionTarget.item as CollectionSummary;
       setActionTarget(null);
@@ -201,8 +157,8 @@ export default function CollectionHubScreen() {
     try {
       await duplicateCollection(item.id);
       fetchAll();
-    } catch (err) {
-      Alert.alert('Error', 'Failed to duplicate');
+    } catch (err: any) {
+      Alert.alert('Duplicate failed', err?.message ?? 'Unknown error');
     }
   }
 
@@ -224,11 +180,10 @@ export default function CollectionHubScreen() {
           onPress: async () => {
             try {
               if (isFolder) {
-                await deleteFolderWithContents(target.item.id);
+                await deleteFolderWithContentsLocal(target.item.id);
               } else {
-                await deleteCollection(target.item.id);
+                await deleteCollectionLocal(target.item.id);
               }
-              fetchAll();
             } catch (err) {
               Alert.alert('Error', 'Failed to delete');
             }
@@ -249,26 +204,13 @@ export default function CollectionHubScreen() {
   const mergeSource = actionTarget?.kind === 'collection' ? actionTarget.item as CollectionSummary : null;
 
   const query = search.toLowerCase().trim();
-  const allItems = activeTab === 'binder' ? binders : lists;
+  const allItems = (activeTab === 'binder' ? binders : lists).filter((c) => !c.folder_id);
   const allFolders = activeTab === 'binder' ? binderFolders : listFolders;
   const items = query ? allItems.filter((i) => i.name.toLowerCase().includes(query)) : allItems;
   const folders = query ? allFolders.filter((f) => f.name.toLowerCase().includes(query)) : allFolders;
   const emptyMessage = activeTab === 'binder'
     ? 'Create a binder to organize your cards'
     : 'Create a list for wishlists or trades';
-
-  if (isLoading) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Collection</Text>
-        </View>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -352,6 +294,7 @@ export default function CollectionHubScreen() {
             onRefresh={() => { setIsRefreshing(true); fetchAll(); }}
             tintColor={colors.primary}
           />
+
         }
       >
         {activeTab === 'binder' && (

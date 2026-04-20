@@ -1,6 +1,52 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { invalidateCache, invalidateNamespace } from './collectionsCache';
+import { db } from './powersync';
+import { overlay } from './uiStore';
+
+// How long to wait for PowerSync to stream freshly-created rows to local
+// SQLite after a server-side bulk RPC. The overlay stays up during this
+// window so the user sees progress instead of a "done but empty" binder.
+// Keep ample for 100k-row collections — if we hit the cap we just release
+// the overlay and the sync finishes in the background.
+const SYNC_WAIT_MAX_MS = 60_000;
+const SYNC_WAIT_POLL_MS = 150;
+
+// Total cards = sum of (normal + foil + etched) quantities, not the row
+// count. One row with qty_normal=4 is "4 cards" to the user, not 1 —
+// COUNT(*) would give the unique-variants number, which isn't what the
+// overlay is trying to convey.
+async function localCountForCollection(collectionId: string): Promise<number> {
+  try {
+    const rows = await db.getAll<{ c: number }>(
+      `SELECT COALESCE(SUM(quantity_normal + quantity_foil + quantity_etched), 0) AS c
+         FROM collection_cards WHERE collection_id = ?`,
+      [collectionId]
+    );
+    return Number(rows?.[0]?.c ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Wait for PowerSync to stream at least `expected` rows into the given
+ * collection's local SQLite. Returns silently if the cap elapses — the
+ * rows will still land eventually via normal sync.
+ *
+ * PowerSync commits checkpoints atomically, so the local count jumps
+ * from 0 to N in one step — we can't show a gradual "X of Y" bar. Just
+ * let the overlay's indeterminate spinner do its job.
+ */
+async function waitForLocalSync(collectionId: string, expected: number): Promise<void> {
+  if (expected <= 0) return;
+  const start = Date.now();
+  while (Date.now() - start < SYNC_WAIT_MAX_MS) {
+    const local = await localCountForCollection(collectionId);
+    if (local >= expected) return;
+    await new Promise((r) => setTimeout(r, SYNC_WAIT_POLL_MS));
+  }
+}
 
 const LAST_DESTINATION_KEY = 'spellkeep_last_destination';
 
@@ -511,16 +557,44 @@ export async function deleteFolder(id: string): Promise<void> {
  * same time as a 10-card one.
  */
 export async function duplicateCollection(sourceId: string, newName?: string): Promise<string> {
-  const { data, error } = await supabase.rpc('sp_duplicate_collection', {
-    p_source_id: sourceId,
-    p_new_name: newName ?? null,
-  });
-  if (error) throw new Error(`Failed to duplicate: ${error.message}`);
-  if (!data) throw new Error('Duplicate returned no id');
-  // Source itself unchanged; owned view gains entries so invalidate it.
-  invalidateNamespace('owned');
-  invalidateNamespace('owned_stats');
-  return data as string;
+  // Source row count drives both the server INSERT scale AND how many
+  // rows we'll wait to see land locally before dismissing the overlay.
+  const expected = await localCountForCollection(sourceId);
+
+  overlay.show(
+    'Duplicating collection',
+    expected > 0 ? `Preparing ${expected.toLocaleString()} cards…` : 'Preparing…'
+  );
+
+  try {
+    const t0 = Date.now();
+    const { data, error } = await supabase.rpc('sp_duplicate_collection', {
+      p_source_id: sourceId,
+      p_new_name: newName ?? null,
+    });
+    const rpcMs = Date.now() - t0;
+    if (error) {
+      console.error('[duplicateCollection] failed', {
+        ms: rpcMs,
+        code: error.code,
+        message: error.message,
+        details: (error as any).details,
+        hint: (error as any).hint,
+      });
+      throw new Error(`Failed to duplicate: ${error.message}`);
+    }
+    if (!data) throw new Error('Duplicate returned no id');
+    console.log(`[duplicateCollection] RPC finished in ${rpcMs} ms`);
+
+    overlay.update('Waiting for sync…');
+    await waitForLocalSync(data as string, expected);
+
+    invalidateNamespace('owned');
+    invalidateNamespace('owned_stats');
+    return data as string;
+  } finally {
+    overlay.hide();
+  }
 }
 
 /**
@@ -529,17 +603,55 @@ export async function duplicateCollection(sourceId: string, newName?: string): P
  * even binders with hundreds of thousands of entries finish in seconds.
  */
 export async function mergeCollections(sourceId: string, destinationId: string): Promise<void> {
-  const { error } = await supabase.rpc('sp_merge_collections', {
-    p_source_id: sourceId,
-    p_dest_id: destinationId,
-  });
-  if (error) throw new Error(`Failed to merge: ${error.message}`);
-  invalidateCache('collection', sourceId);
-  invalidateCache('collection', destinationId);
-  invalidateCache('collection_stats', sourceId);
-  invalidateCache('collection_stats', destinationId);
-  invalidateNamespace('owned');
-  invalidateNamespace('owned_stats');
+  // Target count = dest current + source's contribution. Upper bound —
+  // ON CONFLICT sums can collapse pairs so actual new row count may be
+  // lower; we stop waiting as soon as source is drained locally.
+  const sourceCount = await localCountForCollection(sourceId);
+
+  overlay.show(
+    'Merging collections',
+    sourceCount > 0 ? `Moving ${sourceCount.toLocaleString()} cards…` : 'Preparing…'
+  );
+
+  try {
+    const t0 = Date.now();
+    const { error } = await supabase.rpc('sp_merge_collections', {
+      p_source_id: sourceId,
+      p_dest_id: destinationId,
+    });
+    const rpcMs = Date.now() - t0;
+    if (error) {
+      console.error('[mergeCollections] failed', {
+        ms: rpcMs,
+        code: error.code,
+        message: error.message,
+        details: (error as any).details,
+        hint: (error as any).hint,
+      });
+      throw new Error(`Failed to merge: ${error.message}`);
+    }
+    console.log(`[mergeCollections] RPC finished in ${rpcMs} ms`);
+
+    // Wait until source collection is drained locally (rows have been
+    // deleted / moved) — signals the sync stream caught up. PowerSync
+    // commits atomically so we just wait; no meaningful progress bar.
+    overlay.update('Waiting for sync…');
+    const start = Date.now();
+    while (Date.now() - start < SYNC_WAIT_MAX_MS) {
+      const local = await localCountForCollection(sourceId);
+      if (local === 0) break;
+      await new Promise((r) => setTimeout(r, SYNC_WAIT_POLL_MS));
+    }
+
+    invalidateCache('collection', sourceId);
+    invalidateCache('collection', destinationId);
+    invalidateCache('collection_stats', sourceId);
+    invalidateCache('collection_stats', destinationId);
+    invalidateNamespace('owned');
+    invalidateNamespace('owned_stats');
+  } finally {
+    overlay.hide();
+  }
 }
 
 /**
@@ -548,15 +660,35 @@ export async function mergeCollections(sourceId: string, destinationId: string):
  * removed — useful for a confirmation toast.
  */
 export async function emptyCollection(collectionId: string): Promise<number> {
-  const { data, error } = await supabase.rpc('sp_empty_collection', {
-    p_collection_id: collectionId,
-  });
-  if (error) throw new Error(`Failed to empty collection: ${error.message}`);
-  invalidateCache('collection', collectionId);
-  invalidateCache('collection_stats', collectionId);
-  invalidateNamespace('owned');
-  invalidateNamespace('owned_stats');
-  return Number(data ?? 0);
+  const initial = await localCountForCollection(collectionId);
+
+  overlay.show(
+    'Emptying collection',
+    initial > 0 ? `Removing ${initial.toLocaleString()} cards…` : 'Preparing…'
+  );
+
+  try {
+    const { data, error } = await supabase.rpc('sp_empty_collection', {
+      p_collection_id: collectionId,
+    });
+    if (error) throw new Error(`Failed to empty collection: ${error.message}`);
+
+    overlay.update('Waiting for sync…');
+    const start = Date.now();
+    while (Date.now() - start < SYNC_WAIT_MAX_MS) {
+      const remaining = await localCountForCollection(collectionId);
+      if (remaining === 0) break;
+      await new Promise((r) => setTimeout(r, SYNC_WAIT_POLL_MS));
+    }
+
+    invalidateCache('collection', collectionId);
+    invalidateCache('collection_stats', collectionId);
+    invalidateNamespace('owned');
+    invalidateNamespace('owned_stats');
+    return Number(data ?? 0);
+  } finally {
+    overlay.hide();
+  }
 }
 
 /**
