@@ -244,7 +244,9 @@ export function AddCardSheet({
               <Ionicons
                 name={selectedDest ? DEST_ICONS[selectedDest.type] ?? 'albums' : 'albums'}
                 size={18}
-                color={selectedDest?.color ?? colors.primary}
+                // Match the hub / DestinationPickerModal: colorless
+                // binders render neutral, not accent-blue.
+                color={selectedDest?.color ?? colors.textSecondary}
               />
               <Text style={styles.selectorText} numberOfLines={1}>
                 {selectedDest?.name ?? 'Select destination…'}

@@ -14,7 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScryfallCard,
   getCard,
@@ -30,7 +30,13 @@ import {
   fetchSetIcon,
   fetchSetIcons,
 } from '../../src/lib/cardDetail';
-import { adjustOwnershipQuantityLocal } from '../../src/lib/collections.local';
+import { adjustOwnershipQuantityLocal, addCardToCollectionLocal } from '../../src/lib/collections.local';
+import { useQuickAddTargetId, setQuickAddTargetId, pickQuickAddFinish } from '../../src/lib/quickAdd';
+import { useQuery as usePowerSyncQuery } from '@powersync/react';
+import { DestinationPickerModal } from '../../src/components/DestinationPickerModal';
+import type { CollectionSummary, CollectionType } from '../../src/lib/collections';
+import { showToast } from '../../src/components/Toast';
+import * as Haptics from 'expo-haptics';
 import {
   useOwnershipSummary,
   useOwnedQtyByOracleId,
@@ -130,6 +136,117 @@ export default function CardDetailScreen() {
   }, [id, initialCard]);
 
   const [showAddSheet, setShowAddSheet] = useState(false);
+  // Quick Add: one-tap add to a pre-configured binder/list. Long press
+  // (or first-time tap without target) opens a picker.
+  const [showQuickAddPicker, setShowQuickAddPicker] = useState(false);
+  const quickAddTargetId = useQuickAddTargetId();
+  // Two separate queries so the picker can paint instantly on long-
+  // press. The collections SELECT is trivial (no JOIN), emits in a
+  // tick; the counts aggregate may take a while on large datasets but
+  // doesn't block showing the binder names in the list.
+  const quickAddCollectionsRows = usePowerSyncQuery<{
+    id: string;
+    name: string;
+    type: CollectionType;
+    color: string | null;
+  }>(
+    `SELECT id, name, type, color
+       FROM collections
+      ORDER BY CASE type WHEN 'binder' THEN 0 ELSE 1 END, LOWER(name)`
+  );
+  const quickAddCountsRows = usePowerSyncQuery<{
+    collection_id: string;
+    card_count: number;
+    unique_cards: number;
+  }>(
+    `SELECT cc.collection_id,
+            SUM(cc.quantity_normal + cc.quantity_foil + cc.quantity_etched) AS card_count,
+              SUM(CASE WHEN cc.quantity_normal > 0 THEN 1 ELSE 0 END)
+            + SUM(CASE WHEN cc.quantity_foil   > 0 THEN 1 ELSE 0 END)
+            + SUM(CASE WHEN cc.quantity_etched > 0 THEN 1 ELSE 0 END) AS unique_cards
+       FROM collection_cards cc
+      GROUP BY cc.collection_id`
+  );
+  const quickAddCountsMap = useMemo(() => {
+    const m = new Map<string, { card_count: number; unique_cards: number }>();
+    for (const r of quickAddCountsRows.data ?? []) {
+      m.set(r.collection_id, {
+        card_count: Number(r.card_count ?? 0),
+        unique_cards: Number(r.unique_cards ?? 0),
+      });
+    }
+    return m;
+  }, [quickAddCountsRows.data]);
+  const quickAddDestinations = useMemo<CollectionSummary[]>(
+    () =>
+      (quickAddCollectionsRows.data ?? []).map((r) => {
+        const counts = quickAddCountsMap.get(r.id);
+        return {
+          id: r.id,
+          name: r.name,
+          type: r.type,
+          folder_id: null,
+          color: r.color,
+          card_count: counts?.card_count ?? 0,
+          unique_cards: counts?.unique_cards ?? 0,
+          total_value: 0,
+        };
+      }),
+    [quickAddCollectionsRows.data, quickAddCountsMap]
+  );
+  const quickAddTarget = useMemo(
+    () => quickAddDestinations.find((d) => d.id === quickAddTargetId) ?? null,
+    [quickAddDestinations, quickAddTargetId]
+  );
+
+  async function performQuickAdd(collectionId: string, targetName: string) {
+    if (!card) return;
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    const finish = pickQuickAddFinish(card);
+    try {
+      await addCardToCollectionLocal({
+        card,
+        collectionId,
+        condition: 'NM',
+        finish,
+        quantity: 1,
+      });
+      showToast(`Added to ${targetName}`);
+    } catch (err: any) {
+      showToast(err?.message ?? 'Quick add failed');
+    }
+  }
+
+  function handleQuickAddTap() {
+    if (!card) return;
+
+    // No stored target at all — first-time use, prompt the user.
+    if (!quickAddTargetId) {
+      setShowQuickAddPicker(true);
+      return;
+    }
+
+    // Destinations have hydrated AND the stored id isn't in the list:
+    // the target was deleted. Clear storage and prompt for a new one.
+    if (quickAddDestinations.length > 0 && !quickAddTarget) {
+      setQuickAddTargetId(null);
+      setShowQuickAddPicker(true);
+      return;
+    }
+
+    // Otherwise proceed with the stored id. We may not have the name
+    // yet (useCollectionsHub still hydrating on a fresh mount); fall
+    // back to a generic label in the toast until it resolves.
+    performQuickAdd(quickAddTargetId, quickAddTarget?.name ?? 'collection');
+  }
+
+  async function handleQuickAddTargetPicked(id: string) {
+    await setQuickAddTargetId(id);
+    const picked = quickAddDestinations.find((d) => d.id === id);
+    if (picked) performQuickAdd(picked.id, picked.name);
+  }
   const ownership: OwnershipSummary | null = useOwnershipSummary(card?.id) ?? null;
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
   const [printsLoading, setPrintsLoading] = useState(false);
@@ -446,6 +563,15 @@ export default function CardDetailScreen() {
           <Ionicons name="add" size={20} color="#FFFFFF" />
           <Text style={styles.ctaText}>Add to collection</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickAddBtn}
+          onPress={handleQuickAddTap}
+          onLongPress={() => setShowQuickAddPicker(true)}
+          activeOpacity={0.85}
+          accessibilityLabel="Quick add to target binder or list"
+        >
+          <Ionicons name="flash" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
       <AddCardSheet
@@ -458,6 +584,17 @@ export default function CardDetailScreen() {
           setShowAddSheet(false);
           setRefreshKey((k) => k + 1);
         }}
+      />
+
+      <DestinationPickerModal
+        visible={showQuickAddPicker}
+        destinations={quickAddDestinations}
+        selectedId={quickAddTargetId}
+        onSelect={(id) => {
+          setShowQuickAddPicker(false);
+          handleQuickAddTargetPicked(id);
+        }}
+        onClose={() => setShowQuickAddPicker(false)}
       />
     </View>
   );
@@ -809,19 +946,49 @@ function FinishStepper({
   qty: number;
   onChanged: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  // Optimistic UI with a "target" model:
+  //   - `localQty` is what we show. It updates immediately on every tap
+  //     to whatever the user is aiming at.
+  //   - `pendingCount` tracks how many writes are in flight.
+  //   - `qty` (the prop) reflects what the useQuery currently sees from
+  //     local SQLite after each write lands. We only resync `localQty`
+  //     back to `qty` when `pendingCount === 0` — otherwise a spam of
+  //     +/- taps would visibly bounce through every intermediate qty
+  //     value as each write settles.
+  //   - `qtyRef` keeps the freshest `qty` readable from inside async
+  //     callbacks whose closure would otherwise see a stale value.
+  const [localQty, setLocalQty] = useState(qty);
+  const pendingCountRef = useRef(0);
+  const qtyRef = useRef(qty);
 
-  async function bump(delta: number) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await adjustOwnershipQuantityLocal(entry.id, finish, delta);
-      onChanged();
-    } catch {
-      // ignore — onChanged will refresh and reflect actual state
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    qtyRef.current = qty;
+    if (pendingCountRef.current === 0) {
+      setLocalQty(qty);
     }
+  }, [qty]);
+
+  function bump(delta: number) {
+    // Use the updater form so rapid-fire taps compose against the
+    // latest local value (not the closure captured when this bump was
+    // created). Without this, two taps in the same React batch both
+    // see the same `localQty` and second tap is effectively dropped.
+    setLocalQty((prev) => Math.max(0, prev + delta));
+    pendingCountRef.current += 1;
+
+    adjustOwnershipQuantityLocal(entry.id, finish, delta)
+      .then(() => onChanged())
+      .catch(() => {
+        // On failure, snap back to authoritative value.
+        setLocalQty(qtyRef.current);
+      })
+      .finally(() => {
+        // Just decrement the in-flight counter. Resync is handled
+        // exclusively by the useEffect on [qty] — touching localQty
+        // here races with the useQuery propagation and makes the
+        // display bounce through stale values.
+        pendingCountRef.current -= 1;
+      });
   }
 
   return (
@@ -831,16 +998,14 @@ function FinishStepper({
         <TouchableOpacity
           style={styles.stepBtn}
           onPress={() => bump(-1)}
-          disabled={busy}
           hitSlop={6}
         >
           <Ionicons name="remove" size={18} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.stepperQty}>{qty}</Text>
+        <Text style={styles.stepperQty}>{localQty}</Text>
         <TouchableOpacity
           style={styles.stepBtn}
           onPress={() => bump(1)}
-          disabled={busy}
           hitSlop={6}
         >
           <Ionicons name="add" size={18} color={colors.text} />
@@ -1619,8 +1784,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   cta: {
+    flex: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1634,5 +1802,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '700',
+  },
+  quickAddBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    paddingVertical: 14,
+    ...shadows.md,
   },
 });

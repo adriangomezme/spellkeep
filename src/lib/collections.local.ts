@@ -205,16 +205,30 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
 
   if (quantity <= 0) return;
 
-  // Prefer an explicit language on the call, else the card's own
-  // language (Scryfall exposes this per print — a JP Mox Opal has a
-  // distinct scryfall_id AND `lang='ja'`). Last-resort default is 'en'
-  // so pre-backfill catalog rows without `lang` still insert cleanly.
-  const language = params.language ?? card.lang ?? 'en';
-
   // ensureCardExists hits catalog.db first; only falls back to network when
   // the card is truly new. This is the one potentially-networked step in
   // the whole flow — everything else is local SQLite.
   const cardId = await ensureCardExists(card);
+
+  // Language resolution — in order of trust:
+  //   1. params.language — explicit from the caller.
+  //   2. card.lang — Scryfall language of the print itself (a JP Mox
+  //      Opal has a distinct scryfall_id AND lang='ja').
+  //   3. Existing copy of THIS print in any of the user's collections —
+  //      covers retired prints whose catalog row lost `lang` (e.g. old
+  //      Secret Lair drops Scryfall dropped from the bulk feed). If the
+  //      user already knows the language by having another copy, reuse
+  //      it instead of flattening everything to 'en'.
+  //   4. 'en' — last-resort default.
+  let language = params.language ?? card.lang;
+  if (!language) {
+    const priorRow = await db.getAll<{ language: string | null }>(
+      `SELECT language FROM collection_cards WHERE card_id = ? AND language IS NOT NULL LIMIT 1`,
+      [cardId]
+    );
+    language = priorRow?.[0]?.language ?? 'en';
+  }
+
   const userId = await getUserId();
   const now = new Date().toISOString();
 

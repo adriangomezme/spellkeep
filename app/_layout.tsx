@@ -8,6 +8,7 @@ import { ImportJobProvider } from '../src/components/collection/ImportJobProvide
 import { MinimizedImportPill } from '../src/components/collection/MinimizedImportPill';
 import { ImportStatusSheet } from '../src/components/collection/ImportStatusSheet';
 import { GlobalLoadingOverlay } from '../src/components/GlobalLoadingOverlay';
+import { Toast } from '../src/components/Toast';
 
 export default function RootLayout() {
   return (
@@ -25,6 +26,7 @@ export default function RootLayout() {
             <MinimizedImportPill />
             <ImportStatusSheet />
             <GlobalLoadingOverlay />
+            <Toast />
           </ImportJobProvider>
         </PowerSyncProvider>
       </AuthProvider>

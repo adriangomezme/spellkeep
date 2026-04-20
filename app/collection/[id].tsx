@@ -18,6 +18,8 @@ import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
 import { EditCollectionCardModal } from '../../src/components/EditCollectionCardModal';
 import { CollectionActionSheet } from '../../src/components/collection/CollectionActionSheet';
+import { setQuickAddTargetId, useQuickAddTargetId } from '../../src/lib/quickAdd';
+import { showToast } from '../../src/components/Toast';
 import { EditCollectionInfoModal } from '../../src/components/collection/EditCollectionInfoModal';
 import { MergeModal } from '../../src/components/collection/MergeModal';
 import { ExportModal } from '../../src/components/collection/ExportModal';
@@ -99,6 +101,8 @@ export default function CollectionDetailScreen() {
 
   // Watch the collection row itself for color / folder_id. Local query so
   // rename/move/color-edit propagate without a refetch.
+  const quickAddTargetId = useQuickAddTargetId();
+
   const collectionRow = useQuery<{ color: string | null; folder_id: string | null }>(
     `SELECT color, folder_id FROM collections WHERE id = ? LIMIT 1`,
     [id]
@@ -454,6 +458,7 @@ export default function CollectionDetailScreen() {
         itemName={collectionName ?? ''}
         itemType={(collectionType as 'binder' | 'list') ?? 'binder'}
         inFolder={!!collectionFolderId}
+        isQuickAddTarget={id === quickAddTargetId}
         onAction={(key) => {
           setShowActions(false);
           if (key === 'edit') setShowEditInfo(true);
@@ -463,6 +468,14 @@ export default function CollectionDetailScreen() {
           else if (key === 'move-to-folder') setShowFolderPicker(true);
           else if (key === 'remove-from-folder') {
             moveToFolderLocal(id!, null).catch(() => {});
+          } else if (key === 'set-quick-add') {
+            setQuickAddTargetId(id!).then(() => {
+              showToast(`Quick Add → ${collectionName}`);
+            });
+          } else if (key === 'clear-quick-add') {
+            setQuickAddTargetId(null).then(() => {
+              showToast('Quick Add target cleared');
+            });
           } else if (key === 'duplicate') {
             duplicateCollection(id!)
               .then(() => router.back())

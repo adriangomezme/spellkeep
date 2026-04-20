@@ -21,11 +21,22 @@ type Props = {
   itemType: 'binder' | 'list' | 'folder';
   /** Whether the item is currently inside a folder */
   inFolder?: boolean;
+  /** Whether this item is the current Quick Add target. Toggles the label
+   *  of the "Set/Clear Quick Add target" action. */
+  isQuickAddTarget?: boolean;
   onAction: (key: string) => void;
   onClose: () => void;
 };
 
-export function CollectionActionSheet({ visible, itemName, itemType, inFolder, onAction, onClose }: Props) {
+export function CollectionActionSheet({
+  visible,
+  itemName,
+  itemType,
+  inFolder,
+  isQuickAddTarget,
+  onAction,
+  onClose,
+}: Props) {
   // Quick actions shown as top buttons (binder/list only)
   const quickActions: ActionOption[] = [];
   // List actions shown below
@@ -50,6 +61,11 @@ export function CollectionActionSheet({ visible, itemName, itemType, inFolder, o
 
     // Remaining list actions
     listActions.push(
+      {
+        key: isQuickAddTarget ? 'clear-quick-add' : 'set-quick-add',
+        label: isQuickAddTarget ? 'Clear Quick Add target' : 'Set as Quick Add target',
+        icon: isQuickAddTarget ? 'flash-off-outline' : 'flash-outline',
+      },
       { key: 'merge', label: 'Merge', icon: 'git-merge-outline' },
       { key: 'import', label: 'Import', icon: 'arrow-down-circle-outline' },
       { key: 'export', label: 'Export', icon: 'arrow-up-circle-outline' },
@@ -59,7 +75,7 @@ export function CollectionActionSheet({ visible, itemName, itemType, inFolder, o
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '48%']}>
+    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '55%']}>
       <Text style={styles.title} numberOfLines={1}>{itemName}</Text>
 
       {/* Quick action buttons */}

@@ -30,6 +30,8 @@ import { ExportModal } from '../../../src/components/collection/ExportModal';
 import { ImportModal } from '../../../src/components/collection/ImportModal';
 import { CollectionListItem } from '../../../src/components/collection/CollectionListItem';
 import { CollectionActionSheet } from '../../../src/components/collection/CollectionActionSheet';
+import { setQuickAddTargetId, useQuickAddTargetId } from '../../../src/lib/quickAdd';
+import { showToast } from '../../../src/components/Toast';
 import { EditCollectionInfoModal } from '../../../src/components/collection/EditCollectionInfoModal';
 import { CreateCollectionModal } from '../../../src/components/collection/CreateCollectionModal';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../../src/constants';
@@ -50,6 +52,7 @@ export default function FolderDetailScreen() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CollectionSummary | null>(null);
   const [showItemActions, setShowItemActions] = useState(false);
+  const quickAddTargetId = useQuickAddTargetId();
   const [showItemEdit, setShowItemEdit] = useState(false);
   const [showItemMerge, setShowItemMerge] = useState(false);
   const [showItemExport, setShowItemExport] = useState(false);
@@ -134,6 +137,19 @@ export default function FolderDetailScreen() {
           },
         ]
       );
+    } else if (key === 'set-quick-add') {
+      const item = selectedItem;
+      setShowItemActions(false);
+      setSelectedItem(null);
+      setQuickAddTargetId(item.id).then(() => {
+        showToast(`Quick Add → ${item.name}`);
+      });
+    } else if (key === 'clear-quick-add') {
+      setShowItemActions(false);
+      setSelectedItem(null);
+      setQuickAddTargetId(null).then(() => {
+        showToast('Quick Add target cleared');
+      });
     } else if (key === 'delete') {
       const item = selectedItem;
       setShowItemActions(false);
@@ -264,6 +280,7 @@ export default function FolderDetailScreen() {
         itemName={selectedItem?.name ?? ''}
         itemType={selectedItem?.type ?? 'binder'}
         inFolder
+        isQuickAddTarget={selectedItem?.id === quickAddTargetId}
         onAction={handleItemAction}
         onClose={() => { setShowItemActions(false); setSelectedItem(null); }}
       />

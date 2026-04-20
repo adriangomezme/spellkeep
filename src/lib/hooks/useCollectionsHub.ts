@@ -285,32 +285,59 @@ export function useCollectionsHub() {
     return m;
   }, [valueRows.data, priceMap]);
 
-  const liveCountsReady = countRows.data !== undefined;
+  // PowerSync's useQuery always returns `data: []` during initial load
+  // (never undefined), so the presence of `data` is NOT a readiness
+  // signal. We must use `isLoading` / `isFetching` — `isLoading` is true
+  // until the FIRST result is delivered, which is exactly what we need
+  // to distinguish "still loading" from "legitimately empty".
+  const liveCountsReady = !countRows.isLoading;
+  // The cache table is a separate useQuery — it may emit BEFORE the
+  // aggregate does or AFTER. We only "know" a collection's state is
+  // settled when we've heard from both. Folder open races where
+  // countRows lands first and the cache hasn't were causing "0 cards
+  // · 0 unique" to flash for each binder until the cache read arrived.
+  const cachedStatsReady = !cachedStatsRows.isLoading;
 
   const enrich = (row: CollectionRow): CollectionSummary => {
     const live = countsById.get(row.id);
     const cached = cachedStatsById.get(row.id);
 
-    // statsReady = we have per-collection numbers to show. A collection
-    // that just got created by a duplicate/import won't show up in the
-    // live aggregate until ALL its child rows have streamed down — if
-    // we used a global "liveReady" flag the row would flash
-    // "0 Cards · 0 unique" for 1-5 s. Per-collection: we only claim
-    // ready when we actually have numbers (live OR cached).
-    const statsReady = live != null || cached != null;
+    // "Was emptied" = the cache says this collection had cards, but the
+    // live aggregate (now settled) has no entry for it. Only meaningful
+    // once we've actually read the cache — otherwise a missing `cached`
+    // would be misclassified as "no cache existed" during hydration.
+    const wasEmptied =
+      liveCountsReady &&
+      cachedStatsReady &&
+      live == null &&
+      cached != null &&
+      ((cached.card_count ?? 0) > 0 || (cached.unique_cards ?? 0) > 0);
+
+    // Hide the subtitle only until we have SOMETHING authoritative:
+    // live entry, cached entry, or both base queries settled (so we
+    // can confidently say "this collection is genuinely empty / 0").
+    const statsReady =
+      live != null ||
+      cached != null ||
+      (liveCountsReady && cachedStatsReady);
 
     const card_count = live != null
       ? Number(live.card_count ?? 0)
-      : (cached?.card_count ?? 0);
+      : wasEmptied
+        ? 0
+        : (cached?.card_count ?? 0);
     const unique_cards = live != null
       ? Number(live.unique_cards ?? 0)
-      : (cached?.unique_cards ?? 0);
+      : wasEmptied
+        ? 0
+        : (cached?.unique_cards ?? 0);
 
-    // Value: the live path depends on catalog enrichment, which is
-    // always later than counts. Prefer live when it's non-zero; else
-    // show the cached number so the header doesn't flash $0.00.
     const liveValue = valueByCollection.get(row.id) ?? 0;
-    const total_value = liveValue > 0 ? liveValue : (cached?.total_value ?? 0);
+    const total_value = live != null
+      ? liveValue
+      : wasEmptied
+        ? 0
+        : (cached?.total_value ?? (liveCountsReady ? 0 : 0));
 
     return {
       id: row.id,
@@ -328,12 +355,12 @@ export function useCollectionsHub() {
   const binders: CollectionSummary[] = useMemo(
     () => (collectionRows.data ?? []).filter((c) => c.type === 'binder').map(enrich),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady]
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady]
   );
   const lists: CollectionSummary[] = useMemo(
     () => (collectionRows.data ?? []).filter((c) => c.type === 'list').map(enrich),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady]
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady]
   );
 
   // Write each collection's freshly-computed stats back to the local
@@ -348,14 +375,23 @@ export function useCollectionsHub() {
     const allCollections = [...binders, ...lists];
     if (allCollections.length === 0) return;
     for (const c of allCollections) {
+      // Only persist numbers that came from an authoritative source:
+      //   • live aggregate included this collection (it has rows), OR
+      //   • wasEmptied — we just saw cached > 0 AND live is null now.
+      // Cached fallback values are NOT authoritative — re-writing them
+      // would poison the cache with 0s during hydration (the folder
+      // blink bug). Re-derive `live` / `wasEmptied` here instead of
+      // threading an internal flag through CollectionSummary.
+      const live = countsById.get(c.id);
+      const cachedEntry = cachedStatsById.get(c.id);
+      const wasEmptied =
+        live == null &&
+        cachedEntry != null &&
+        ((cachedEntry.card_count ?? 0) > 0 || (cachedEntry.unique_cards ?? 0) > 0);
+      if (live == null && !wasEmptied) continue;
+
       const signature = `${c.card_count}|${c.unique_cards}|${c.total_value}`;
       if (lastWrittenRef.current.get(c.id) === signature) continue;
-      // Don't cache trivial "just counted zeros". Zero is a real state
-      // when the collection is genuinely empty; we just don't want the
-      // first-emit-before-prices state to get persisted.
-      if (c.card_count === 0 && c.unique_cards === 0 && c.total_value === 0) {
-        continue;
-      }
       lastWrittenRef.current.set(c.id, signature);
       writeCollectionStatsCache(c.id, {
         card_count: c.card_count,
@@ -363,7 +399,7 @@ export function useCollectionsHub() {
         total_value: c.total_value,
       }).catch(() => {});
     }
-  }, [binders, lists, liveCountsReady]);
+  }, [binders, lists, liveCountsReady, countsById, cachedStatsById]);
 
   const binderFolders: FolderSummary[] = useMemo(
     () => (folderRows.data ?? []).filter((f) => f.type === 'binder'),

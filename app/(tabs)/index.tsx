@@ -34,6 +34,8 @@ import { MarketHeaderCompact } from '../../src/components/collection/MarketHeade
 import { InsightTabs } from '../../src/components/collection/InsightTabs';
 import { useImportJob } from '../../src/components/collection/ImportJobProvider';
 import { CollectionActionSheet } from '../../src/components/collection/CollectionActionSheet';
+import { setQuickAddTargetId, useQuickAddTargetId } from '../../src/lib/quickAdd';
+import { showToast } from '../../src/components/Toast';
 import { EditCollectionInfoModal } from '../../src/components/collection/EditCollectionInfoModal';
 import { MergeModal } from '../../src/components/collection/MergeModal';
 import { FolderPickerModal } from '../../src/components/collection/FolderPickerModal';
@@ -63,6 +65,8 @@ export default function CollectionHubScreen() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+
+  const quickAddTargetId = useQuickAddTargetId();
 
   // Action sheet / modals state
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
@@ -144,6 +148,16 @@ export default function CollectionHubScreen() {
           },
         ]
       );
+    } else if (key === 'set-quick-add' && actionTarget.kind === 'collection') {
+      setActionTarget(null);
+      setQuickAddTargetId(actionTarget.item.id).then(() => {
+        showToast(`Quick Add → ${actionTarget.item.name}`);
+      });
+    } else if (key === 'clear-quick-add' && actionTarget.kind === 'collection') {
+      setActionTarget(null);
+      setQuickAddTargetId(null).then(() => {
+        showToast('Quick Add target cleared');
+      });
     } else if (key === 'delete') {
       const target = actionTarget;
       setActionTarget(null);
@@ -399,6 +413,10 @@ export default function CollectionHubScreen() {
           actionTarget?.kind === 'folder'
             ? 'folder'
             : (actionTarget?.item as CollectionSummary)?.type ?? 'binder'
+        }
+        isQuickAddTarget={
+          actionTarget?.kind === 'collection' &&
+          actionTarget.item.id === quickAddTargetId
         }
         inFolder={actionTarget?.kind === 'collection' ? !!(actionTarget.item as CollectionSummary).folder_id : false}
         onAction={handleAction}
