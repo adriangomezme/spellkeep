@@ -39,6 +39,7 @@ const cards = new Table({
   image_uri_art_crop: column.text,
   price_usd: column.real,
   price_usd_foil: column.real,
+  price_usd_etched: column.real,
   price_eur: column.real,
   price_eur_foil: column.real,
   legalities: column.text,       // JSON stored as text
@@ -190,6 +191,25 @@ const price_overrides = new Table({
   indexes: { scryfall_id: ['scryfall_id'] }
 });
 
+// Per-collection aggregated stats cache (local-only).
+// Lets the hub + binder detail header paint card counts, unique counts,
+// and $ value instantly on open — without waiting for the catalog-join
+// enrichment to complete. Re-computed in the background and written back
+// when the enrichment finishes; any mismatch updates the UI on next read.
+// Invalidated when collection_cards for that collection change (the
+// counts are recomputed from local SQL immediately, value is re-derived
+// once enrichment catches up).
+const collection_stats_cache = new Table({
+  collection_id: column.text,
+  card_count: column.integer,
+  unique_cards: column.integer,
+  total_value: column.real,
+  updated_at: column.text,
+}, {
+  localOnly: true,
+  indexes: { collection_id: ['collection_id'] }
+});
+
 // ============================================================
 // Scan history (user-scoped, synced)
 // ============================================================
@@ -221,6 +241,7 @@ export const AppSchema = new Schema({
   scan_history,
   catalog_meta,
   price_overrides,
+  collection_stats_cache,
 });
 
 export type Database = (typeof AppSchema)['types'];

@@ -17,10 +17,17 @@ import { CardImage } from '../../src/components/collection/CardImage';
 import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
-import { filterAndSort, deriveAvailableSets } from '../../src/lib/cardListUtils';
+import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
+import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
+
+// Sentinel id for the aggregate "Owned" view since it spans multiple
+// binders. Uses a fixed UUID-shaped string so PowerSync is happy with
+// the id column type.
+const OWNED_CACHE_ID = '00000000-0000-0000-0000-000000006177';
+import { filterAndSort, deriveAvailableSets, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
-import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
-import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
+import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
+import { SortSheet } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -65,12 +72,13 @@ export default function OwnedCardsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
 
-  // UI state
-  const [viewMode, setViewMode] = useState<ViewMode>('grid-compact');
+  // UI state — view + sort persist per device via AsyncStorage so
+  // toggling them here also carries to binder/list detail next open.
+  // Filters stay session-only.
+  const { viewMode, sortBy, sortAsc, setViewMode, setSortBy, setSortAsc } =
+    useCollectionViewPrefs();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('added');
-  const [sortAsc, setSortAsc] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -103,7 +111,8 @@ export default function OwnedCardsScreen() {
     };
   }, [binderIdList]);
 
-  const { entries: rawEntries, isInitializing } = useLocalCardEntries(whereClause);
+  const { entries: rawEntries, isReady } = useLocalCardEntries(whereClause);
+  const cachedStats = useCachedCollectionStats(OWNED_CACHE_ID);
 
   // Merge duplicate (card_id, condition, language) across multiple binders
   // so one copy in Binder A + one copy in Binder B shows as a single row
@@ -213,7 +222,7 @@ export default function OwnedCardsScreen() {
 
   // Stats: if no filters are active, sum the full merged set; otherwise
   // sum the filtered result so the header matches the list.
-  const { totalCards, uniqueCards, displayValue } = useMemo(() => {
+  const liveStats = useMemo(() => {
     const source = isFilterActive ? (displayRows as any as OwnedRow[]) : mergedRows;
     let cards = 0;
     let unique = 0;
@@ -226,13 +235,24 @@ export default function OwnedCardsScreen() {
       const c = r.cards;
       if (c?.price_usd) value += c.price_usd * r.quantity_normal;
       if (c?.price_usd_foil) value += c.price_usd_foil * r.quantity_foil;
-      const ep = c?.price_usd_foil ?? c?.price_usd;
+      const ep = c?.price_usd_etched ?? c?.price_usd_foil;
       if (ep) value += ep * r.quantity_etched;
     }
     return { totalCards: cards, uniqueCards: unique, displayValue: value };
   }, [mergedRows, displayRows, isFilterActive]);
 
-  const isLoading = isInitializing;
+  useWriteCollectionStatsCache(OWNED_CACHE_ID, isReady && !isFilterActive, {
+    card_count: liveStats.totalCards,
+    unique_cards: liveStats.uniqueCards,
+    total_value: liveStats.displayValue,
+  });
+
+  const totalCards = liveStats.totalCards;
+  const uniqueCards = liveStats.uniqueCards;
+  const displayValue =
+    liveStats.displayValue > 0
+      ? liveStats.displayValue
+      : (!isFilterActive && cachedStats ? cachedStats.total_value : 0);
 
   const isGrid = viewMode !== 'list';
 
@@ -290,6 +310,14 @@ export default function OwnedCardsScreen() {
   function renderGridItem({ item }: { item: OwnedRow }) {
     const qty = totalQty(item);
     const card = item.cards;
+    const rowPrice = displayPriceForRow(
+      item.quantity_normal,
+      item.quantity_foil,
+      item.quantity_etched,
+      card.price_usd,
+      card.price_usd_foil,
+      card.price_usd_etched
+    );
     return (
       <TouchableOpacity
         style={styles.gridCard}
@@ -315,7 +343,7 @@ export default function OwnedCardsScreen() {
               {card.set_code.toUpperCase()} #{card.collector_number}
             </Text>
             <Text style={styles.gridPrice}>
-              {formatPrice(card.price_usd?.toString())}
+              {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
             </Text>
           </View>
         </View>
@@ -330,6 +358,14 @@ export default function OwnedCardsScreen() {
     if (item.quantity_foil > 0) finishParts.push('Foil');
     if (item.quantity_etched > 0) finishParts.push('Etched Foil');
     const card = item.cards;
+    const rowPrice = displayPriceForRow(
+      item.quantity_normal,
+      item.quantity_foil,
+      item.quantity_etched,
+      card.price_usd,
+      card.price_usd_foil,
+      card.price_usd_etched
+    );
 
     return (
       <TouchableOpacity
@@ -348,7 +384,7 @@ export default function OwnedCardsScreen() {
         </View>
         <View style={styles.listRight}>
           <Text style={styles.listPrice}>
-            {formatPrice(card.price_usd?.toString())}
+            {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
           </Text>
           <Text style={styles.listQty}>x{totalQty(item)}</Text>
         </View>
@@ -375,7 +411,7 @@ export default function OwnedCardsScreen() {
             style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
           >
             {uniqueCards > 0
-              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
               : '\u00A0'}
           </Text>
         </View>
@@ -394,11 +430,7 @@ export default function OwnedCardsScreen() {
       />
 
       {/* ── Content ── */}
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : isGrid ? (
+      {isGrid ? (
         <FlatList
           key={viewMode}
           data={visibleRows}
@@ -408,7 +440,7 @@ export default function OwnedCardsScreen() {
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridList}
           refreshControl={refreshControl}
-          ListEmptyComponent={emptyComponent}
+          ListEmptyComponent={isReady ? emptyComponent : null}
           ListFooterComponent={listFooter}
           onEndReached={loadMore}
           onEndReachedThreshold={0.6}
@@ -422,7 +454,7 @@ export default function OwnedCardsScreen() {
           renderItem={renderListItem}
           contentContainerStyle={styles.listList}
           refreshControl={refreshControl}
-          ListEmptyComponent={emptyComponent}
+          ListEmptyComponent={isReady ? emptyComponent : null}
           ListFooterComponent={listFooter}
           onEndReached={loadMore}
           onEndReachedThreshold={0.6}

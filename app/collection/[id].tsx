@@ -6,7 +6,6 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
   Alert,
   StyleSheet,
@@ -25,8 +24,8 @@ import { ExportModal } from '../../src/components/collection/ExportModal';
 import { ImportModal } from '../../src/components/collection/ImportModal';
 import { FolderPickerModal } from '../../src/components/collection/FolderPickerModal';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
-import { CollectionToolbar, type ViewMode, nextViewMode } from '../../src/components/collection/CollectionToolbar';
-import { SortSheet, type SortOption } from '../../src/components/collection/SortSheet';
+import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
+import { SortSheet } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
 import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
 import {
@@ -39,7 +38,9 @@ import {
   moveToFolderLocal,
 } from '../../src/lib/collections.local';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
-import { filterAndSort, deriveAvailableSets } from '../../src/lib/cardListUtils';
+import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
+import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
+import { filterAndSort, deriveAvailableSets, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -78,11 +79,12 @@ export default function CollectionDetailScreen() {
     collectorNumber: string;
   } | null>(null);
 
-  // UI state
-  const [viewMode, setViewMode] = useState<ViewMode>('grid-compact');
+  // UI state — view mode + sort are persisted per device (AsyncStorage)
+  // via the shared hook so flipping them in any binder carries over to
+  // the next open. Filters are intentionally NOT persisted.
+  const { viewMode, sortBy, sortAsc, setViewMode, setSortBy, setSortAsc } =
+    useCollectionViewPrefs();
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('added');
-  const [sortAsc, setSortAsc] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
@@ -109,10 +111,14 @@ export default function CollectionDetailScreen() {
   // (price overrides layered on top). Reads are instant from SQLite;
   // writes via collections.local.ts mutate the same table and propagate
   // through this hook automatically.
-  const { entries, isInitializing } = useLocalCardEntries({
+  const { entries, isReady } = useLocalCardEntries({
     where: `collection_id = ?`,
     params: [id],
   });
+
+  // Persistent cache so the `$X.XX` segment paints on the very first
+  // frame instead of waiting for the catalog enrichment to finish.
+  const cachedStats = useCachedCollectionStats(id);
 
   function handleCardPress(entry: CollectionEntry) {
     router.push({
@@ -148,33 +154,51 @@ export default function CollectionDetailScreen() {
   const isFiltered =
     searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
 
-  // Stats computed locally from the current (filtered or full) entries.
-  // With local-first reads we always have every row available, so there's
-  // no need for a server RPC for the header — the sum is always consistent
-  // with what the list renders below.
-  const { totalCards, uniqueCards, displayValue } = useMemo(() => {
+  // Live stats computed from the (filtered or full) entries. With
+  // local-first reads we always have every row; the sum is always
+  // consistent with what the list renders below.
+  const liveStats = useMemo(() => {
     const source = isFiltered ? displayEntries : entries;
     let cards = 0;
     let unique = 0;
     let value = 0;
     for (const e of source) {
       cards += getTotalQuantity(e);
-      // Unique = distinct (print × finish) variants. One row with
-      // qty_normal=1 + qty_foil=1 contributes 2 unique, not 1.
       if (e.quantity_normal > 0) unique += 1;
       if (e.quantity_foil > 0) unique += 1;
       if (e.quantity_etched > 0) unique += 1;
       const c = e.cards;
       if (c?.price_usd) value += c.price_usd * e.quantity_normal;
       if (c?.price_usd_foil) value += c.price_usd_foil * e.quantity_foil;
-      const ep = c?.price_usd_foil ?? c?.price_usd;
+      // Etched prefers its own price; falls back to foil if catalog
+      // only knows the foil number (e.g. Scryfall grouped them).
+      const ep = c?.price_usd_etched ?? c?.price_usd_foil;
       if (ep) value += ep * e.quantity_etched;
     }
     return { totalCards: cards, uniqueCards: unique, displayValue: value };
   }, [entries, displayEntries, isFiltered]);
-  const isGrid = viewMode !== 'list';
 
-  const isLoading = isInitializing;
+  // Persist the full (unfiltered) stats back to cache once enrichment
+  // finishes, so the next open paints the same numbers instantly.
+  useWriteCollectionStatsCache(id, isReady && !isFiltered, {
+    card_count: liveStats.totalCards,
+    unique_cards: liveStats.uniqueCards,
+    total_value: liveStats.displayValue,
+  });
+
+  // Header stats: prefer live values when enrichment has already
+  // populated them (value > 0 signals "I have prices"); otherwise fall
+  // back to the persistent cache from the last open so the header
+  // doesn't flash `$0.00` before prices resolve. Counts come straight
+  // from liveStats — those are SUM over a single SQLite table and are
+  // always immediate.
+  const totalCards = liveStats.totalCards;
+  const uniqueCards = liveStats.uniqueCards;
+  const displayValue =
+    liveStats.displayValue > 0
+      ? liveStats.displayValue
+      : (!isFiltered && cachedStats ? cachedStats.total_value : 0);
+  const isGrid = viewMode !== 'list';
 
   // Pull-to-refresh is now a cosmetic gesture — the data is always live
   // from the local DB. We flash the indicator for a frame so the
@@ -236,6 +260,14 @@ export default function CollectionDetailScreen() {
     const card = item.cards;
     if (!card) return null;
     const qty = getTotalQuantity(item);
+    const rowPrice = displayPriceForRow(
+      item.quantity_normal,
+      item.quantity_foil,
+      item.quantity_etched,
+      card.price_usd,
+      card.price_usd_foil,
+      card.price_usd_etched
+    );
 
     return (
       <TouchableOpacity
@@ -263,7 +295,7 @@ export default function CollectionDetailScreen() {
               {card.set_code.toUpperCase()} #{card.collector_number}
             </Text>
             <Text style={styles.gridPrice}>
-              {formatPrice(card.price_usd?.toString())}
+              {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
             </Text>
           </View>
         </View>
@@ -280,6 +312,15 @@ export default function CollectionDetailScreen() {
     if (item.quantity_normal > 0) finishParts.push('Normal');
     if (item.quantity_foil > 0) finishParts.push('Foil');
     if (item.quantity_etched > 0) finishParts.push('Etched Foil');
+
+    const rowPrice = displayPriceForRow(
+      item.quantity_normal,
+      item.quantity_foil,
+      item.quantity_etched,
+      card.price_usd,
+      card.price_usd_foil,
+      card.price_usd_etched
+    );
 
     return (
       <TouchableOpacity
@@ -299,7 +340,7 @@ export default function CollectionDetailScreen() {
         </View>
         <View style={styles.listRight}>
           <Text style={styles.listPrice}>
-            {formatPrice(card.price_usd?.toString())}
+            {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
           </Text>
           <Text style={styles.listQty}>x{getTotalQuantity(item)}</Text>
         </View>
@@ -325,7 +366,7 @@ export default function CollectionDetailScreen() {
             style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
           >
             {uniqueCards > 0
-              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
               : '\u00A0'}
           </Text>
         </View>
@@ -345,12 +386,13 @@ export default function CollectionDetailScreen() {
         activeFilters={countActiveFilters(filters)}
       />
 
-      {/* ── Content ── */}
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : isGrid ? (
+      {/* ── Content ──
+          We render the list immediately even before enrichment lands:
+          rows carry placeholder card data (CardImage falls back to the
+          bundled placeholder) so the grid takes the right shape and size
+          from the first frame. Names, prices and real images fill in as
+          the catalog chunks resolve. */}
+      {isGrid ? (
         <FlatList
           key={viewMode}
           data={displayEntries}
@@ -360,7 +402,7 @@ export default function CollectionDetailScreen() {
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.gridList}
           refreshControl={refreshControl}
-          ListEmptyComponent={emptyComponent}
+          ListEmptyComponent={isReady ? emptyComponent : null}
         />
       ) : (
         <FlatList
@@ -370,7 +412,7 @@ export default function CollectionDetailScreen() {
           renderItem={renderListItem}
           contentContainerStyle={styles.listList}
           refreshControl={refreshControl}
-          ListEmptyComponent={emptyComponent}
+          ListEmptyComponent={isReady ? emptyComponent : null}
         />
       )}
 

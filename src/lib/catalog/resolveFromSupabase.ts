@@ -20,8 +20,8 @@ const SELECT = `
   id, scryfall_id, oracle_id, name, mana_cost, cmc, type_line,
   colors, color_identity, keywords, rarity, set_code, set_name,
   collector_number, image_uri_small, image_uri_normal, image_uri_large,
-  image_uri_art_crop, price_usd, price_usd_foil, price_eur, price_eur_foil,
-  released_at, artist, layout, card_faces
+  image_uri_art_crop, price_usd, price_usd_foil, price_usd_etched,
+  price_eur, price_eur_foil, released_at, artist, layout, card_faces
 `;
 
 const CHUNK = 200;
@@ -56,6 +56,7 @@ function mapRow(row: any): ScryfallCard | null {
   const override = getPriceOverride(row.scryfall_id);
   const priceUsd = override ? override.price_usd : (row.price_usd ?? null);
   const priceUsdFoil = override ? override.price_usd_foil : (row.price_usd_foil ?? null);
+  const priceUsdEtched = row.price_usd_etched ?? null;
   return {
     id: row.scryfall_id,
     oracle_id: row.oracle_id ?? '',
@@ -83,6 +84,7 @@ function mapRow(row: any): ScryfallCard | null {
     prices: {
       usd: priceUsd != null ? String(priceUsd) : undefined,
       usd_foil: priceUsdFoil != null ? String(priceUsdFoil) : undefined,
+      usd_etched: priceUsdEtched != null ? String(priceUsdEtched) : undefined,
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },

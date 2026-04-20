@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetTextInput, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 import {
@@ -19,13 +19,23 @@ import { createCollectionLocal, createFolderLocal } from '../../lib/collections.
 import { ColorPicker } from './ColorPicker';
 
 type CreateType = 'binder' | 'list' | 'folder';
+type ModalView = 'form' | 'folder-picker';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onCreated: () => void;
+  /** Locks the picker to this type (used when creating from within a folder). */
   lockedType?: CollectionType;
+  /** Locks the destination folder. */
   lockedFolderId?: string;
+  /** Pre-selects the type when the picker is NOT locked — so opening the
+   *  "+" from the Binders tab defaults to Binder, from Lists defaults to
+   *  List. The user can still switch. */
+  defaultType?: CreateType;
+  /** Pre-selects the "folder for" target when creating a folder so it
+   *  matches the caller context. */
+  defaultFolderFor?: CollectionType;
 };
 
 const TYPE_OPTIONS: { value: CreateType; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
@@ -34,7 +44,15 @@ const TYPE_OPTIONS: { value: CreateType; label: string; icon: React.ComponentPro
   { value: 'folder', label: 'Folder', icon: 'folder' },
 ];
 
-export function CreateCollectionModal({ visible, onClose, onCreated, lockedType, lockedFolderId }: Props) {
+export function CreateCollectionModal({
+  visible,
+  onClose,
+  onCreated,
+  lockedType,
+  lockedFolderId,
+  defaultType,
+  defaultFolderFor,
+}: Props) {
   const [type, setType] = useState<CreateType>('binder');
   const [name, setName] = useState('');
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -42,22 +60,35 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [color, setColor] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [view, setView] = useState<ModalView>('form');
+  const [folderQuery, setFolderQuery] = useState('');
+  // When the user comes back from the folder picker, the form re-mounts
+  // and any BottomSheetTextInput with autoFocus re-grabs the keyboard.
+  // Flip this flag on picker → form so we skip the auto-focus until the
+  // modal is closed and reopened.
+  const [skipAutoFocus, setSkipAutoFocus] = useState(false);
 
   const isLocked = !!lockedType;
 
+  // Every time `visible` flips to true, sync state with the CURRENT props.
+  // The component stays mounted while the sheet animates in/out, so a stale
+  // useState(defaultType) at mount wouldn't pick up a later tab change.
   useEffect(() => {
     if (!visible) {
-      setType(lockedType ?? 'binder');
+      setView('form');
       setName('');
-      setFolderId(lockedFolderId ?? null);
-      setFolderFor('binder');
       setColor(null);
-      setShowFolderPicker(false);
+      setFolderQuery('');
+      setSkipAutoFocus(false);
       return;
     }
-    if (lockedType) setType(lockedType);
-    if (lockedFolderId) setFolderId(lockedFolderId);
+    setType(lockedType ?? defaultType ?? 'binder');
+    setFolderId(lockedFolderId ?? null);
+    setFolderFor(
+      defaultFolderFor
+      ?? (lockedType && lockedType !== undefined ? lockedType : undefined)
+      ?? (defaultType && defaultType !== 'folder' ? (defaultType as CollectionType) : 'binder')
+    );
 
     (async () => {
       const { data: { user } } = await (await import('../../lib/supabase')).supabase.auth.getUser();
@@ -65,9 +96,18 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
       const f = await fetchFolders(user.id);
       setFolders(f);
     })();
-  }, [visible]);
+  }, [visible, lockedType, lockedFolderId, defaultType, defaultFolderFor]);
 
-  const matchingFolders = type === 'folder' ? [] : folders.filter((f) => f.type === type);
+  const matchingFolders = useMemo(
+    () => (type === 'folder' ? [] : folders.filter((f) => f.type === type)),
+    [folders, type]
+  );
+
+  const filteredFolders = useMemo(() => {
+    const q = folderQuery.trim().toLowerCase();
+    if (!q) return matchingFolders;
+    return matchingFolders.filter((f) => f.name.toLowerCase().includes(q));
+  }, [matchingFolders, folderQuery]);
 
   async function handleSave() {
     const trimmed = name.trim();
@@ -98,6 +138,82 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
   const selectedFolder = folders.find((f) => f.id === folderId);
   const isFolder = type === 'folder';
 
+  // ── Folder picker view ──
+  // Rendered in place of the form inside the same sheet. Single layer of
+  // modal, back button returns to the form without losing any state.
+  if (view === 'folder-picker') {
+    return (
+      <BottomSheet visible={visible} onClose={onClose} snapPoints={['75%']}>
+        <View style={styles.pickerHeader}>
+          <TouchableOpacity
+            onPress={() => { setSkipAutoFocus(true); setView('form'); setFolderQuery(''); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.pickerTitle}>Select Folder</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <View style={styles.searchRow}>
+          <Ionicons name="search" size={16} color={colors.textMuted} />
+          <BottomSheetTextInput
+            value={folderQuery}
+            onChangeText={setFolderQuery}
+            placeholder="Search folders…"
+            placeholderTextColor={colors.textMuted}
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+        </View>
+
+        <BottomSheetFlatList
+          data={filteredFolders}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <TouchableOpacity
+              style={[styles.pickerRow, folderId == null && styles.pickerRowActive]}
+              onPress={() => { setFolderId(null); setSkipAutoFocus(true); setView('form'); setFolderQuery(''); }}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="close-circle-outline" size={22} color={colors.textMuted} />
+              <View style={styles.pickerRowText}>
+                <Text style={styles.pickerRowName}>No folder</Text>
+              </View>
+              {folderId == null && (
+                <Ionicons name="checkmark" size={22} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          }
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              {folderQuery ? 'No folders match your search.' : 'No folders yet.'}
+            </Text>
+          }
+          renderItem={({ item }) => {
+            const selected = item.id === folderId;
+            return (
+              <TouchableOpacity
+                style={[styles.pickerRow, selected && styles.pickerRowActive]}
+                onPress={() => { setFolderId(item.id); setSkipAutoFocus(true); setView('form'); setFolderQuery(''); }}
+                activeOpacity={0.6}
+              >
+                <Ionicons name="folder" size={22} color={item.color || '#A0A8B8'} />
+                <View style={styles.pickerRowText}>
+                  <Text style={styles.pickerRowName} numberOfLines={1}>{item.name}</Text>
+                </View>
+                {selected && <Ionicons name="checkmark" size={22} color={colors.primary} />}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </BottomSheet>
+    );
+  }
+
+  // ── Form view ──
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <Text style={styles.title}>
@@ -113,7 +229,6 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
               onPress={() => {
                 setType(opt.value);
                 setFolderId(lockedFolderId ?? null);
-                setShowFolderPicker(false);
               }}
               activeOpacity={0.6}
             >
@@ -140,7 +255,7 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
         placeholderTextColor={colors.textMuted}
         value={name}
         onChangeText={setName}
-        autoFocus
+        autoFocus={!skipAutoFocus}
         returnKeyType="done"
         onSubmitEditing={handleSave}
       />
@@ -173,39 +288,21 @@ export function CreateCollectionModal({ visible, onClose, onCreated, lockedType,
       )}
 
       {!isFolder && !lockedFolderId && matchingFolders.length > 0 && (
-        <>
-          <TouchableOpacity
-            style={styles.folderPicker}
-            onPress={() => setShowFolderPicker(!showFolderPicker)}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="folder-outline" size={18} color={colors.textSecondary} />
-            <Text style={styles.folderLabel}>
-              {selectedFolder ? selectedFolder.name : 'No folder'}
-            </Text>
-            <Ionicons name={showFolderPicker ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          {showFolderPicker && (
-            <View style={styles.folderList}>
-              <TouchableOpacity
-                style={[styles.folderOption, !folderId && styles.folderOptionActive]}
-                onPress={() => { setFolderId(null); setShowFolderPicker(false); }}
-              >
-                <Text style={styles.folderOptionText}>No folder</Text>
-              </TouchableOpacity>
-              {matchingFolders.map((f) => (
-                <TouchableOpacity
-                  key={f.id}
-                  style={[styles.folderOption, folderId === f.id && styles.folderOptionActive]}
-                  onPress={() => { setFolderId(f.id); setShowFolderPicker(false); }}
-                >
-                  <Text style={styles.folderOptionText}>{f.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </>
+        <TouchableOpacity
+          style={styles.folderPicker}
+          onPress={() => setView('folder-picker')}
+          activeOpacity={0.6}
+        >
+          <Ionicons
+            name={selectedFolder ? 'folder' : 'folder-outline'}
+            size={20}
+            color={selectedFolder ? selectedFolder.color ?? colors.textSecondary : colors.textSecondary}
+          />
+          <Text style={styles.folderLabel}>
+            {selectedFolder ? selectedFolder.name : 'No folder'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
       )}
 
       <TouchableOpacity
@@ -302,35 +399,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    // Match the "Binder name" input's padding so both form fields are
+    // the same visual height.
+    padding: spacing.md,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   folderLabel: {
     flex: 1,
     color: colors.textSecondary,
-    fontSize: fontSize.md,
-  },
-  folderList: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-  },
-  folderOption: {
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
-  },
-  folderOptionActive: {
-    backgroundColor: colors.primary + '14',
-  },
-  folderOptionText: {
-    color: colors.text,
-    fontSize: fontSize.md,
+    fontSize: fontSize.lg,
   },
   saveButton: {
     alignItems: 'center',
@@ -346,5 +425,64 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.lg,
     fontWeight: '600',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  pickerTitle: {
+    color: colors.text,
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: fontSize.md,
+    padding: 0,
+  },
+  // Card-style rows — same visual language as the binder destination
+  // picker so the UI feels coherent between "add to binder" and "pick
+  // folder". Active state uses the primary tint; idle state carries the
+  // subtle surface fill.
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    marginBottom: 6,
+  },
+  pickerRowActive: {
+    backgroundColor: colors.primary + '14',
+  },
+  pickerRowText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pickerRowName: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
   },
 });

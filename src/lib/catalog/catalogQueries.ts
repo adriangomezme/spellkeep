@@ -434,6 +434,7 @@ function rowToScryfallCard(row: any): ScryfallCard {
     prices: {
       usd: priceUsd != null ? String(priceUsd) : undefined,
       usd_foil: priceUsdFoil != null ? String(priceUsdFoil) : undefined,
+      usd_etched: row.price_usd_etched != null ? String(row.price_usd_etched) : undefined,
       eur: row.price_eur != null ? String(row.price_eur) : undefined,
       eur_foil: row.price_eur_foil != null ? String(row.price_eur_foil) : undefined,
     },

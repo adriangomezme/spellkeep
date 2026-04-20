@@ -8,28 +8,27 @@ import type { ScryfallCard } from '../scryfall';
 // ─────────────────────────────────────────────────────────────────────────
 // Local card entries (binder/list detail + owned view)
 //
-// PowerSync and catalog.db are separate SQLite files, so we can't JOIN in
-// one query. The flow is:
-//   1. `useQuery` watches collection_cards for the scoped rows.
-//   2. A batched lookup against catalog.db enriches each row with its
-//      catalog card (the ScryfallCard-shaped output).
-//   3. Cards missing from the local snapshot (e.g. Japanese printings
-//      added after the last daily snapshot) fall back to Supabase. Same
-//      shape, merged into the same cache.
-//   4. Price override subscription triggers a lightweight revalidation.
+// Non-blocking design: the hook NEVER makes the UI wait for enrichment.
+//   1. `useQuery` emits rows from local SQLite — typically sub-5ms.
+//   2. Rows render immediately with a placeholder card shape. The grid /
+//      list shows the right COUNT of cards right away (with the bundled
+//      CardImage placeholder) — no "No cards yet" empty state, no
+//      spinner.
+//   3. Enrichment runs in chunked batches in the background. Each chunk
+//      that resolves pushes a fresh cardMap so the UI progressively
+//      fills in names, prices, and real images.
 //
-// Two-level cache:
-//   • cardMap (per-resultset): holds every card in the CURRENT binder/
-//     owned view. Must be complete so the FlatList can render every row —
-//     if we filter this by an LRU we end up with blank cards when the
-//     collection is larger than the cap.
-//   • cacheRef (cross-screen LRU): pure query-skipping acceleration. If
-//     a card was resolved on a previous screen it doesn't hit catalog.db
-//     again. LRU eviction is fine here because a miss just means a
-//     re-query, never a blank render.
+// The `isReady` flag is purely informational — signals that enrichment
+// has finished for the current resultset — so screens can gate secondary
+// decorations (e.g. hide the `$X.XX` in the header until prices land).
+// It is NOT used to gate rendering of the list itself.
 // ─────────────────────────────────────────────────────────────────────────
 
 const LRU_CAP = 20000;
+// Size of each catalog.db batch. 400 is below SQLite's default
+// SQLITE_MAX_VARIABLE_NUMBER (999). We could go higher with a newer
+// SQLite build but staying conservative keeps behavior portable.
+const ENRICH_CHUNK = 400;
 
 type RawRow = {
   id: string;
@@ -69,18 +68,16 @@ export type EnrichedEntry = {
     image_uri_normal: string;
     price_usd: number | null;
     price_usd_foil: number | null;
+    price_usd_etched: number | null;
     color_identity: string[];
     layout?: string;
     artist?: string;
   };
 };
 
-// Simple LRU: a plain Map preserves insertion order. On read we delete +
-// re-insert to bump the key; on overflow we evict the oldest (first) key.
 class LRU<K, V> {
   private map = new Map<K, V>();
   constructor(private cap: number) {}
-
   get(key: K): V | undefined {
     const v = this.map.get(key);
     if (v !== undefined) {
@@ -101,21 +98,11 @@ class LRU<K, V> {
   has(key: K): boolean {
     return this.map.has(key);
   }
-  keys(): K[] {
-    return Array.from(this.map.keys());
-  }
-  snapshot(keysWanted: Iterable<K>): Map<K, V> {
-    const out = new Map<K, V>();
-    for (const k of keysWanted) {
-      const v = this.map.get(k);
-      if (v !== undefined) out.set(k, v);
-    }
-    return out;
-  }
-  clear(): void {
-    this.map.clear();
-  }
 }
+
+// Module-level LRU so cross-hook usage (binder + owned + hub) shares
+// already-resolved cards instead of re-querying catalog.db.
+const cardCache = new LRU<string, ScryfallCard>(LRU_CAP);
 
 function cardShape(card_id: string, card: ScryfallCard | undefined): EnrichedEntry['cards'] {
   if (!card) {
@@ -135,11 +122,13 @@ function cardShape(card_id: string, card: ScryfallCard | undefined): EnrichedEnt
       image_uri_normal: '',
       price_usd: null,
       price_usd_foil: null,
+      price_usd_etched: null,
       color_identity: [],
     };
   }
   const priceUsd = card.prices?.usd ? Number(card.prices.usd) : null;
   const priceUsdFoil = card.prices?.usd_foil ? Number(card.prices.usd_foil) : null;
+  const priceUsdEtched = card.prices?.usd_etched ? Number(card.prices.usd_etched) : null;
   return {
     id: card_id,
     scryfall_id: card.id,
@@ -156,6 +145,7 @@ function cardShape(card_id: string, card: ScryfallCard | undefined): EnrichedEnt
     image_uri_normal: card.image_uris?.normal ?? card.image_uris?.small ?? '',
     price_usd: Number.isFinite(priceUsd as number) ? priceUsd : null,
     price_usd_foil: Number.isFinite(priceUsdFoil as number) ? priceUsdFoil : null,
+    price_usd_etched: Number.isFinite(priceUsdEtched as number) ? priceUsdEtched : null,
     color_identity: card.color_identity ?? [],
     layout: card.layout,
     artist: card.artist,
@@ -174,21 +164,13 @@ function normalize(row: RawRow): RawRow {
 }
 
 type Options = {
-  /** SQL fragment appended after WHERE. Example: `collection_id = ?`. */
   where: string;
-  /** Positional params for the WHERE fragment. */
   params: any[];
 };
 
-/**
- * Shared core hook: watches `collection_cards` filtered by a WHERE fragment
- * and returns rows enriched with their catalog card. Callers above (binder
- * detail, owned view) supply the filter; the hook doesn't know about
- * scoping.
- */
 export function useLocalCardEntries({ where, params }: Options): {
   entries: EnrichedEntry[];
-  isInitializing: boolean;
+  isReady: boolean;
 } {
   const rows = useQuery<RawRow>(
     `SELECT id, collection_id, card_id, condition, language,
@@ -204,86 +186,88 @@ export function useLocalCardEntries({ where, params }: Options): {
     [rows.data]
   );
 
-  const [cardMap, setCardMap] = useState<Map<string, ScryfallCard>>(new Map());
-  const [hasResolvedOnce, setHasResolvedOnce] = useState(false);
+  // cardMap is a rev-counter map. Instead of storing per-entry,
+  // cardShape() pulls from cardCache at render time. We bump `tick` to
+  // invalidate memos after each enrichment chunk lands.
+  const [tick, setTick] = useState(0);
+  const [isReady, setIsReady] = useState(false);
   const [priceTick, setPriceTick] = useState(0);
-  const cacheRef = useRef<LRU<string, ScryfallCard>>(new LRU(LRU_CAP));
 
   useEffect(() => subscribePriceOverrides(() => setPriceTick((n) => n + 1)), []);
 
+  const rowsSignature = useMemo(() => {
+    if (normalizedRows.length === 0) return 'empty';
+    const first = normalizedRows[0];
+    const last = normalizedRows[normalizedRows.length - 1];
+    return `${normalizedRows.length}|${first.id}|${last.id}`;
+  }, [normalizedRows]);
+
+  const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+
   useEffect(() => {
-    let cancelled = false;
+    // Cancel any in-flight enrichment from the previous resultset.
+    cancelRef.current.cancelled = true;
+    const self = { cancelled: false };
+    cancelRef.current = self;
+
+    if (normalizedRows.length === 0) {
+      setIsReady(true);
+      return;
+    }
+
+    setIsReady(false);
+    // Scan the row set once to figure out which card ids still need
+    // resolving from catalog.db. Cached hits are skipped entirely
+    // unless a price override forced a re-resolve (priceTick > 0
+    // compared to last time it ran).
+    const wanted = new Set<string>();
+    for (const r of normalizedRows) wanted.add(r.card_id);
+
+    const needFetch: string[] = [];
+    for (const id of wanted) {
+      if (priceTick > 0) {
+        needFetch.push(id);
+      } else if (!cardCache.has(id)) {
+        needFetch.push(id);
+      }
+    }
+
+    if (needFetch.length === 0) {
+      setIsReady(true);
+      return;
+    }
+
     (async () => {
-      const wanted = new Set<string>();
-      for (const r of normalizedRows) wanted.add(r.card_id);
-
-      if (wanted.size === 0) {
-        if (!cancelled) {
-          setCardMap(new Map());
-          setHasResolvedOnce(true);
-        }
-        return;
-      }
-
-      // Build the full snapshot for this resultset from the LRU first so
-      // rows we've seen on other screens paint immediately.
-      const snap = new Map<string, ScryfallCard>();
-      for (const id of wanted) {
-        const hit = priceTick === 0 ? cacheRef.current.get(id) : undefined;
-        if (hit) snap.set(id, hit);
-      }
-
-      // Everything the LRU didn't answer (plus, on a price tick, the
-      // entire set so stale prices get replaced) goes to catalog.db.
-      const needFromLocal = priceTick === 0
-        ? Array.from(wanted).filter((id) => !snap.has(id))
-        : Array.from(wanted);
-
-      // Paint partial results as we progress so huge binders don't stay
-      // blank while the catalog loop runs through 50+ query batches. We
-      // only publish once per resolution stage to keep re-renders cheap.
-      if (snap.size > 0 && !cancelled) {
-        setCardMap(new Map(snap));
-        setHasResolvedOnce(true);
-      }
-
       try {
-        if (needFromLocal.length > 0) {
-          const local = await batchResolveBySupabaseId(needFromLocal);
-          for (const [id, card] of local) {
-            snap.set(id, card);
-            cacheRef.current.set(id, card);
-          }
-          if (!cancelled) {
-            setCardMap(new Map(snap));
-            setHasResolvedOnce(true);
-          }
+        for (let i = 0; i < needFetch.length; i += ENRICH_CHUNK) {
+          if (self.cancelled) return;
+          const slice = needFetch.slice(i, i + ENRICH_CHUNK);
+          const local = await batchResolveBySupabaseId(slice);
+          for (const [id, card] of local) cardCache.set(id, card);
+          if (!self.cancelled) setTick((t) => t + 1);
         }
 
-        // Remaining misses = rows added after the last catalog snapshot.
-        // Fall back to Supabase so the UI never silently renders blanks.
-        const stillMissing = Array.from(wanted).filter((id) => !snap.has(id));
-        if (stillMissing.length > 0) {
+        // Supabase fallback for rows added after the last catalog
+        // snapshot. Typically a very small subset.
+        const stillMissing = needFetch.filter((id) => !cardCache.has(id));
+        if (stillMissing.length > 0 && !self.cancelled) {
           const remote = await resolveCardsBySupabaseId(stillMissing);
-          for (const [id, card] of remote) {
-            snap.set(id, card);
-            cacheRef.current.set(id, card);
-          }
-          if (!cancelled) {
-            setCardMap(new Map(snap));
-          }
+          for (const [id, card] of remote) cardCache.set(id, card);
+          if (!self.cancelled) setTick((t) => t + 1);
         }
 
-        if (!cancelled) setHasResolvedOnce(true);
+        if (!self.cancelled) setIsReady(true);
       } catch (err) {
         console.warn('[useLocalCardEntries] enrichment failed', err);
-        if (!cancelled) setHasResolvedOnce(true);
+        if (!self.cancelled) setIsReady(true);
       }
     })();
+
     return () => {
-      cancelled = true;
+      self.cancelled = true;
     };
-  }, [normalizedRows, priceTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsSignature, priceTick]);
 
   const entries = useMemo<EnrichedEntry[]>(() => {
     return normalizedRows.map((r) => ({
@@ -296,15 +280,11 @@ export function useLocalCardEntries({ where, params }: Options): {
       quantity_normal: r.quantity_normal ?? 0,
       quantity_foil: r.quantity_foil ?? 0,
       quantity_etched: r.quantity_etched ?? 0,
-      cards: cardShape(r.card_id, cardMap.get(r.card_id)),
+      cards: cardShape(r.card_id, cardCache.get(r.card_id)),
     }));
-  }, [normalizedRows, cardMap]);
+    // `tick` invalidates this memo each time a chunk lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalizedRows, tick]);
 
-  // isInitializing = the hook hasn't finished its first enrichment pass
-  // AND the useQuery is still producing data. Once either the first pass
-  // completes OR useQuery confirms the collection is empty, we flip it
-  // off so the screen can render the real content (or the empty state).
-  const isInitializing = !hasResolvedOnce && (normalizedRows.length > 0 || rows.isLoading === true);
-
-  return { entries, isInitializing };
+  return { entries, isReady };
 }

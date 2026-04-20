@@ -11,6 +11,40 @@ const DELTAS_INDEX_BUCKET = 'catalog-deltas';
 const INDEX_PATH = 'index.json';
 
 const PAGE = 1000;
+const MAX_ATTEMPTS = 6;
+const BASE_BACKOFF_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// PostgREST is fronted by Cloudflare on Supabase's hosted tier. Mid-sync
+// we occasionally catch a 502 Bad Gateway — a transient proxy hiccup,
+// not a real database error. Retry with exponential backoff before
+// giving up; 6 attempts covers minute-long blips without hanging a full
+// job. Non-502 errors bubble up immediately.
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message ?? err);
+      const isTransient = /502|503|504|Bad Gateway|Gateway Time-out|ETIMEDOUT|ECONNRESET|fetch failed/i.test(msg);
+      if (!isTransient || attempt === MAX_ATTEMPTS) break;
+      const backoff = BASE_BACKOFF_MS * 2 ** (attempt - 1);
+      console.warn(
+        `[catalog-sync] ${label} transient failure (attempt ${attempt}/${MAX_ATTEMPTS}): ${msg.slice(0, 200)} — retrying in ${backoff} ms`
+      );
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
+}
 const SNAPSHOT_REFRESH_DAYS = 7;
 
 // Keep in lockstep with the client-side catalog schema.
@@ -37,6 +71,7 @@ const CARD_COLUMNS = [
   'image_uri_normal',
   'price_usd',
   'price_usd_foil',
+  'price_usd_etched',
   'price_eur',
   'price_eur_foil',
   'released_at',
@@ -166,6 +201,7 @@ function createSchema(db: Database.Database) {
       image_uri_normal TEXT,
       price_usd REAL,
       price_usd_foil REAL,
+      price_usd_etched REAL,
       price_eur REAL,
       price_eur_foil REAL,
       released_at TEXT,
@@ -264,21 +300,26 @@ async function fetchAllCards(): Promise<any[]> {
   const cols = CARD_COLUMNS.join(',');
   const all: any[] = [];
 
-  // Keyset pagination: each page selects rows strictly greater than the last
-  // seen scryfall_id. O(log n) per page via the unique index, unlike
-  // OFFSET which degrades to O(n) and trips the 30 s statement timeout.
+  // Keyset pagination: each page selects rows strictly greater than the
+  // last seen scryfall_id. O(log n) per page via the unique index,
+  // unlike OFFSET which degrades to O(n) and trips the 30 s statement
+  // timeout. Each page is wrapped in withRetry so a transient Cloudflare
+  // 502 mid-job doesn't throw away the rows we've already paged.
   let lastSeen: string | null = null;
   while (true) {
-    let query = supabase
-      .from('cards')
-      .select(cols)
-      .order('scryfall_id', { ascending: true })
-      .limit(PAGE);
-    if (lastSeen !== null) query = query.gt('scryfall_id', lastSeen);
+    const data = await withRetry('cards fetch', async () => {
+      let query = supabase
+        .from('cards')
+        .select(cols)
+        .order('scryfall_id', { ascending: true })
+        .limit(PAGE);
+      if (lastSeen !== null) query = query.gt('scryfall_id', lastSeen);
+      const { data, error } = await query;
+      if (error) throw new Error(`snapshot cards fetch failed: ${error.message}`);
+      return data ?? [];
+    });
 
-    const { data, error } = await query;
-    if (error) throw new Error(`snapshot cards fetch failed: ${error.message}`);
-    if (!data || data.length === 0) break;
+    if (data.length === 0) break;
 
     all.push(...data);
     lastSeen = (data[data.length - 1] as any).scryfall_id;
@@ -299,15 +340,18 @@ async function fetchAllSets(): Promise<any[]> {
   const all: any[] = [];
   let lastCode: string | null = null;
   while (true) {
-    let q = supabase
-      .from('sets')
-      .select(cols)
-      .order('code', { ascending: true })
-      .limit(PAGE);
-    if (lastCode !== null) q = q.gt('code', lastCode);
-    const { data, error } = await q;
-    if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
-    if (!data || data.length === 0) break;
+    const data = await withRetry('sets fetch', async () => {
+      let q = supabase
+        .from('sets')
+        .select(cols)
+        .order('code', { ascending: true })
+        .limit(PAGE);
+      if (lastCode !== null) q = q.gt('code', lastCode);
+      const { data, error } = await q;
+      if (error) throw new Error(`snapshot sets fetch failed: ${error.message}`);
+      return data ?? [];
+    });
+    if (data.length === 0) break;
     all.push(...data);
     lastCode = (data[data.length - 1] as any).code;
     if (data.length < PAGE) break;

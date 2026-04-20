@@ -382,6 +382,8 @@ export default function CollectionHubScreen() {
       {/* Modals */}
       <CreateCollectionModal
         visible={showCreate}
+        defaultType={activeTab}
+        defaultFolderFor={activeTab}
         onClose={() => setShowCreate(false)}
         onCreated={() => { setShowCreate(false); fetchAll(); }}
       />

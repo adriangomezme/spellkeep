@@ -31,6 +31,7 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
     image_uri_art_crop: card.image_uris?.art_crop ?? faces?.[0]?.image_uris?.art_crop ?? null,
     price_usd: card.prices?.usd ? parseFloat(card.prices.usd) : null,
     price_usd_foil: card.prices?.usd_foil ? parseFloat(card.prices.usd_foil) : null,
+    price_usd_etched: card.prices?.usd_etched ? parseFloat(card.prices.usd_etched) : null,
     price_eur: card.prices?.eur ? parseFloat(card.prices.eur) : null,
     price_eur_foil: card.prices?.eur_foil ? parseFloat(card.prices.eur_foil) : null,
     legalities: card.legalities ?? {},

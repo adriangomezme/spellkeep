@@ -22,9 +22,39 @@ export type CardEntry = {
     is_legendary: number | null;
     price_usd: number | null;
     price_usd_foil: number | null;
+    price_usd_etched: number | null;
     color_identity: string[];
   };
 };
+
+/**
+ * Price to show on a list/grid row, picked from the right finish:
+ *   normal → price_usd
+ *   foil   → price_usd_foil
+ *   etched → price_usd_etched  (falls back to price_usd_foil if the
+ *                               catalog only knows the foil number)
+ * When a row carries multiple finishes we surface the max so the visible
+ * number matches the most valuable copy the user owns. Returns null when
+ * the row has no finish with a known price — the caller renders '—'.
+ */
+export function displayPriceForRow(
+  qtyNormal: number,
+  qtyFoil: number,
+  qtyEtched: number,
+  priceUsd: number | null | undefined,
+  priceUsdFoil: number | null | undefined,
+  priceUsdEtched: number | null | undefined
+): number | null {
+  const candidates: number[] = [];
+  if (qtyNormal > 0 && typeof priceUsd === 'number') candidates.push(priceUsd);
+  if (qtyFoil > 0 && typeof priceUsdFoil === 'number') candidates.push(priceUsdFoil);
+  if (qtyEtched > 0) {
+    if (typeof priceUsdEtched === 'number') candidates.push(priceUsdEtched);
+    else if (typeof priceUsdFoil === 'number') candidates.push(priceUsdFoil);
+  }
+  if (candidates.length === 0) return null;
+  return Math.max(...candidates);
+}
 
 const RARITY_ORDER: Record<string, number> = {
   common: 0,
@@ -166,9 +196,22 @@ export function filterAndSort<T extends CardEntry>(
       case 'mana_value':
         cmp = (ca.cmc ?? 0) - (cb.cmc ?? 0);
         break;
-      case 'price':
-        cmp = (ca.price_usd ?? 0) - (cb.price_usd ?? 0);
+      case 'price': {
+        // Sort by the SAME price the row displays — otherwise a foil-only
+        // printing with a valuable price_usd_foil falls to the bottom
+        // because its price_usd is null. Matches displayPriceForRow's
+        // finish resolution.
+        const pa = displayPriceForRow(
+          a.quantity_normal, a.quantity_foil, a.quantity_etched,
+          ca.price_usd, ca.price_usd_foil, ca.price_usd_etched
+        ) ?? 0;
+        const pb = displayPriceForRow(
+          b.quantity_normal, b.quantity_foil, b.quantity_etched,
+          cb.price_usd, cb.price_usd_foil, cb.price_usd_etched
+        ) ?? 0;
+        cmp = pa - pb;
         break;
+      }
       case 'color_identity':
         cmp = colorSortKey(parseColorIdentity(ca.color_identity)) - colorSortKey(parseColorIdentity(cb.color_identity));
         break;
