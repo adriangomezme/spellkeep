@@ -31,6 +31,7 @@ import {
 } from '../../src/lib/priceAlerts';
 import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
+import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
 
 const DIR_UP = '#1D9E58';
 const DIR_DOWN = '#C24848';
@@ -53,6 +54,7 @@ export default function AlertDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [editing, setEditing] = useState<ScryfallCard | null>(null);
+  const [showActions, setShowActions] = useState(false);
 
   const { data: alertRows } = useQuery<PriceAlert>(
     `SELECT id, user_id, card_id, card_name, card_set, card_collector_number,
@@ -212,7 +214,13 @@ export default function AlertDetailScreen() {
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Alert details</Text>
-        <View style={{ width: 26 }} />
+        <TouchableOpacity
+          onPress={() => setShowActions(true)}
+          hitSlop={8}
+          accessibilityLabel="More actions"
+        >
+          <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -222,75 +230,46 @@ export default function AlertDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero card — identity + condition + status + actions in one block */}
+        {/* Hero card — identity + condition + status */}
         <View style={styles.hero}>
-          <View style={styles.heroTop}>
-            {alert.card_image_uri && (
-              <Image
-                source={{ uri: alert.card_image_uri }}
-                style={styles.heroImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-            )}
-            <View style={styles.heroBody}>
-              <Text style={styles.cardName} numberOfLines={2}>
-                {alert.card_name}
+          {alert.card_image_uri && (
+            <Image
+              source={{ uri: alert.card_image_uri }}
+              style={styles.heroImage}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          )}
+          <View style={styles.heroBody}>
+            <Text style={styles.cardName} numberOfLines={2}>
+              {alert.card_name}
+            </Text>
+            <Text style={styles.cardMeta} numberOfLines={1}>
+              {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
+            </Text>
+            <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
+              <Ionicons name={dirIcon} size={14} color={dirColor} />
+              <Text style={[styles.conditionPillText, { color: dirColor }]}>
+                {conditionLabel}
               </Text>
-              <Text style={styles.cardMeta} numberOfLines={1}>
-                {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
-              </Text>
-              <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
-                <Ionicons name={dirIcon} size={14} color={dirColor} />
-                <Text style={[styles.conditionPillText, { color: dirColor }]}>
-                  {conditionLabel}
-                </Text>
-              </View>
-              {(alert.status === 'paused' || snoozed) && (
-                <View style={styles.chipRow}>
-                  {alert.status === 'paused' && (
-                    <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
-                  )}
-                  {snoozed && (
-                    <Chip
-                      label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
-                      color={SNOOZE_COLOR}
-                      icon="moon-outline"
-                    />
-                  )}
-                </View>
-              )}
             </View>
-          </View>
-
-          <View style={styles.heroDivider} />
-
-          <View style={styles.actionsRow}>
-            <ActionTile
-              label={alert.status === 'paused' ? 'Resume' : 'Pause'}
-              icon={alert.status === 'paused' ? 'play' : 'pause'}
-              onPress={handleTogglePause}
-              color={PAUSE_COLOR}
-            />
-            <ActionTile
-              label={snoozed ? 'Snoozed' : 'Snooze'}
-              icon="moon-outline"
-              onPress={handleSnooze}
-              color={SNOOZE_COLOR}
-              disabled={alert.status === 'paused'}
-            />
-            <ActionTile
-              label="Edit"
-              icon="create-outline"
-              onPress={handleEdit}
-              color={colors.primary}
-            />
-            <ActionTile
-              label="Delete"
-              icon="trash-outline"
-              onPress={handleDelete}
-              color={colors.error}
-            />
+            {(alert.status === 'paused' || snoozed || !!alert.auto_rearm) && (
+              <View style={styles.chipRow}>
+                {alert.status === 'paused' && (
+                  <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
+                )}
+                {snoozed && (
+                  <Chip
+                    label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
+                    color={SNOOZE_COLOR}
+                    icon="moon-outline"
+                  />
+                )}
+                {!!alert.auto_rearm && (
+                  <Chip label="Auto re-arm" color={REARM_COLOR} icon="refresh" />
+                )}
+              </View>
+            )}
           </View>
         </View>
 
@@ -338,44 +317,6 @@ export default function AlertDetailScreen() {
           />
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.rearmToggleCard,
-            alert.mode === 'price' && !alert.auto_rearm && styles.rearmDisabled,
-          ]}
-          onPress={handleToggleAutoRearm}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.rearmIconBubble, !!alert.auto_rearm && styles.rearmIconBubbleOn]}>
-            <Ionicons
-              name="refresh"
-              size={16}
-              color={alert.auto_rearm ? '#FFFFFF' : REARM_COLOR}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.rearmTitle}>Auto re-arm</Text>
-            <Text style={styles.rearmHint}>
-              {alert.mode === 'price' && !alert.auto_rearm
-                ? 'Only available for percent targets.'
-                : alert.auto_rearm
-                  ? 'Keeps watching after each trigger, re-anchoring to the new price.'
-                  : 'After trigger, re-anchor and keep watching for the next crossing.'}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.toggle,
-              !!alert.auto_rearm && styles.toggleOn,
-              alert.mode === 'price' && !alert.auto_rearm && styles.toggleDisabled,
-            ]}
-          >
-            <View
-              style={[styles.toggleKnob, !!alert.auto_rearm && styles.toggleKnobOn]}
-            />
-          </View>
-        </TouchableOpacity>
-
         {/* History */}
         <Text style={styles.sectionLabel}>
           History · {events?.length ?? 0} trigger{(events?.length ?? 0) === 1 ? '' : 's'}
@@ -407,6 +348,17 @@ export default function AlertDetailScreen() {
         onClose={() => setEditing(null)}
         card={editing}
         existing={alert}
+      />
+
+      <AlertActionsSheet
+        visible={showActions}
+        onClose={() => setShowActions(false)}
+        alert={alert}
+        onPause={handleTogglePause}
+        onSnooze={handleSnooze}
+        onToggleAutoRearm={handleToggleAutoRearm}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
       />
     </View>
   );
@@ -467,40 +419,6 @@ function Chip({
   );
 }
 
-function ActionTile({
-  label,
-  icon,
-  onPress,
-  color,
-  disabled,
-}: {
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  onPress: () => void;
-  color: string;
-  disabled?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.actionTile, disabled && styles.actionTileDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.actionTileIcon, { backgroundColor: color + '15' }]}>
-        <Ionicons name={icon} size={18} color={disabled ? colors.textMuted : color} />
-      </View>
-      <Text
-        style={[
-          styles.actionTileLabel,
-          disabled && { color: colors.textMuted },
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
 
 function HistoryEvent({
   event,
@@ -614,23 +532,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   hero: {
+    flexDirection: 'row',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     ...shadows.sm,
   },
-  heroTop: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  heroDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
-  },
   heroImage: {
-    width: 96,
-    height: 134,
+    width: 67,
+    height: 94,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
@@ -750,79 +661,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
   },
-  // Actions inside the hero
-  actionsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  actionTile: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: spacing.sm,
-  },
-  actionTileDisabled: { opacity: 0.4 },
-  actionTileIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionTileLabel: {
-    color: colors.text,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-  },
-  // Rearm
-  rearmToggleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    ...shadows.sm,
-  },
-  rearmDisabled: { opacity: 0.55 },
-  rearmIconBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: REARM_COLOR + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rearmIconBubbleOn: { backgroundColor: REARM_COLOR },
-  rearmTitle: {
-    color: colors.text,
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-  },
-  rearmHint: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  toggle: {
-    width: 40,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.border,
-    padding: 3,
-    justifyContent: 'center',
-  },
-  toggleOn: { backgroundColor: colors.primary },
-  toggleDisabled: { opacity: 0.5 },
-  toggleKnob: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleKnobOn: { transform: [{ translateX: 16 }] },
   // History
   historyList: {},
   historyItem: {
