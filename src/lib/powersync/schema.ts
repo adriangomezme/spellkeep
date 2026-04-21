@@ -192,6 +192,35 @@ const price_overrides = new Table({
   indexes: { scryfall_id: ['scryfall_id'] }
 });
 
+// Price alerts (local-only for now; UI-first iteration).
+// Each row = one alert for a specific print + finish. A card can have
+// multiple rows. When the backend trigger pipeline lands we will lift
+// `localOnly` and add a matching Supabase table + migration.
+const price_alerts = new Table({
+  user_id: column.text,
+  card_id: column.text,                 // scryfall_id of the specific print
+  card_name: column.text,
+  card_set: column.text,
+  card_collector_number: column.text,
+  card_image_uri: column.text,
+  finish: column.text,                  // 'normal' | 'foil' | 'etched'
+  direction: column.text,               // 'below' | 'above'
+  mode: column.text,                    // 'price' | 'percent'
+  target_value: column.real,            // absolute USD if mode='price'; signed % if mode='percent'
+  snapshot_price: column.real,          // price at creation (anchor for later comparisons)
+  status: column.text,                  // 'active' | 'triggered' | 'paused'
+  created_at: column.text,
+  triggered_at: column.text,
+  updated_at: column.text,
+}, {
+  localOnly: true,
+  indexes: {
+    user_id: ['user_id'],
+    card_id: ['card_id'],
+    status: ['status'],
+  },
+});
+
 // Per-collection aggregated stats cache (local-only).
 // Lets the hub + binder detail header paint card counts, unique counts,
 // and $ value instantly on open — without waiting for the catalog-join
@@ -242,6 +271,7 @@ export const AppSchema = new Schema({
   scan_history,
   catalog_meta,
   price_overrides,
+  price_alerts,
   collection_stats_cache,
 });
 

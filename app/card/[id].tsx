@@ -29,6 +29,8 @@ import {
   type ScryfallRuling,
 } from '../../src/lib/scryfall';
 import { AddCardSheet } from '../../src/components/AddCardSheet';
+import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
+import { CardAlertsSheet } from '../../src/components/CardAlertsSheet';
 import {
   fetchCardExtras,
   fetchSetIcon,
@@ -284,6 +286,12 @@ export default function CardDetailScreen() {
   const ownership: OwnershipSummary | null = useOwnershipSummary(card?.id) ?? null;
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
   const [printsLoading, setPrintsLoading] = useState(false);
+  const [showAlertSheet, setShowAlertSheet] = useState(false);
+  const alertRows = usePowerSyncQuery<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ? AND status = 'active'`,
+    [id ?? '']
+  );
+  const alertCount = Number(alertRows.data?.[0]?.cnt ?? 0);
   // Seed the set icon from the in-memory catalog cache so the glyph paints
   // on first render instead of flashing in after the async fetch resolves.
   const [setIconUri, setSetIconUri] = useState<string | null>(() =>
@@ -356,6 +364,8 @@ export default function CardDetailScreen() {
         title={card.name}
         owned={ownedTotal}
         onBack={() => router.back()}
+        alertCount={alertCount}
+        onOpenAlert={() => setShowAlertSheet(true)}
       />
 
       <ScrollView
@@ -632,6 +642,20 @@ export default function CardDetailScreen() {
         }}
         onClose={() => setShowQuickAddPicker(false)}
       />
+
+      {alertCount > 0 ? (
+        <CardAlertsSheet
+          visible={showAlertSheet}
+          onClose={() => setShowAlertSheet(false)}
+          card={card}
+        />
+      ) : (
+        <CreateAlertSheet
+          visible={showAlertSheet}
+          onClose={() => setShowAlertSheet(false)}
+          card={card}
+        />
+      )}
     </View>
   );
 }
@@ -703,7 +727,19 @@ function HeroFaceCarousel({
   );
 }
 
-function Header({ title, owned, onBack }: { title: string; owned: number; onBack: () => void }) {
+function Header({
+  title,
+  owned,
+  onBack,
+  alertCount,
+  onOpenAlert,
+}: {
+  title: string;
+  owned: number;
+  onBack: () => void;
+  alertCount: number;
+  onOpenAlert: () => void;
+}) {
   return (
     <View style={styles.header}>
       <TouchableOpacity style={styles.headerBtn} onPress={onBack} hitSlop={8}>
@@ -715,7 +751,25 @@ function Header({ title, owned, onBack }: { title: string; owned: number; onBack
           <Text style={styles.headerSubtitle}>{owned} owned</Text>
         )}
       </View>
-      <View style={styles.headerBtn} />
+      <TouchableOpacity
+        style={styles.headerBtn}
+        onPress={onOpenAlert}
+        hitSlop={8}
+        accessibilityLabel={
+          alertCount > 0 ? `${alertCount} active price alert${alertCount === 1 ? '' : 's'}` : 'Create price alert'
+        }
+      >
+        <Ionicons
+          name={alertCount > 0 ? 'notifications' : 'notifications-outline'}
+          size={22}
+          color={alertCount > 0 ? colors.primary : colors.text}
+        />
+        {alertCount > 0 && (
+          <View style={styles.headerBtnBadge}>
+            <Text style={styles.headerBtnBadgeText}>{alertCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1340,6 +1394,26 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerBtnBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.background,
+  },
+  headerBtnBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
   headerTitleWrap: {
     flex: 1,

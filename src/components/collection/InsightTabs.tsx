@@ -12,14 +12,15 @@ type InsightTab = {
   key: string;
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
+  color: string;
 };
 
 const TABS: InsightTab[] = [
-  { key: 'top-movers', label: 'Top Movers', icon: 'trending-up' },
-  { key: 'price-alerts', label: 'Price Alerts', icon: 'notifications-outline' },
-  { key: 'recently-added', label: 'Recently Added', icon: 'time-outline' },
-  { key: 'watchlist', label: 'Watchlist', icon: 'eye-outline' },
-  { key: 'market-trends', label: 'Market Trends', icon: 'bar-chart-outline' },
+  { key: 'top-movers', label: 'Top Movers', icon: 'trending-up', color: '#1D9E58' },
+  { key: 'price-alerts', label: 'Price Alerts', icon: 'notifications-outline', color: '#E0A52B' },
+  { key: 'recently-added', label: 'Recently Added', icon: 'time-outline', color: '#6B8AFF' },
+  { key: 'watchlist', label: 'Watchlist', icon: 'eye-outline', color: '#A371D6' },
+  { key: 'market-trends', label: 'Market Trends', icon: 'bar-chart-outline', color: '#D2682B' },
 ];
 
 type Props = {
@@ -41,7 +42,9 @@ export function InsightTabs({ onTabPress }: Props) {
             onPress={() => onTabPress(tab.key)}
             activeOpacity={0.5}
           >
-            <Ionicons name={tab.icon} size={14} color={colors.textSecondary} />
+            <View style={[styles.iconBubble, { backgroundColor: tab.color + '1A' }]}>
+              <Ionicons name={tab.icon} size={14} color={tab.color} />
+            </View>
             <Text style={styles.tabText}>{tab.label}</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
           </TouchableOpacity>
@@ -62,12 +65,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingLeft: spacing.xs + 2,
+    paddingRight: spacing.md,
+    paddingVertical: spacing.xs + 2,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  iconBubble: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabText: {
     color: colors.textSecondary,

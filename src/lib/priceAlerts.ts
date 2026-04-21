@@ -1,0 +1,184 @@
+import { db } from './powersync/system';
+import { supabase } from './supabase';
+import type { Finish } from './collection';
+import type { ScryfallCard } from './scryfall';
+import { getCardImageUri } from './scryfall';
+
+export type PriceAlertDirection = 'below' | 'above';
+export type PriceAlertMode = 'price' | 'percent';
+export type PriceAlertStatus = 'active' | 'triggered' | 'paused';
+
+export interface PriceAlert {
+  id: string;
+  user_id: string;
+  card_id: string;
+  card_name: string;
+  card_set: string;
+  card_collector_number: string;
+  card_image_uri: string | null;
+  finish: Finish;
+  direction: PriceAlertDirection;
+  mode: PriceAlertMode;
+  target_value: number;
+  snapshot_price: number;
+  status: PriceAlertStatus;
+  created_at: string;
+  triggered_at: string | null;
+  updated_at: string;
+}
+
+async function getUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  return session.user.id;
+}
+
+// Same v4 UUID generator used across the local-first mutations.
+function newId(): string {
+  const hex: string[] = [];
+  for (let i = 0; i < 256; i++) hex[i] = (i < 16 ? '0' : '') + i.toString(16);
+  const r0 = (Math.random() * 0x100000000) >>> 0;
+  const r1 = (Math.random() * 0x100000000) >>> 0;
+  const r2 = (Math.random() * 0x100000000) >>> 0;
+  const r3 = (Math.random() * 0x100000000) >>> 0;
+  return (
+    hex[r0 & 0xff] + hex[(r0 >>> 8) & 0xff] + hex[(r0 >>> 16) & 0xff] + hex[(r0 >>> 24) & 0xff] + '-' +
+    hex[r1 & 0xff] + hex[(r1 >>> 8) & 0xff] + '-' +
+    hex[((r1 >>> 16) & 0x0f) | 0x40] + hex[(r1 >>> 24) & 0xff] + '-' +
+    hex[(r2 & 0x3f) | 0x80] + hex[(r2 >>> 8) & 0xff] + '-' +
+    hex[(r2 >>> 16) & 0xff] + hex[(r2 >>> 24) & 0xff] +
+    hex[r3 & 0xff] + hex[(r3 >>> 8) & 0xff] + hex[(r3 >>> 16) & 0xff] + hex[(r3 >>> 24) & 0xff]
+  );
+}
+
+/** Resolve target absolute USD from the alert spec. */
+export function computeTargetUsd(
+  snapshotPrice: number,
+  mode: PriceAlertMode,
+  direction: PriceAlertDirection,
+  value: number
+): number {
+  if (mode === 'price') return value;
+  // percent: value is an unsigned magnitude (e.g. 15 for "15%"); direction
+  // decides which side of the snapshot we land on.
+  const signed = direction === 'below' ? -Math.abs(value) : Math.abs(value);
+  return snapshotPrice * (1 + signed / 100);
+}
+
+export function priceFromCard(card: ScryfallCard, finish: Finish): number | null {
+  const key = finish === 'normal' ? 'usd' : finish === 'foil' ? 'usd_foil' : 'usd_etched';
+  const raw = card.prices?.[key];
+  const parsed = raw ? parseFloat(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export const MAX_ALERTS_PER_CARD = 10;
+
+export async function countAlertsForCard(cardId: string): Promise<number> {
+  const res: any = await db.execute(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ?`,
+    [cardId]
+  );
+  const rows: any[] = Array.isArray(res?.rows?._array)
+    ? res.rows._array
+    : Array.isArray(res?.rows)
+      ? res.rows
+      : [];
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+export async function createAlertFromCard(params: {
+  card: ScryfallCard;
+  finish: Finish;
+  direction: PriceAlertDirection;
+  mode: PriceAlertMode;
+  targetValue: number;
+  snapshotPrice: number;
+}): Promise<string> {
+  const existing = await countAlertsForCard(params.card.id);
+  if (existing >= MAX_ALERTS_PER_CARD) {
+    throw new Error(
+      `You can have at most ${MAX_ALERTS_PER_CARD} alerts per card. Delete one first.`
+    );
+  }
+  const userId = await getUserId();
+  const id = newId();
+  const now = new Date().toISOString();
+  const imageUri = getCardImageUri(params.card, 'small') ?? null;
+  await db.execute(
+    `INSERT INTO price_alerts
+       (id, user_id, card_id, card_name, card_set, card_collector_number,
+        card_image_uri, finish, direction, mode, target_value, snapshot_price,
+        status, created_at, triggered_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      userId,
+      params.card.id,
+      params.card.name,
+      params.card.set,
+      params.card.collector_number,
+      imageUri,
+      params.finish,
+      params.direction,
+      params.mode,
+      params.targetValue,
+      params.snapshotPrice,
+      'active',
+      now,
+      null,
+      now,
+    ]
+  );
+  return id;
+}
+
+export async function updateAlertLocal(
+  id: string,
+  patch: {
+    direction?: PriceAlertDirection;
+    mode?: PriceAlertMode;
+    targetValue?: number;
+    finish?: Finish;
+    status?: PriceAlertStatus;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const sets: string[] = ['updated_at = ?'];
+  const vals: any[] = [now];
+  if (patch.direction !== undefined) { sets.push('direction = ?'); vals.push(patch.direction); }
+  if (patch.mode !== undefined) { sets.push('mode = ?'); vals.push(patch.mode); }
+  if (patch.targetValue !== undefined) { sets.push('target_value = ?'); vals.push(patch.targetValue); }
+  if (patch.finish !== undefined) { sets.push('finish = ?'); vals.push(patch.finish); }
+  if (patch.status !== undefined) { sets.push('status = ?'); vals.push(patch.status); }
+  vals.push(id);
+  await db.execute(
+    `UPDATE price_alerts SET ${sets.join(', ')} WHERE id = ?`,
+    vals
+  );
+}
+
+export async function deleteAlertLocal(id: string): Promise<void> {
+  await db.execute(`DELETE FROM price_alerts WHERE id = ?`, [id]);
+}
+
+/**
+ * Stand-in for the eventual live-price feed. Returns a deterministic but
+ * varied price per alert id, within ±20% of the snapshot, so the UI can
+ * render current + delta meaningfully. Replace with a real lookup once the
+ * price pipeline lands.
+ */
+export function simulateCurrentPrice(
+  alertId: string,
+  snapshotPrice: number
+): number {
+  let seed = 0;
+  for (let i = 0; i < alertId.length; i++) {
+    seed = (seed * 31 + alertId.charCodeAt(i)) >>> 0;
+  }
+  // Map to a signed offset in [-0.2, 0.2]
+  const unit = (seed % 1000) / 1000; // 0..1
+  const offset = (unit - 0.5) * 0.4; // -0.2..0.2
+  const raw = snapshotPrice * (1 + offset);
+  return Math.max(0.01, Math.round(raw * 100) / 100);
+}

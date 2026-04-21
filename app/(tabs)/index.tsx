@@ -271,7 +271,15 @@ export default function CollectionHubScreen() {
       </View>
 
       <View style={styles.padL}>
-        <InsightTabs onTabPress={(key) => console.log('Insight:', key)} />
+        <InsightTabs
+          onTabPress={(key) => {
+            if (key === 'price-alerts') {
+              router.push('/alerts');
+              return;
+            }
+            console.log('Insight:', key);
+          }}
+        />
       </View>
 
       <View style={styles.segmentedWrapper}>
