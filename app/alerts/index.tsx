@@ -27,22 +27,22 @@ import {
   deleteAlertLocal,
   setAlertStatusLocal,
   snoozeAlertLocal,
+  updateAlertLocal,
   clearTriggeredAlertsLocal,
   simulateCurrentPrice,
   MAX_ACTIVE_ALERTS_PER_USER,
   type PriceAlert,
-  type PriceAlertStatus,
 } from '../../src/lib/priceAlerts';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
 import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
 import { useAlertsViewMode } from '../../src/lib/hooks/useAlertsViewMode';
 
-type TabKey = PriceAlertStatus | 'all';
+type TabKey = 'all' | 'paused' | 'triggered';
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'active', label: 'Active' },
-  { key: 'triggered', label: 'Triggered' },
   { key: 'all', label: 'All' },
+  { key: 'paused', label: 'Paused' },
+  { key: 'triggered', label: 'Triggered' },
 ];
 
 const DIR_UP = '#1D9E58';
@@ -59,7 +59,7 @@ export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { focusId } = useLocalSearchParams<{ focusId?: string }>();
-  const [tab, setTab] = useState<TabKey>('active');
+  const [tab, setTab] = useState<TabKey>('all');
   const [search, setSearch] = useState('');
   const { viewMode, setViewMode } = useAlertsViewMode();
   const [editing, setEditing] = useState<{ alert: PriceAlert; card: ScryfallCard | null } | null>(null);
@@ -98,13 +98,14 @@ export default function AlertsScreen() {
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
-    // "Active" tab now means "anything still watching" — includes paused
-    // and snoozed so those don't disappear after the user flips them.
+    // "All" = everything the user is still watching (excludes triggered).
+    // "Paused" = only paused alerts.
+    // "Triggered" = only triggered alerts.
     const byTab =
       tab === 'all'
-        ? all
-        : tab === 'active'
-          ? all.filter((a) => a.status !== 'triggered')
+        ? all.filter((a) => a.status !== 'triggered')
+        : tab === 'paused'
+          ? all.filter((a) => a.status === 'paused')
           : all.filter((a) => a.status === 'triggered');
     const q = search.trim().toLowerCase();
     if (!q) return byTab;
@@ -119,11 +120,11 @@ export default function AlertsScreen() {
   // Kicker next to tabs: count of the currently visible tab.
   const tabCount = alerts.length;
   const tabCountLabel =
-    tab === 'active'
-      ? `${tabCount} active`
-      : tab === 'triggered'
-        ? `${tabCount} triggered`
-        : `${tabCount} total`;
+    tab === 'all'
+      ? `${tabCount} total`
+      : tab === 'paused'
+        ? `${tabCount} paused`
+        : `${tabCount} triggered`;
 
   // Grouped-by-card: one entry per card_id, with all its alerts under it.
   const grouped = useMemo(() => {
@@ -170,8 +171,14 @@ export default function AlertsScreen() {
   }
 
   function togglePause(alert: PriceAlert) {
-    const next: PriceAlertStatus = alert.status === 'paused' ? 'active' : 'paused';
+    const next = alert.status === 'paused' ? 'active' : 'paused';
     setAlertStatusLocal(alert.id, next).catch((err: any) =>
+      RNAlert.alert('Error', err?.message ?? 'Could not update alert')
+    );
+  }
+
+  function toggleAutoRearm(alert: PriceAlert) {
+    updateAlertLocal(alert.id, { autoRearm: !alert.auto_rearm }).catch((err: any) =>
       RNAlert.alert('Error', err?.message ?? 'Could not update alert')
     );
   }
@@ -451,6 +458,7 @@ export default function AlertsScreen() {
         alert={actionsAlert}
         onPause={() => actionsAlert && togglePause(actionsAlert)}
         onSnooze={() => actionsAlert && showSnoozeMenu(actionsAlert)}
+        onToggleAutoRearm={() => actionsAlert && toggleAutoRearm(actionsAlert)}
         onDelete={() => actionsAlert && confirmDelete(actionsAlert)}
       />
     </View>
@@ -746,6 +754,12 @@ function GroupedAlertLine({
               </Text>
             </View>
           )}
+        {!!alert.auto_rearm && (
+          <View style={styles.rearmTagInline}>
+            <Ionicons name="refresh" size={10} color="#1D9E58" />
+            <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
+          </View>
+        )}
       </View>
 
       <TouchableOpacity
@@ -778,22 +792,22 @@ function EmptyState({
     );
   }
   const copy =
-    tab === 'active'
+    tab === 'all'
       ? {
-          title: 'No active alerts',
+          title: 'No alerts yet',
           body: 'Tap the bell on a card to catch targets as they move.',
           cta: 'Find a card' as string | null,
         }
-      : tab === 'triggered'
+      : tab === 'paused'
         ? {
-            title: 'Nothing triggered yet',
-            body: 'Alerts that cross their target will land here.',
+            title: 'Nothing paused',
+            body: 'Pause an alert from its ⋯ menu to stop it temporarily.',
             cta: null as string | null,
           }
         : {
-            title: 'No alerts yet',
-            body: 'Create your first alert from any card detail.',
-            cta: 'Find a card' as string | null,
+            title: 'Nothing triggered yet',
+            body: 'Alerts that cross their target will land here.',
+            cta: null as string | null,
           };
 
   return (
@@ -1126,6 +1140,21 @@ const styles = StyleSheet.create({
   },
   snoozeBadgeInlineText: {
     color: SNOOZE_COLOR,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  rearmTagInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#1D9E581A',
+    borderRadius: borderRadius.sm,
+  },
+  rearmTagInlineText: {
+    color: '#1D9E58',
     fontSize: 10,
     fontWeight: '700',
   },

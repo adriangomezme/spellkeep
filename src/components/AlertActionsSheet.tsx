@@ -11,6 +11,7 @@ import type { PriceAlert } from '../lib/priceAlerts';
 
 const PAUSE_COLOR = '#6B7280';
 const SNOOZE_COLOR = '#6B8AFF';
+const REARM_COLOR = '#1D9E58';
 
 type Props = {
   visible: boolean;
@@ -18,6 +19,7 @@ type Props = {
   alert: PriceAlert | null;
   onPause: () => void;
   onSnooze: () => void;
+  onToggleAutoRearm: () => void;
   onDelete: () => void;
 };
 
@@ -27,12 +29,14 @@ export function AlertActionsSheet({
   alert,
   onPause,
   onSnooze,
+  onToggleAutoRearm,
   onDelete,
 }: Props) {
   if (!alert) return null;
   const isPaused = alert.status === 'paused';
   const snoozed =
     !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
+  const rearmOn = !!alert.auto_rearm;
 
   function trigger(action: () => void) {
     action();
@@ -68,6 +72,17 @@ export function AlertActionsSheet({
               : 'Pause for a fixed window (1h to 30d) and re-activate automatically when it elapses.'
           }
           onPress={() => trigger(onSnooze)}
+        />
+        <Option
+          color={REARM_COLOR}
+          icon="refresh"
+          title={rearmOn ? 'Turn off auto re-arm' : 'Turn on auto re-arm'}
+          description={
+            rearmOn
+              ? 'The alert keeps watching after each trigger. Disable to revert to one-shot.'
+              : 'Keep watching after each trigger — re-anchors the price and fires again on the next crossing.'
+          }
+          onPress={() => trigger(onToggleAutoRearm)}
         />
         <Option
           color={colors.error}
