@@ -104,7 +104,8 @@
       "Bash(npm run *)",
       "Bash(npm --prefix workers/catalog-sync run typecheck)",
       "Bash(gh workflow *)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
     ]
   },
   "enableAllProjectMcpServers": true,

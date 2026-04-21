@@ -29,13 +29,13 @@ import {
   snoozeAlertLocal,
   updateAlertLocal,
   clearTriggeredAlertsLocal,
-  simulateCurrentPrice,
   MAX_ACTIVE_ALERTS_PER_USER,
   type PriceAlert,
 } from '../../src/lib/priceAlerts';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
 import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
 import { useAlertsViewMode } from '../../src/lib/hooks/useAlertsViewMode';
+import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
 
 type TabKey = 'all' | 'paused' | 'triggered';
 
@@ -72,9 +72,17 @@ export default function AlertsScreen() {
             card_image_uri, finish, direction, mode, target_value, snapshot_price,
             status, snoozed_until, auto_rearm, created_at, triggered_at, updated_at
        FROM price_alerts
-      ORDER BY CASE status WHEN 'triggered' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
-               created_at DESC`
+      ORDER BY created_at DESC`
   );
+
+  // Live prices from catalog.db for every alert currently in memory.
+  // Includes alerts across all tabs so the data is warm when the user
+  // flips between them.
+  const priceItems = useMemo(
+    () => (rows ?? []).map((r) => ({ card_id: r.card_id, finish: r.finish })),
+    [rows]
+  );
+  const priceMap = useAlertPrices(priceItems);
 
   const activeUsageCount = useMemo(
     () => (rows ?? []).filter((a) => a.status === 'active').length,
@@ -184,6 +192,14 @@ export default function AlertsScreen() {
   }
 
   function showSnoozeMenu(alert: PriceAlert) {
+    if (alert.status === 'paused') {
+      RNAlert.alert(
+        'Alert is paused',
+        'Resume the alert before snoozing. Snooze is a temporary pause; it only makes sense while the alert is watching.',
+        [{ text: 'OK', style: 'cancel' }]
+      );
+      return;
+    }
     const snoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
     if (snoozed) {
       RNAlert.alert('Snoozed alert', `Active again at ${formatSnoozeUntil(alert.snoozed_until!)}.`, [
@@ -406,6 +422,7 @@ export default function AlertsScreen() {
               <AlertRow
                 key={a.id}
                 alert={a}
+                currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
                 highlighted={a.id === highlightedId}
                 onPress={() => openEdit(a)}
                 onDelete={() => confirmDelete(a)}
@@ -431,6 +448,7 @@ export default function AlertsScreen() {
                 key={g.card.card_id}
                 card={g.card}
                 alerts={g.alerts}
+                priceMap={priceMap}
                 onOpen={() =>
                   router.push({
                     pathname: '/card/[id]',
@@ -471,6 +489,7 @@ export default function AlertsScreen() {
 
 function AlertRow({
   alert,
+  currentPrice,
   highlighted,
   onPress,
   onDelete,
@@ -478,6 +497,7 @@ function AlertRow({
   onSnooze,
 }: {
   alert: PriceAlert;
+  currentPrice: number | null;
   highlighted?: boolean;
   onPress: () => void;
   onDelete: () => void;
@@ -490,10 +510,12 @@ function AlertRow({
     alert.direction,
     alert.target_value
   );
-  const current = simulateCurrentPrice(alert.id, alert.snapshot_price);
-  const deltaAbs = current - alert.snapshot_price;
+  const hasCurrent = currentPrice != null;
+  const deltaAbs = hasCurrent ? currentPrice! - alert.snapshot_price : 0;
   const deltaPct =
-    alert.snapshot_price > 0 ? (deltaAbs / alert.snapshot_price) * 100 : 0;
+    hasCurrent && alert.snapshot_price > 0
+      ? (deltaAbs / alert.snapshot_price) * 100
+      : 0;
   const deltaUp = deltaAbs >= 0;
 
   const dirColor = alert.direction === 'above' ? DIR_UP : DIR_DOWN;
@@ -537,17 +559,23 @@ function AlertRow({
         </View>
       </View>
       <View style={styles.rowRight}>
-        <Text style={styles.currentValue}>{formatUSD(current)}</Text>
-        <View style={styles.deltaRow}>
-          <Ionicons
-            name={deltaUp ? 'caret-up' : 'caret-down'}
-            size={10}
-            color={deltaUp ? DIR_UP : DIR_DOWN}
-          />
-          <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-            {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
-          </Text>
-        </View>
+        <Text style={styles.currentValue}>
+          {hasCurrent ? formatUSD(currentPrice!) : '—'}
+        </Text>
+        {hasCurrent ? (
+          <View style={styles.deltaRow}>
+            <Ionicons
+              name={deltaUp ? 'caret-up' : 'caret-down'}
+              size={10}
+              color={deltaUp ? DIR_UP : DIR_DOWN}
+            />
+            <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
+              {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.snapshotLabel}>no market data</Text>
+        )}
         <Text style={styles.snapshotLabel}>from {formatUSD(alert.snapshot_price)}</Text>
         {alert.status === 'triggered' && (
           <View style={styles.triggeredBadge}>
@@ -626,6 +654,7 @@ function AlertRow({
 function GroupedCard({
   card,
   alerts,
+  priceMap,
   onOpen,
   onEditAlert,
   onShowActionsAlert,
@@ -639,6 +668,7 @@ function GroupedCard({
     finish: PriceAlert['finish'];
   };
   alerts: PriceAlert[];
+  priceMap: Map<string, number | null>;
   onOpen: () => void;
   onEditAlert: (a: PriceAlert) => void;
   onShowActionsAlert: (a: PriceAlert) => void;
@@ -677,6 +707,7 @@ function GroupedCard({
           <GroupedAlertLine
             key={a.id}
             alert={a}
+            currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
             onEdit={() => onEditAlert(a)}
             onShowActions={() => onShowActionsAlert(a)}
           />
@@ -688,10 +719,12 @@ function GroupedCard({
 
 function GroupedAlertLine({
   alert,
+  currentPrice,
   onEdit,
   onShowActions,
 }: {
   alert: PriceAlert;
+  currentPrice: number | null;
   onEdit: () => void;
   onShowActions: () => void;
 }) {
@@ -701,10 +734,10 @@ function GroupedAlertLine({
     alert.direction,
     alert.target_value
   );
-  const current = simulateCurrentPrice(alert.id, alert.snapshot_price);
+  const hasCurrent = currentPrice != null;
   const deltaPct =
-    alert.snapshot_price > 0
-      ? ((current - alert.snapshot_price) / alert.snapshot_price) * 100
+    hasCurrent && alert.snapshot_price > 0
+      ? ((currentPrice! - alert.snapshot_price) / alert.snapshot_price) * 100
       : 0;
   const deltaUp = deltaPct >= 0;
   const dirColor = alert.direction === 'above' ? DIR_UP : DIR_DOWN;
@@ -736,10 +769,16 @@ function GroupedAlertLine({
       </View>
 
       <View style={styles.groupLineRight}>
-        <Text style={styles.groupLineCurrent}>{formatUSD(current)}</Text>
-        <Text style={[styles.groupLineDelta, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-          {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+        <Text style={styles.groupLineCurrent}>
+          {hasCurrent ? formatUSD(currentPrice!) : '—'}
         </Text>
+        {hasCurrent ? (
+          <Text style={[styles.groupLineDelta, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
+            {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+          </Text>
+        ) : (
+          <Text style={styles.groupLineDelta}>no data</Text>
+        )}
         {alert.status === 'paused' && (
           <View style={styles.pausedBadgeInline}>
             <Text style={styles.pausedBadgeInlineText}>Paused</Text>

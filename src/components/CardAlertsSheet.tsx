@@ -22,10 +22,10 @@ import {
   deleteAlertLocal,
   setAlertStatusLocal,
   snoozeAlertLocal,
-  simulateCurrentPrice,
   MAX_ALERTS_PER_CARD,
   type PriceAlert,
 } from '../lib/priceAlerts';
+import { useAlertPrices, priceKey } from '../lib/hooks/useAlertPrices';
 
 const DIR_UP = '#1D9E58';
 const DIR_DOWN = '#C24848';
@@ -51,6 +51,8 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
   );
 
   const alerts = rows ?? [];
+  const priceItems = alerts.map((a) => ({ card_id: a.card_id, finish: a.finish }));
+  const priceMap = useAlertPrices(priceItems);
 
   function confirmDelete(alert: PriceAlert) {
     RNAlert.alert(
@@ -116,6 +118,7 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
                 <AlertRow
                   key={a.id}
                   alert={a}
+                  currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
                   onEdit={() => setEditing(a)}
                   onDelete={() => confirmDelete(a)}
                   onTogglePause={() =>
@@ -170,12 +173,14 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
 
 function AlertRow({
   alert,
+  currentPrice,
   onEdit,
   onDelete,
   onTogglePause,
   onSnooze,
 }: {
   alert: PriceAlert;
+  currentPrice: number | null;
   onEdit: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
@@ -187,10 +192,10 @@ function AlertRow({
     alert.direction,
     alert.target_value
   );
-  const current = simulateCurrentPrice(alert.id, alert.snapshot_price);
+  const hasCurrent = currentPrice != null;
   const deltaPct =
-    alert.snapshot_price > 0
-      ? ((current - alert.snapshot_price) / alert.snapshot_price) * 100
+    hasCurrent && alert.snapshot_price > 0
+      ? ((currentPrice! - alert.snapshot_price) / alert.snapshot_price) * 100
       : 0;
   const deltaUp = deltaPct >= 0;
   const dColor = alert.direction === 'above' ? DIR_UP : DIR_DOWN;
@@ -218,10 +223,18 @@ function AlertRow({
         </Text>
       </View>
       <View style={styles.rowRight}>
-        <Text style={styles.currentValue}>{formatUSD(current)}</Text>
-        <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-          {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+        <Text style={styles.currentValue}>
+          {hasCurrent ? formatUSD(currentPrice!) : '—'}
         </Text>
+        {hasCurrent ? (
+          <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
+            {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+          </Text>
+        ) : (
+          <Text style={[styles.deltaText, { color: colors.textMuted }]}>
+            no data
+          </Text>
+        )}
       </View>
       <View style={styles.actionGroup}>
         <TouchableOpacity onPress={onTogglePause} hitSlop={6} style={styles.actionBtn}>

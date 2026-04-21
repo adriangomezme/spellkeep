@@ -202,13 +202,19 @@ export async function setAlertStatusLocal(
   status: PriceAlertStatus
 ): Promise<void> {
   const now = new Date().toISOString();
+  // Pause overrides any pending snooze — the user is stopping the alert
+  // manually and expects it to stay off until they resume, not until the
+  // old snooze timer elapses. Likewise resuming clears snooze because the
+  // user explicitly flipped it back on.
+  const clearsSnooze = status === 'paused' || status === 'active';
   await db.execute(
     `UPDATE price_alerts
         SET status = ?,
             triggered_at = CASE WHEN ? = 'active' THEN NULL ELSE triggered_at END,
+            snoozed_until = CASE WHEN ? THEN NULL ELSE snoozed_until END,
             updated_at = ?
       WHERE id = ?`,
-    [status, status, now, id]
+    [status, status, clearsSnooze ? 1 : 0, now, id]
   );
 }
 

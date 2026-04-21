@@ -67,11 +67,14 @@ export function AlertActionsSheet({
           icon="moon-outline"
           title={snoozed ? 'Manage snooze' : 'Snooze'}
           description={
-            snoozed
-              ? 'Already snoozed. Tap to see the resume time or cancel it early.'
-              : 'Pause for a fixed window (1h to 30d) and re-activate automatically when it elapses.'
+            isPaused
+              ? "Not available while the alert is paused. Resume it first."
+              : snoozed
+                ? 'Already snoozed. Tap to see the resume time or cancel it early.'
+                : 'Pause for a fixed window (1h to 30d) and re-activate automatically when it elapses.'
           }
           onPress={() => trigger(onSnooze)}
+          disabled={isPaused}
         />
         <Option
           color={REARM_COLOR}
@@ -104,6 +107,7 @@ function Option({
   description,
   onPress,
   destructive,
+  disabled,
 }: {
   color: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -111,18 +115,35 @@ function Option({
   description: string;
   onPress: () => void;
   destructive?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={styles.option}
+      style={[styles.option, disabled && styles.optionDisabled]}
       onPress={onPress}
+      disabled={disabled}
       activeOpacity={0.7}
     >
-      <View style={[styles.optionIcon, { backgroundColor: color + '15' }]}>
-        <Ionicons name={icon} size={20} color={color} />
+      <View
+        style={[
+          styles.optionIcon,
+          { backgroundColor: (disabled ? colors.textMuted : color) + '15' },
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={20}
+          color={disabled ? colors.textMuted : color}
+        />
       </View>
       <View style={styles.optionText}>
-        <Text style={[styles.optionTitle, destructive && { color }]}>
+        <Text
+          style={[
+            styles.optionTitle,
+            destructive && { color },
+            disabled && { color: colors.textMuted },
+          ]}
+        >
           {title}
         </Text>
         <Text style={styles.optionDesc}>{description}</Text>
@@ -148,6 +169,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  optionDisabled: {
+    opacity: 0.5,
   },
   optionIcon: {
     width: 40,
