@@ -26,6 +26,7 @@ import {
   computeTargetUsd,
   deleteAlertLocal,
   simulateCurrentPrice,
+  MAX_ACTIVE_ALERTS_PER_USER,
   type PriceAlert,
   type PriceAlertStatus,
 } from '../../src/lib/priceAlerts';
@@ -64,6 +65,13 @@ export default function AlertsScreen() {
       ORDER BY CASE status WHEN 'triggered' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
                created_at DESC`
   );
+
+  const activeUsageCount = useMemo(
+    () => (rows ?? []).filter((a) => a.status === 'active').length,
+    [rows]
+  );
+  const nearLimit =
+    activeUsageCount >= Math.floor(MAX_ACTIVE_ALERTS_PER_USER * 0.8);
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
@@ -232,6 +240,15 @@ export default function AlertsScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {nearLimit && (
+            <View style={styles.limitBanner}>
+              <Ionicons name="warning-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.limitBannerText}>
+                {activeUsageCount} / {MAX_ACTIVE_ALERTS_PER_USER} active — close to the limit.
+              </Text>
+            </View>
+          )}
         </Animated.View>
 
         {/* Sticky tabs + kicker */}
@@ -688,6 +705,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: fontSize.md,
     paddingVertical: 0,
+  },
+  limitBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  limitBannerText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    flex: 1,
   },
   // Sticky tabs row
   tabsWrap: {

@@ -192,10 +192,11 @@ const price_overrides = new Table({
   indexes: { scryfall_id: ['scryfall_id'] }
 });
 
-// Price alerts (local-only for now; UI-first iteration).
-// Each row = one alert for a specific print + finish. A card can have
-// multiple rows. When the backend trigger pipeline lands we will lift
-// `localOnly` and add a matching Supabase table + migration.
+// Price alerts — synced per-user via the `user_price_alerts` stream in
+// powersync/sync-streams.yaml. Mirrors the Supabase `price_alerts`
+// table created in migration 00037. Each row = one alert for a specific
+// print + finish. Server-side triggers enforce caps of 10 per card and
+// 250 active per user.
 const price_alerts = new Table({
   user_id: column.text,
   card_id: column.text,                 // scryfall_id of the specific print
@@ -213,7 +214,6 @@ const price_alerts = new Table({
   triggered_at: column.text,
   updated_at: column.text,
 }, {
-  localOnly: true,
   indexes: {
     user_id: ['user_id'],
     card_id: ['card_id'],

@@ -73,18 +73,31 @@ export function priceFromCard(card: ScryfallCard, finish: Finish): number | null
 }
 
 export const MAX_ALERTS_PER_CARD = 10;
+export const MAX_ACTIVE_ALERTS_PER_USER = 250;
 
-export async function countAlertsForCard(cardId: string): Promise<number> {
-  const res: any = await db.execute(
-    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ?`,
-    [cardId]
-  );
+function extractCount(res: any): number {
   const rows: any[] = Array.isArray(res?.rows?._array)
     ? res.rows._array
     : Array.isArray(res?.rows)
       ? res.rows
       : [];
   return Number(rows[0]?.cnt ?? 0);
+}
+
+export async function countAlertsForCard(cardId: string): Promise<number> {
+  const res: any = await db.execute(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ?`,
+    [cardId]
+  );
+  return extractCount(res);
+}
+
+export async function countActiveAlertsForUser(userId: string): Promise<number> {
+  const res: any = await db.execute(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE user_id = ? AND status = 'active'`,
+    [userId]
+  );
+  return extractCount(res);
 }
 
 export async function createAlertFromCard(params: {
@@ -95,13 +108,19 @@ export async function createAlertFromCard(params: {
   targetValue: number;
   snapshotPrice: number;
 }): Promise<string> {
-  const existing = await countAlertsForCard(params.card.id);
-  if (existing >= MAX_ALERTS_PER_CARD) {
+  const userId = await getUserId();
+  const existingForCard = await countAlertsForCard(params.card.id);
+  if (existingForCard >= MAX_ALERTS_PER_CARD) {
     throw new Error(
       `You can have at most ${MAX_ALERTS_PER_CARD} alerts per card. Delete one first.`
     );
   }
-  const userId = await getUserId();
+  const activeForUser = await countActiveAlertsForUser(userId);
+  if (activeForUser >= MAX_ACTIVE_ALERTS_PER_USER) {
+    throw new Error(
+      `You've reached the limit of ${MAX_ACTIVE_ALERTS_PER_USER} active alerts. Pause or delete one to add a new one.`
+    );
+  }
   const id = newId();
   const now = new Date().toISOString();
   const imageUri = getCardImageUri(params.card, 'small') ?? null;

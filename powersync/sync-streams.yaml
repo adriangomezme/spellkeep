@@ -26,6 +26,12 @@ streams:
     # Scan history.
     user_scans:
         query: "SELECT * FROM scan_history WHERE user_id = auth.user_id()"
+    # Price alerts. Each row is scoped by user_id, so this trivially fits
+    # within the 1000-row stream cap (hard-capped at 250 active per user
+    # by a server-side trigger; total with triggered+paused stays well
+    # below 1000 in practice).
+    user_price_alerts:
+        query: "SELECT * FROM price_alerts WHERE user_id = auth.user_id()"
 
 # NOTE: the previous user_collection_cards / user_deck_cards streams
 # synced rows from the `cards` table to the device based on what the user
