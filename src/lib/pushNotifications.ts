@@ -1,22 +1,45 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { supabase } from './supabase';
 
-// When the app is open we still show a banner so the user knows an alert
-// fired, but suppress the sound so it's not obnoxious.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
+// We lazy-require the native modules so a dev-client that hasn't been
+// rebuilt yet (or a simulator build without them) doesn't crash on
+// startup. When the modules aren't present, registerPushToken and
+// subscribeToPushTaps turn into no-ops and log a single info line.
+type NotificationsModule = typeof import('expo-notifications');
+type DeviceModule = typeof import('expo-device');
+
+let nativeModules: { Notifications: NotificationsModule; Device: DeviceModule } | null = null;
+let loggedMissing = false;
+
+function loadNativeModules(): { Notifications: NotificationsModule; Device: DeviceModule } | null {
+  if (nativeModules) return nativeModules;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications: NotificationsModule = require('expo-notifications');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Device: DeviceModule = require('expo-device');
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+      }),
+    });
+    nativeModules = { Notifications, Device };
+    return nativeModules;
+  } catch (err) {
+    if (!loggedMissing) {
+      loggedMissing = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[push] native push modules unavailable — rebuild the dev client to enable push (${msg})`);
+    }
+    return null;
+  }
+}
 
 function resolveExpoProjectId(): string | null {
-  // Populated by `eas init` / the EAS build.
   const easId = (Constants.expoConfig as any)?.extra?.eas?.projectId;
   if (typeof easId === 'string' && easId.length > 0) return easId;
   if (process.env.EXPO_PUBLIC_EAS_PROJECT_ID) {
@@ -28,14 +51,12 @@ function resolveExpoProjectId(): string | null {
 /**
  * Ensure a push token exists for the current device + user and is upserted
  * into Supabase. Safe to call repeatedly — idempotent on `(token)`.
- *
- * No-ops (with a single info log) when:
- *   - running on a simulator (expo-notifications can't mint real tokens)
- *   - the EAS project id isn't configured
- *   - the user hasn't authenticated yet
- *   - the user denies permission
  */
 export async function registerPushToken(userId: string): Promise<void> {
+  const mods = loadNativeModules();
+  if (!mods) return;
+  const { Notifications, Device } = mods;
+
   if (!Device.isDevice) {
     console.log('[push] skipping token registration on simulator');
     return;
@@ -48,8 +69,6 @@ export async function registerPushToken(userId: string): Promise<void> {
     return;
   }
 
-  // Android requires an explicit channel so the notification has a sound,
-  // a priority, and a system-settings row the user can toggle.
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('price-alerts', {
       name: 'Price alerts',
@@ -103,6 +122,9 @@ export async function registerPushToken(userId: string): Promise<void> {
 export function subscribeToPushTaps(
   onTap: (alertId: string | null, cardId: string | null) => void
 ): () => void {
+  const mods = loadNativeModules();
+  if (!mods) return () => {};
+  const { Notifications } = mods;
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
     const data = response.notification.request.content.data as
       | { alertId?: string; cardId?: string }

@@ -22,6 +22,7 @@ const DEFAULT_STREAMS: string[] = [
   'user_collections',
   'user_decks',
   'user_scans',
+  'user_price_alerts',
 ];
 
 const STREAM_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days

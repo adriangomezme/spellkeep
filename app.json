@@ -26,7 +26,10 @@
         "backgroundColor": "#F5F5F7"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.spellkeep.app"
+      "package": "com.spellkeep.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -43,6 +46,13 @@
           "color": "#023BFD"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "04db0fe5-3237-4b76-a876-557989db7070"
+      }
+    },
+    "owner": "spellkeep"
   }
 }
