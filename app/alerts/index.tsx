@@ -37,6 +37,7 @@ import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
 import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
 import { useAlertsViewMode } from '../../src/lib/hooks/useAlertsViewMode';
 import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
+import { markTriggeredRead } from '../../src/lib/triggeredReadState';
 
 type TabKey = 'all' | 'paused' | 'triggered';
 
@@ -149,6 +150,11 @@ export default function AlertsScreen() {
       setTab(tabParam);
     }
   }, [tabParam]);
+
+  // Clear the unread-events badge every time the user lands on Triggered.
+  useEffect(() => {
+    if (tab === 'triggered') markTriggeredRead();
+  }, [tab]);
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
@@ -759,12 +765,6 @@ function EventRow({
             </View>
           )}
           <Text style={styles.eventAge}>{formatEventAge(event.at)}</Text>
-          {!!event.auto_rearm && (
-            <View style={styles.rearmTagInline}>
-              <Ionicons name="refresh" size={10} color="#1D9E58" />
-              <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
-            </View>
-          )}
         </View>
       </TouchableOpacity>
     </View>

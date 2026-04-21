@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@powersync/react';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
+import { useTriggeredReadAt } from '../../lib/triggeredReadState';
 
 type InsightTab = {
   key: string;
@@ -29,10 +30,15 @@ type Props = {
 };
 
 export function InsightTabs({ onTabPress }: Props) {
-  const { data: triggeredRows } = useQuery<{ cnt: number }>(
-    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE status = 'triggered'`
+  // Badge counts trigger events the user hasn't seen yet. Zero-out by
+  // opening the Triggered tab, which advances the read cursor. See
+  // src/lib/triggeredReadState.ts.
+  const readAt = useTriggeredReadAt();
+  const { data: unreadRows } = useQuery<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM price_alert_events WHERE at > ?`,
+    [readAt ?? '1970-01-01T00:00:00.000Z']
   );
-  const triggeredCount = Number(triggeredRows?.[0]?.cnt ?? 0);
+  const triggeredCount = Number(unreadRows?.[0]?.cnt ?? 0);
 
   return (
     <View style={styles.container}>
