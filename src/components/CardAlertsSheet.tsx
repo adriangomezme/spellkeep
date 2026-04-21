@@ -20,8 +20,6 @@ import { formatUSD, type ScryfallCard } from '../lib/scryfall';
 import {
   computeTargetUsd,
   deleteAlertLocal,
-  setAlertStatusLocal,
-  snoozeAlertLocal,
   MAX_ALERTS_PER_CARD,
   type PriceAlert,
 } from '../lib/priceAlerts';
@@ -69,25 +67,6 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
     );
   }
 
-  function showSnoozeMenu(alert: PriceAlert) {
-    const snoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
-    if (snoozed) {
-      RNAlert.alert('Snoozed alert', 'Pick an option.', [
-        { text: 'Cancel snooze', onPress: () => snoozeAlertLocal(alert.id, 0) },
-        { text: 'Close', style: 'cancel' },
-      ]);
-      return;
-    }
-    RNAlert.alert('Snooze alert', 'Alert pauses and re-activates automatically.', [
-      { text: '1 hour', onPress: () => snoozeAlertLocal(alert.id, 1) },
-      { text: '24 hours', onPress: () => snoozeAlertLocal(alert.id, 24) },
-      { text: '7 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 7) },
-      { text: '15 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 15) },
-      { text: '30 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 30) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }
-
   if (!card) return null;
 
   return (
@@ -121,12 +100,6 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
                   currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
                   onEdit={() => setEditing(a)}
                   onDelete={() => confirmDelete(a)}
-                  onTogglePause={() =>
-                    setAlertStatusLocal(a.id, a.status === 'paused' ? 'active' : 'paused').catch(
-                      (err: any) => RNAlert.alert('Error', err?.message ?? 'Could not update')
-                    )
-                  }
-                  onSnooze={() => showSnoozeMenu(a)}
                 />
               ))}
             </View>
@@ -176,15 +149,11 @@ function AlertRow({
   currentPrice,
   onEdit,
   onDelete,
-  onTogglePause,
-  onSnooze,
 }: {
   alert: PriceAlert;
   currentPrice: number | null;
   onEdit: () => void;
   onDelete: () => void;
-  onTogglePause: () => void;
-  onSnooze: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -237,16 +206,6 @@ function AlertRow({
         )}
       </View>
       <View style={styles.actionGroup}>
-        <TouchableOpacity onPress={onTogglePause} hitSlop={6} style={styles.actionBtn}>
-          <Ionicons
-            name={alert.status === 'paused' ? 'play' : 'pause'}
-            size={14}
-            color="#6B7280"
-          />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onSnooze} hitSlop={6} style={styles.actionBtn}>
-          <Ionicons name="moon-outline" size={14} color="#6B8AFF" />
-        </TouchableOpacity>
         <TouchableOpacity onPress={onDelete} hitSlop={6} style={styles.actionBtn}>
           <Ionicons name="trash-outline" size={14} color={colors.error} />
         </TouchableOpacity>
