@@ -644,12 +644,6 @@ function AlertRow({
             </Text>
           </View>
         )}
-        {!!alert.auto_rearm && (
-          <View style={styles.rearmTagInline}>
-            <Ionicons name="refresh" size={10} color="#1D9E58" />
-            <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
-          </View>
-        )}
       </View>
     </TouchableOpacity>
   );
@@ -927,12 +921,6 @@ function GroupedAlertLine({
               </Text>
             </View>
           )}
-        {!!alert.auto_rearm && (
-          <View style={styles.rearmTagInline}>
-            <Ionicons name="refresh" size={10} color="#1D9E58" />
-            <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
-          </View>
-        )}
       </View>
 
       <TouchableOpacity
@@ -1345,21 +1333,6 @@ const styles = StyleSheet.create({
   },
   snoozeBadgeInlineText: {
     color: SNOOZE_COLOR,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  rearmTagInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: '#1D9E581A',
-    borderRadius: borderRadius.sm,
-  },
-  rearmTagInlineText: {
-    color: '#1D9E58',
     fontSize: 10,
     fontWeight: '700',
   },
