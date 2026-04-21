@@ -9,6 +9,10 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  FlatList,
+  Dimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -84,6 +88,34 @@ const LEGALITY_FORMATS: { key: string; label: string }[] = [
 function priceFromCard(card: ScryfallCard, key: 'usd' | 'usd_foil' | 'usd_etched'): number | null {
   const raw = card.prices?.[key];
   return raw ? parseFloat(raw) : null;
+}
+
+const MULTI_FACE_LAYOUTS = new Set([
+  'transform',
+  'modal_dfc',
+  'double_faced_token',
+  'reversible_card',
+  'art_series',
+]);
+
+const HERO_IMAGE_WIDTH = 312;
+const HERO_IMAGE_HEIGHT = 437;
+const HERO_FACE_GAP = 12;
+
+function isMultiFaceCard(card: ScryfallCard): boolean {
+  return MULTI_FACE_LAYOUTS.has(card.layout ?? '');
+}
+
+function getFaceImages(card: ScryfallCard): string[] {
+  const faces = card.card_faces ?? [];
+  const uris: string[] = [];
+  for (const f of faces) {
+    const src = f.image_uris;
+    if (!src) continue;
+    const uri = src.large ?? src.normal ?? src.small;
+    if (uri) uris.push(uri);
+  }
+  return uris;
 }
 
 function isFinishAvailable(card: ScryfallCard, finish: 'normal' | 'foil' | 'etched'): boolean {
@@ -313,6 +345,7 @@ export default function CardDetailScreen() {
     );
   }
 
+  const multiFace = isMultiFaceCard(card);
   const imageUri = getCardImageUri(card, 'large');
   const rarityColor = RARITY_COLORS[card.rarity] ?? colors.textSecondary;
   const ownedTotal = ownership?.total ?? 0;
@@ -330,17 +363,21 @@ export default function CardDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Hero image */}
-        <View style={styles.hero}>
-          <View style={styles.heroImageWrap}>
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.heroImage}
-              contentFit="contain"
-              transition={200}
-              cachePolicy="memory-disk"
-            />
+        {multiFace ? (
+          <HeroFaceCarousel card={card} fallbackUri={imageUri} />
+        ) : (
+          <View style={styles.hero}>
+            <View style={styles.heroImageWrap}>
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.heroImage}
+                contentFit="contain"
+                transition={200}
+                cachePolicy="memory-disk"
+              />
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Identity */}
         <Section>
@@ -602,6 +639,69 @@ export default function CardDetailScreen() {
 // ============================================================
 // Subcomponents
 // ============================================================
+
+function HeroFaceCarousel({
+  card,
+  fallbackUri,
+}: {
+  card: ScryfallCard;
+  fallbackUri: string | undefined;
+}) {
+  const [containerWidth, setContainerWidth] = useState(
+    Dimensions.get('window').width
+  );
+
+  const uris = useMemo(() => {
+    const found = getFaceImages(card);
+    // Always render at least two items so the carousel shape is stable
+    // from the first frame. If per-face URIs haven't arrived yet (heavy
+    // fields merge async), pad with fallback so the layout doesn't jump.
+    const faceCount = Math.max(2, card.card_faces?.length ?? 2);
+    const out: (string | undefined)[] = [];
+    for (let i = 0; i < faceCount; i++) {
+      out.push(found[i] ?? fallbackUri);
+    }
+    return out;
+  }, [card, fallbackUri]);
+
+  const sidePadding = Math.max(16, (containerWidth - HERO_IMAGE_WIDTH) / 2);
+
+  return (
+    <View
+      style={styles.hero}
+      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+    >
+      <FlatList
+        data={uris}
+        keyExtractor={(_, i) => `face-${i}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={HERO_IMAGE_WIDTH + HERO_FACE_GAP}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        contentContainerStyle={{ paddingHorizontal: sidePadding }}
+        ItemSeparatorComponent={() => <View style={{ width: HERO_FACE_GAP }} />}
+        renderItem={({ item }) => (
+          <View style={styles.heroFaceItem}>
+            <View style={styles.heroImageWrap}>
+              {item ? (
+                <Image
+                  source={{ uri: item }}
+                  style={styles.heroImage}
+                  contentFit="contain"
+                  transition={200}
+                  cachePolicy="memory-disk"
+                />
+              ) : (
+                <View style={[styles.heroImage, styles.heroImagePlaceholder]} />
+              )}
+            </View>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
 
 function Header({ title, owned, onBack }: { title: string; owned: number; onBack: () => void }) {
   return (
@@ -1268,9 +1368,17 @@ const styles = StyleSheet.create({
     ...shadows.lg,
   },
   heroImage: {
-    width: 312,
-    height: 437,
+    width: HERO_IMAGE_WIDTH,
+    height: HERO_IMAGE_HEIGHT,
     borderRadius: borderRadius.lg,
+  },
+  heroImagePlaceholder: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  heroFaceItem: {
+    width: HERO_IMAGE_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Section
