@@ -6,6 +6,7 @@ import { buildSnapshot } from './steps/snapshot.ts';
 import { refreshAlertedPrices } from './steps/refreshAlertedPrices.ts';
 import { evaluatePriceAlerts } from './steps/evaluateAlerts.ts';
 import { sendPushForTriggered } from './steps/sendPush.ts';
+import { runPriceAlertMaintenance } from './steps/maintenance.ts';
 import { config } from './config.ts';
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
     await refreshAlertedPrices();
     const triggered = await evaluatePriceAlerts();
     const push = await sendPushForTriggered(triggered);
+    await runPriceAlertMaintenance();
     console.log(
       `[catalog-sync] alerts-only done: triggered=${triggered.length} pushSent=${push.sent} pruned=${push.pruned}`
     );
@@ -39,6 +41,7 @@ async function main() {
     // no need to re-fetch via the individual endpoint here.
     const triggered = await evaluatePriceAlerts();
     const push = await sendPushForTriggered(triggered);
+    await runPriceAlertMaintenance();
     console.log(
       `[catalog-sync] alerts: triggered=${triggered.length} pushSent=${push.sent} pruned=${push.pruned}`
     );
