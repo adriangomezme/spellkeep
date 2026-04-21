@@ -34,6 +34,7 @@ import {
   type PriceAlertStatus,
 } from '../../src/lib/priceAlerts';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
+import { useAlertsViewMode } from '../../src/lib/hooks/useAlertsViewMode';
 
 type TabKey = PriceAlertStatus | 'all';
 
@@ -57,7 +58,7 @@ export default function AlertsScreen() {
   const { focusId } = useLocalSearchParams<{ focusId?: string }>();
   const [tab, setTab] = useState<TabKey>('active');
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('flat');
+  const { viewMode, setViewMode } = useAlertsViewMode();
   const [editing, setEditing] = useState<{ alert: PriceAlert; card: ScryfallCard | null } | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -93,7 +94,14 @@ export default function AlertsScreen() {
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
-    const byTab = tab === 'all' ? all : all.filter((a) => a.status === tab);
+    // "Active" tab now means "anything still watching" — includes paused
+    // and snoozed so those don't disappear after the user flips them.
+    const byTab =
+      tab === 'all'
+        ? all
+        : tab === 'active'
+          ? all.filter((a) => a.status !== 'triggered')
+          : all.filter((a) => a.status === 'triggered');
     const q = search.trim().toLowerCase();
     if (!q) return byTab;
     return byTab.filter(
@@ -164,23 +172,23 @@ export default function AlertsScreen() {
     );
   }
 
-  function showMoreActions(alert: PriceAlert) {
+  function showSnoozeMenu(alert: PriceAlert) {
     const snoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
-    RNAlert.alert(
-      alert.card_name,
-      snoozed ? 'This alert is snoozed.' : 'More actions',
-      [
-        snoozed
-          ? {
-              text: 'Cancel snooze',
-              onPress: () => snoozeAlertLocal(alert.id, 0),
-            }
-          : { text: 'Snooze 1 h', onPress: () => snoozeAlertLocal(alert.id, 1) },
-        { text: 'Snooze 24 h', onPress: () => snoozeAlertLocal(alert.id, 24) },
-        { text: 'Snooze 7 d', onPress: () => snoozeAlertLocal(alert.id, 24 * 7) },
+    if (snoozed) {
+      RNAlert.alert('Snoozed alert', `Active again at ${formatSnoozeUntil(alert.snoozed_until!)}.`, [
+        { text: 'Cancel snooze', onPress: () => snoozeAlertLocal(alert.id, 0) },
         { text: 'Close', style: 'cancel' },
-      ]
-    );
+      ]);
+      return;
+    }
+    RNAlert.alert('Snooze alert', 'Alert pauses and re-activates automatically.', [
+      { text: '1 hour', onPress: () => snoozeAlertLocal(alert.id, 1) },
+      { text: '24 hours', onPress: () => snoozeAlertLocal(alert.id, 24) },
+      { text: '7 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 7) },
+      { text: '15 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 15) },
+      { text: '30 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 30) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }
 
   function confirmClearTriggered() {
@@ -389,9 +397,9 @@ export default function AlertsScreen() {
                 alert={a}
                 highlighted={a.id === highlightedId}
                 onPress={() => openEdit(a)}
-                onLongPress={() => showMoreActions(a)}
                 onDelete={() => confirmDelete(a)}
                 onTogglePause={() => togglePause(a)}
+                onSnooze={() => showSnoozeMenu(a)}
               />
             ))}
           </View>
@@ -421,6 +429,7 @@ export default function AlertsScreen() {
                 onEditAlert={openEdit}
                 onDeleteAlert={confirmDelete}
                 onTogglePauseAlert={togglePause}
+                onSnoozeAlert={showSnoozeMenu}
               />
             ))}
           </View>
@@ -445,16 +454,16 @@ function AlertRow({
   alert,
   highlighted,
   onPress,
-  onLongPress,
   onDelete,
   onTogglePause,
+  onSnooze,
 }: {
   alert: PriceAlert;
   highlighted?: boolean;
   onPress: () => void;
-  onLongPress?: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
+  onSnooze: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -481,8 +490,6 @@ function AlertRow({
     <TouchableOpacity
       style={[styles.row, highlighted && styles.rowHighlighted]}
       onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={350}
       activeOpacity={0.7}
     >
       {alert.card_image_uri ? (
@@ -567,6 +574,15 @@ function AlertRow({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.swipeAction]}
+            onPress={onSnooze}
+          >
+            <Ionicons name="moon-outline" size={22} color="#6B8AFF" />
+            <Text style={[styles.swipeActionLabel, { color: '#6B8AFF' }]}>
+              {snoozed ? 'Snoozed' : 'Snooze'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.swipeAction, styles.swipeActionDelete]}
             onPress={onDelete}
           >
@@ -592,6 +608,7 @@ function GroupedCard({
   onEditAlert,
   onDeleteAlert,
   onTogglePauseAlert,
+  onSnoozeAlert,
 }: {
   card: {
     card_id: string;
@@ -606,6 +623,7 @@ function GroupedCard({
   onEditAlert: (a: PriceAlert) => void;
   onDeleteAlert: (a: PriceAlert) => void;
   onTogglePauseAlert: (a: PriceAlert) => void;
+  onSnoozeAlert: (a: PriceAlert) => void;
 }) {
   return (
     <View style={styles.groupCard}>
@@ -644,6 +662,7 @@ function GroupedCard({
             onEdit={() => onEditAlert(a)}
             onDelete={() => onDeleteAlert(a)}
             onTogglePause={() => onTogglePauseAlert(a)}
+            onSnooze={() => onSnoozeAlert(a)}
           />
         ))}
       </View>
@@ -656,11 +675,13 @@ function GroupedAlertLine({
   onEdit,
   onDelete,
   onTogglePause,
+  onSnooze,
 }: {
   alert: PriceAlert;
   onEdit: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
+  onSnooze: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -714,16 +735,33 @@ function GroupedAlertLine({
         )}
       </View>
 
-      <TouchableOpacity onPress={onTogglePause} hitSlop={10} style={styles.groupLineBtn}>
-        <Ionicons
-          name={alert.status === 'paused' ? 'play' : 'pause'}
-          size={16}
-          color={colors.textMuted}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onDelete} hitSlop={10} style={styles.groupLineBtn}>
-        <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-      </TouchableOpacity>
+      <View style={styles.groupLineBtnGroup}>
+        <TouchableOpacity
+          onPress={onTogglePause}
+          hitSlop={6}
+          style={styles.groupLineBtn}
+        >
+          <Ionicons
+            name={alert.status === 'paused' ? 'play' : 'pause'}
+            size={14}
+            color="#E0A52B"
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onSnooze}
+          hitSlop={6}
+          style={styles.groupLineBtn}
+        >
+          <Ionicons name="moon-outline" size={14} color="#6B8AFF" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onDelete}
+          hitSlop={6}
+          style={styles.groupLineBtn}
+        >
+          <Ionicons name="trash-outline" size={14} color={colors.error} />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -781,6 +819,17 @@ function EmptyState({
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function formatSnoozeUntil(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 const styles = StyleSheet.create({
@@ -1099,9 +1148,19 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '600',
   },
+  groupLineBtnGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
   groupLineBtn: {
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pausedBadgeInline: {
     marginTop: 4,

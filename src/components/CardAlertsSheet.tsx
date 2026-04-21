@@ -21,6 +21,7 @@ import {
   computeTargetUsd,
   deleteAlertLocal,
   setAlertStatusLocal,
+  snoozeAlertLocal,
   simulateCurrentPrice,
   MAX_ALERTS_PER_CARD,
   type PriceAlert,
@@ -67,6 +68,25 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
     );
   }
 
+  function showSnoozeMenu(alert: PriceAlert) {
+    const snoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
+    if (snoozed) {
+      RNAlert.alert('Snoozed alert', 'Pick an option.', [
+        { text: 'Cancel snooze', onPress: () => snoozeAlertLocal(alert.id, 0) },
+        { text: 'Close', style: 'cancel' },
+      ]);
+      return;
+    }
+    RNAlert.alert('Snooze alert', 'Alert pauses and re-activates automatically.', [
+      { text: '1 hour', onPress: () => snoozeAlertLocal(alert.id, 1) },
+      { text: '24 hours', onPress: () => snoozeAlertLocal(alert.id, 24) },
+      { text: '7 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 7) },
+      { text: '15 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 15) },
+      { text: '30 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 30) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   if (!card) return null;
 
   return (
@@ -104,6 +124,7 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
                       (err: any) => RNAlert.alert('Error', err?.message ?? 'Could not update')
                     )
                   }
+                  onSnooze={() => showSnoozeMenu(a)}
                 />
               ))}
             </View>
@@ -153,11 +174,13 @@ function AlertRow({
   onEdit,
   onDelete,
   onTogglePause,
+  onSnooze,
 }: {
   alert: PriceAlert;
   onEdit: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
+  onSnooze: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -201,24 +224,21 @@ function AlertRow({
           {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
         </Text>
       </View>
-      <TouchableOpacity
-        onPress={onTogglePause}
-        hitSlop={8}
-        style={styles.deleteBtn}
-      >
-        <Ionicons
-          name={alert.status === 'paused' ? 'play-outline' : 'pause-outline'}
-          size={18}
-          color={alert.status === 'paused' ? '#E0A52B' : colors.textMuted}
-        />
-      </TouchableOpacity>
-      <TouchableOpacity
-        onPress={onDelete}
-        hitSlop={8}
-        style={styles.deleteBtn}
-      >
-        <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
+      <View style={styles.actionGroup}>
+        <TouchableOpacity onPress={onTogglePause} hitSlop={6} style={styles.actionBtn}>
+          <Ionicons
+            name={alert.status === 'paused' ? 'play' : 'pause'}
+            size={14}
+            color="#E0A52B"
+          />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onSnooze} hitSlop={6} style={styles.actionBtn}>
+          <Ionicons name="moon-outline" size={14} color="#6B8AFF" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onDelete} hitSlop={6} style={styles.actionBtn}>
+          <Ionicons name="trash-outline" size={14} color={colors.error} />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -288,6 +308,20 @@ const styles = StyleSheet.create({
   deleteBtn: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
+  },
+  actionGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  actionBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cta: {
     flexDirection: 'row',
