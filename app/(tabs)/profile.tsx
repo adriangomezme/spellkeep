@@ -32,6 +32,8 @@ import {
   type ImportHistoryEntry,
 } from '../../src/lib/importHistory';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
+import { useAuthContext } from '../../src/components/AuthProvider';
+import { AuthSheet } from '../../src/components/AuthSheet';
 
 type StorageSnapshot = {
   catalogVersion?: string;
@@ -43,6 +45,8 @@ type StorageSnapshot = {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user, isAnonymous, signOut } = useAuthContext();
+  const [showAuth, setShowAuth] = useState(false);
   const [storage, setStorage] = useState<StorageSnapshot>({});
   const [catalogState, setCatalogState] = useState<CatalogSyncState>(() => getCatalogSyncState());
   const [refreshing, setRefreshing] = useState(false);
@@ -180,6 +184,61 @@ export default function ProfileScreen() {
           />
         }
       >
+        <Text style={styles.sectionLabel}>Account</Text>
+
+        {isAnonymous || !user?.email ? (
+          <TouchableOpacity
+            style={styles.row}
+            activeOpacity={0.6}
+            onPress={() => setShowAuth(true)}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="person-circle-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Log in / Sign up</Text>
+              <Text style={styles.rowSubtitle} numberOfLines={1}>
+                Save your collection to the cloud
+              </Text>
+            </View>
+            <View style={styles.rowTrailing}>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.row}
+            activeOpacity={0.6}
+            onPress={() => {
+              Alert.alert('Sign out?', 'You can log back in any time.', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign out',
+                  style: 'destructive',
+                  onPress: () => {
+                    signOut();
+                  },
+                },
+              ]);
+            }}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="person-circle" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle} numberOfLines={1}>
+                {user.email}
+              </Text>
+              <Text style={styles.rowSubtitle} numberOfLines={1}>
+                Tap to sign out
+              </Text>
+            </View>
+            <View style={styles.rowTrailing}>
+              <Ionicons name="log-out-outline" size={18} color={colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+        )}
+
         <Text style={styles.sectionLabel}>Storage</Text>
 
         {/* Card Database */}
@@ -296,6 +355,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>Activity</Text>
 
         {/* Import History */}
+
         <TouchableOpacity
           style={styles.row}
           activeOpacity={0.6}
@@ -315,6 +375,8 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
       </ScrollView>
+
+      <AuthSheet visible={showAuth} onClose={() => setShowAuth(false)} />
     </View>
   );
 }
