@@ -596,8 +596,9 @@ function AlertRow({
           </View>
         )}
         {!!alert.auto_rearm && (
-          <View style={styles.rearmBadge}>
+          <View style={styles.rearmTagInline}>
             <Ionicons name="refresh" size={10} color="#1D9E58" />
+            <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
           </View>
         )}
       </View>
@@ -1196,15 +1197,6 @@ const styles = StyleSheet.create({
     color: '#1D9E58',
     fontSize: 10,
     fontWeight: '700',
-  },
-  rearmBadge: {
-    marginTop: 6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#1D9E5820',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   deleteAction: {
     width: 72,
