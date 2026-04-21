@@ -295,7 +295,6 @@ export default function AlertDetailScreen() {
         )}
 
         {/* Price grid */}
-        <Text style={styles.sectionLabel}>Prices</Text>
         <View style={styles.priceCard}>
           <PriceCell
             label="Current"
@@ -308,11 +307,15 @@ export default function AlertDetailScreen() {
           <PriceCell
             label="Snapshot"
             value={formatUSD(alert.snapshot_price)}
+            subtitle="when alert was created"
           />
           <View style={styles.priceDivider} />
           <PriceCell
             label="Target"
             value={formatUSD(target)}
+            subtitle={
+              alert.direction === 'below' ? 'fires at or below' : 'fires at or above'
+            }
             subtitleColor={dirColor}
           />
         </View>
