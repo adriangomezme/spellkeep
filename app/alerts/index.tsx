@@ -479,7 +479,9 @@ export default function AlertsScreen() {
                 alert={a}
                 currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
                 highlighted={a.id === highlightedId}
-                onPress={() => openEdit(a)}
+                onPress={() =>
+                  router.push({ pathname: '/alerts/[id]', params: { id: a.id } })
+                }
                 onDelete={() => confirmDelete(a)}
                 onTogglePause={() => togglePause(a)}
                 onSnooze={() => showSnoozeMenu(a)}
@@ -500,7 +502,9 @@ export default function AlertsScreen() {
                     params: { id: g.card.card_id },
                   })
                 }
-                onEditAlert={openEdit}
+                onTapAlert={(a) =>
+                  router.push({ pathname: '/alerts/[id]', params: { id: a.id } })
+                }
                 onShowActionsAlert={setActionsAlert}
               />
             ))}
@@ -522,10 +526,7 @@ export default function AlertsScreen() {
         onPause={() => actionsAlert && togglePause(actionsAlert)}
         onSnooze={() => actionsAlert && showSnoozeMenu(actionsAlert)}
         onToggleAutoRearm={() => actionsAlert && toggleAutoRearm(actionsAlert)}
-        onViewDetails={() =>
-          actionsAlert &&
-          router.push({ pathname: '/alerts/[id]', params: { id: actionsAlert.id } })
-        }
+        onEdit={() => actionsAlert && openEdit(actionsAlert)}
         onDelete={() => actionsAlert && confirmDelete(actionsAlert)}
       />
     </View>
@@ -713,64 +714,71 @@ function EventRow({
   const dirColor = event.event_direction === 'above' ? DIR_UP : DIR_DOWN;
   const dirIcon = event.event_direction === 'above' ? 'trending-up' : 'trending-down';
 
-  const conditionLabel =
-    event.event_mode === 'percent'
-      ? `${event.event_direction === 'below' ? '−' : '+'} crossed at ${formatUSD(event.target_price)}`
-      : `${event.event_direction === 'below' ? 'Below' : 'Above'} ${formatUSD(event.target_price)} hit`;
-
   const ageMs = Date.now() - new Date(event.at).getTime();
   const isRecent = ageMs < RECENT_EVENT_WINDOW_MS;
-  const stateChip =
-    event.status === 'triggered'
-      ? { label: 'Needs action', color: DIR_DOWN, bg: DIR_DOWN + '15' }
-      : event.auto_rearm
-        ? { label: 'Re-armed', color: '#1D9E58', bg: '#1D9E5815' }
-        : null;
+
+  const verb = event.event_direction === 'below' ? 'dropped to' : 'rose to';
+  const deltaVsSnapshot =
+    event.snapshot_price > 0
+      ? ((event.event_price - event.snapshot_price) / event.snapshot_price) * 100
+      : 0;
 
   return (
-    <TouchableOpacity
-      style={[
-        styles.row,
-        highlighted && styles.rowHighlighted,
-        isRecent && styles.rowRecent,
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      {event.card_image_uri ? (
-        <Image
-          source={{ uri: event.card_image_uri }}
-          style={styles.thumb}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
-      ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder]} />
-      )}
-      <View style={styles.rowBody}>
-        <Text style={styles.rowName} numberOfLines={1}>
-          {event.card_name}
-        </Text>
-        <Text style={styles.rowMeta} numberOfLines={1}>
-          {event.card_set.toUpperCase()} · #{event.card_collector_number} · {capitalize(event.finish)}
-        </Text>
-        <View style={styles.conditionRow}>
-          <Ionicons name={dirIcon} size={14} color={dirColor} />
-          <Text style={[styles.conditionText, { color: dirColor }]}>{conditionLabel}</Text>
-        </View>
-      </View>
-      <View style={styles.rowRight}>
-        <Text style={styles.currentValue}>{formatUSD(event.event_price)}</Text>
-        <Text style={styles.snapshotLabel}>{formatEventAge(event.at)}</Text>
-        {stateChip && (
-          <View style={[styles.eventStateChip, { backgroundColor: stateChip.bg }]}>
-            <Text style={[styles.eventStateChipText, { color: stateChip.color }]}>
-              {stateChip.label}
+    <View style={styles.eventRowWrap}>
+      <TouchableOpacity
+        style={[styles.row, highlighted && styles.rowHighlighted]}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        {event.card_image_uri ? (
+          <Image
+            source={{ uri: event.card_image_uri }}
+            style={styles.thumb}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <View style={[styles.thumb, styles.thumbPlaceholder]} />
+        )}
+        <View style={styles.rowBody}>
+          <View style={styles.eventHeader}>
+            <Text style={styles.rowName} numberOfLines={1}>
+              {event.card_name}
+            </Text>
+            {isRecent && (
+              <View style={styles.newPill}>
+                <Text style={styles.newPillText}>NEW</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.rowMeta} numberOfLines={1}>
+            {event.card_set.toUpperCase()} · #{event.card_collector_number} · {capitalize(event.finish)}
+          </Text>
+          <View style={styles.eventHighlightLine}>
+            <Ionicons name={dirIcon} size={14} color={dirColor} />
+            <Text style={[styles.eventHighlightText, { color: dirColor }]}>
+              {verb} {formatUSD(event.event_price)}
             </Text>
           </View>
-        )}
-      </View>
-    </TouchableOpacity>
+          <Text style={styles.eventMetaLine}>
+            from {formatUSD(event.snapshot_price)}
+            {event.event_mode === 'percent' &&
+              ` (${deltaVsSnapshot >= 0 ? '+' : ''}${deltaVsSnapshot.toFixed(1)}%)`}
+            {' · '}
+            target {formatUSD(event.target_price)}
+          </Text>
+        </View>
+        <View style={styles.rowRight}>
+          <Text style={styles.eventAge}>{formatEventAge(event.at)}</Text>
+          {!!event.auto_rearm && (
+            <View style={styles.rearmTagInline}>
+              <Ionicons name="refresh" size={10} color="#1D9E58" />
+              <Text style={styles.rearmTagInlineText}>Auto re-arm</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -793,7 +801,7 @@ function GroupedCard({
   alerts,
   priceMap,
   onOpen,
-  onEditAlert,
+  onTapAlert,
   onShowActionsAlert,
 }: {
   card: {
@@ -807,7 +815,7 @@ function GroupedCard({
   alerts: PriceAlert[];
   priceMap: Map<string, number | null>;
   onOpen: () => void;
-  onEditAlert: (a: PriceAlert) => void;
+  onTapAlert: (a: PriceAlert) => void;
   onShowActionsAlert: (a: PriceAlert) => void;
 }) {
   return (
@@ -845,7 +853,7 @@ function GroupedCard({
             key={a.id}
             alert={a}
             currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
-            onEdit={() => onEditAlert(a)}
+            onTap={() => onTapAlert(a)}
             onShowActions={() => onShowActionsAlert(a)}
           />
         ))}
@@ -857,12 +865,12 @@ function GroupedCard({
 function GroupedAlertLine({
   alert,
   currentPrice,
-  onEdit,
+  onTap,
   onShowActions,
 }: {
   alert: PriceAlert;
   currentPrice: number | null;
-  onEdit: () => void;
+  onTap: () => void;
   onShowActions: () => void;
 }) {
   const target = computeTargetUsd(
@@ -887,7 +895,7 @@ function GroupedAlertLine({
   return (
     <TouchableOpacity
       style={styles.groupLine}
-      onPress={onEdit}
+      onPress={onTap}
       activeOpacity={0.7}
     >
       <View style={styles.groupLineLeft}>
@@ -1245,19 +1253,45 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primary + '08',
   },
-  rowRecent: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
+  eventRowWrap: {
+    marginBottom: spacing.sm,
   },
-  eventStateChip: {
-    marginTop: 6,
+  eventHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  eventHighlightLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  eventHighlightText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+  },
+  eventMetaLine: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 4,
+  },
+  eventAge: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  newPill: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
   },
-  eventStateChipText: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
+  newPillText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   thumb: {
     width: 44,

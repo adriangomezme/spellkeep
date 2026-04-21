@@ -193,6 +193,29 @@ export async function snoozeAlertLocal(id: string, hours: number): Promise<void>
   await updateAlertLocal(id, { snoozedUntil });
 }
 
+/**
+ * Re-activate a triggered alert. Re-anchors `snapshot_price` to the
+ * supplied current market so the next evaluation measures the move from
+ * today's price — otherwise the alert would satisfy its condition again
+ * on the next sweep and re-trigger instantly.
+ */
+export async function reactivateAlertLocal(
+  id: string,
+  newSnapshotPrice: number
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(
+    `UPDATE price_alerts
+        SET status = 'active',
+            triggered_at = NULL,
+            snoozed_until = NULL,
+            snapshot_price = ?,
+            updated_at = ?
+      WHERE id = ?`,
+    [newSnapshotPrice, now, id]
+  );
+}
+
 export async function deleteAlertLocal(id: string): Promise<void> {
   await db.execute(`DELETE FROM price_alerts WHERE id = ?`, [id]);
 }

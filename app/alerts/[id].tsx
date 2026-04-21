@@ -26,6 +26,7 @@ import {
   setAlertStatusLocal,
   snoozeAlertLocal,
   updateAlertLocal,
+  reactivateAlertLocal,
   type PriceAlert,
 } from '../../src/lib/priceAlerts';
 import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
@@ -35,6 +36,7 @@ const DIR_UP = '#1D9E58';
 const DIR_DOWN = '#C24848';
 const PAUSE_COLOR = '#6B7280';
 const SNOOZE_COLOR = '#6B8AFF';
+const REARM_COLOR = '#1D9E58';
 
 type EventRow = {
   id: string;
@@ -82,7 +84,7 @@ export default function AlertDetailScreen() {
     if (!alert) return;
     RNAlert.alert(
       'Delete alert?',
-      `Removes this ${alert.direction} alert on ${alert.card_name}. History stays accessible until the alert is deleted.`,
+      `Removes this ${alert.direction} alert on ${alert.card_name} and its history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -118,12 +120,7 @@ export default function AlertDetailScreen() {
     if (snoozed) {
       RNAlert.alert(
         'Snoozed alert',
-        `Active again at ${new Date(alert.snoozed_until!).toLocaleString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })}.`,
+        `Active again at ${formatDate(alert.snoozed_until!)}.`,
         [
           { text: 'Cancel snooze', onPress: () => snoozeAlertLocal(alert.id, 0) },
           { text: 'Close', style: 'cancel' },
@@ -162,6 +159,14 @@ export default function AlertDetailScreen() {
     );
   }
 
+  function handleReactivate() {
+    if (!alert) return;
+    const anchor = currentPrice ?? alert.snapshot_price;
+    reactivateAlertLocal(alert.id, anchor).catch((err: any) =>
+      RNAlert.alert('Error', err?.message ?? 'Could not re-activate alert')
+    );
+  }
+
   if (!alert) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -197,6 +202,7 @@ export default function AlertDetailScreen() {
       ? ((currentPrice! - alert.snapshot_price) / alert.snapshot_price) * 100
       : 0;
   const deltaUp = deltaPct >= 0;
+  const isTriggered = alert.status === 'triggered';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -204,14 +210,8 @@ export default function AlertDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="chevron-back" size={26} color={colors.text} />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {alert.card_name}
-          </Text>
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
-            {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
-          </Text>
-        </View>
+        <Text style={styles.headerTitle}>Alert details</Text>
+        <View style={{ width: 26 }} />
       </View>
 
       <ScrollView
@@ -221,125 +221,165 @@ export default function AlertDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
+        {/* Hero card */}
+        <View style={styles.hero}>
           {alert.card_image_uri && (
             <Image
               source={{ uri: alert.card_image_uri }}
-              style={styles.cardThumb}
+              style={styles.heroImage}
               contentFit="cover"
               cachePolicy="memory-disk"
             />
           )}
-          <View style={styles.cardBody}>
-            <View style={styles.conditionLine}>
-              <Ionicons name={dirIcon} size={16} color={dirColor} />
-              <Text style={[styles.conditionText, { color: dirColor }]}>
+          <View style={styles.heroBody}>
+            <Text style={styles.cardName} numberOfLines={2}>
+              {alert.card_name}
+            </Text>
+            <Text style={styles.cardMeta} numberOfLines={1}>
+              {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
+            </Text>
+            <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
+              <Ionicons name={dirIcon} size={14} color={dirColor} />
+              <Text style={[styles.conditionPillText, { color: dirColor }]}>
                 {conditionLabel}
               </Text>
-              {alert.mode === 'percent' && (
-                <Text style={styles.targetText}>→ {formatUSD(target)}</Text>
-              )}
-            </View>
-
-            <View style={styles.priceGrid}>
-              <View style={styles.priceCell}>
-                <Text style={styles.priceCellLabel}>Current</Text>
-                <Text style={styles.priceCellValue}>
-                  {hasCurrent ? formatUSD(currentPrice!) : '—'}
-                </Text>
-                {hasCurrent && (
-                  <Text
-                    style={[
-                      styles.priceCellDelta,
-                      { color: deltaUp ? DIR_UP : DIR_DOWN },
-                    ]}
-                  >
-                    {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
-                  </Text>
-                )}
-              </View>
-              <View style={styles.priceCell}>
-                <Text style={styles.priceCellLabel}>Snapshot</Text>
-                <Text style={styles.priceCellValue}>{formatUSD(alert.snapshot_price)}</Text>
-              </View>
-              <View style={styles.priceCell}>
-                <Text style={styles.priceCellLabel}>Target</Text>
-                <Text style={styles.priceCellValue}>{formatUSD(target)}</Text>
-              </View>
             </View>
 
             <View style={styles.chipRow}>
-              {alert.status === 'triggered' && (
-                <Chip label="Triggered" color={DIR_DOWN} />
-              )}
               {alert.status === 'paused' && (
-                <Chip label="Paused" color={PAUSE_COLOR} />
+                <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
               )}
               {snoozed && (
                 <Chip
                   label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
                   color={SNOOZE_COLOR}
+                  icon="moon-outline"
                 />
               )}
-              {!!alert.auto_rearm && <Chip label="Auto re-arm" color="#1D9E58" icon="refresh" />}
+              {!!alert.auto_rearm && (
+                <Chip label="Auto re-arm" color={REARM_COLOR} icon="refresh" />
+              )}
             </View>
-
-            <View style={styles.actionsRow}>
-              <ActionBtn label="Edit" icon="create-outline" onPress={handleEdit} />
-              <ActionBtn
-                label={alert.status === 'paused' ? 'Resume' : 'Pause'}
-                icon={alert.status === 'paused' ? 'play' : 'pause'}
-                onPress={handleTogglePause}
-                color={PAUSE_COLOR}
-              />
-              <ActionBtn
-                label={snoozed ? 'Snoozed' : 'Snooze'}
-                icon="moon-outline"
-                onPress={handleSnooze}
-                color={SNOOZE_COLOR}
-                disabled={alert.status === 'paused'}
-              />
-              <ActionBtn
-                label="Delete"
-                icon="trash-outline"
-                onPress={handleDelete}
-                color={colors.error}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.rearmRow,
-                alert.mode === 'price' && !alert.auto_rearm && styles.rearmRowDisabled,
-              ]}
-              onPress={handleToggleAutoRearm}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rearmTitle}>Auto re-arm</Text>
-                <Text style={styles.rearmHint}>
-                  {alert.mode === 'price' && !alert.auto_rearm
-                    ? 'Only available for percent targets.'
-                    : alert.auto_rearm
-                      ? 'Alert keeps watching after each trigger, re-anchoring the snapshot.'
-                      : 'After trigger, re-anchor to the new price and keep watching.'}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.toggle,
-                  !!alert.auto_rearm && styles.toggleOn,
-                  alert.mode === 'price' && !alert.auto_rearm && styles.toggleDisabled,
-                ]}
-              >
-                <View
-                  style={[styles.toggleKnob, !!alert.auto_rearm && styles.toggleKnobOn]}
-                />
-              </View>
-            </TouchableOpacity>
           </View>
         </View>
 
+        {/* Re-activate CTA for one-shot triggered alerts */}
+        {isTriggered && (
+          <TouchableOpacity
+            style={styles.reactivateCard}
+            onPress={handleReactivate}
+            activeOpacity={0.85}
+          >
+            <View style={styles.reactivateIconWrap}>
+              <Ionicons name="refresh-circle" size={28} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reactivateTitle}>Alert already triggered</Text>
+              <Text style={styles.reactivateBody}>
+                Fired {alert.triggered_at ? formatDate(alert.triggered_at) : ''}
+                {'. '}Tap to re-activate it — snapshot resets to the current price.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        )}
+
+        {/* Price grid */}
+        <Text style={styles.sectionLabel}>Prices</Text>
+        <View style={styles.priceCard}>
+          <PriceCell
+            label="Current"
+            value={hasCurrent ? formatUSD(currentPrice!) : '—'}
+            subtitle={hasCurrent ? `${deltaUp ? '+' : ''}${deltaPct.toFixed(1)}% from snapshot` : 'no market data'}
+            subtitleColor={hasCurrent ? (deltaUp ? DIR_UP : DIR_DOWN) : colors.textMuted}
+            emphasized
+          />
+          <View style={styles.priceDivider} />
+          <PriceCell
+            label="Snapshot"
+            value={formatUSD(alert.snapshot_price)}
+            subtitle="when alert was created"
+          />
+          <View style={styles.priceDivider} />
+          <PriceCell
+            label="Target"
+            value={formatUSD(target)}
+            subtitle={
+              alert.direction === 'below' ? 'fires at or below' : 'fires at or above'
+            }
+            subtitleColor={dirColor}
+          />
+        </View>
+
+        {/* Actions */}
+        <Text style={styles.sectionLabel}>Actions</Text>
+        <View style={styles.actionsGrid}>
+          <ActionTile
+            label={alert.status === 'paused' ? 'Resume' : 'Pause'}
+            icon={alert.status === 'paused' ? 'play' : 'pause'}
+            onPress={handleTogglePause}
+            color={PAUSE_COLOR}
+          />
+          <ActionTile
+            label={snoozed ? 'Snoozed' : 'Snooze'}
+            icon="moon-outline"
+            onPress={handleSnooze}
+            color={SNOOZE_COLOR}
+            disabled={alert.status === 'paused'}
+          />
+          <ActionTile
+            label="Edit"
+            icon="create-outline"
+            onPress={handleEdit}
+            color={colors.primary}
+          />
+          <ActionTile
+            label="Delete"
+            icon="trash-outline"
+            onPress={handleDelete}
+            color={colors.error}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.rearmToggleCard,
+            alert.mode === 'price' && !alert.auto_rearm && styles.rearmDisabled,
+          ]}
+          onPress={handleToggleAutoRearm}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.rearmIconBubble, !!alert.auto_rearm && styles.rearmIconBubbleOn]}>
+            <Ionicons
+              name="refresh"
+              size={16}
+              color={alert.auto_rearm ? '#FFFFFF' : REARM_COLOR}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rearmTitle}>Auto re-arm</Text>
+            <Text style={styles.rearmHint}>
+              {alert.mode === 'price' && !alert.auto_rearm
+                ? 'Only available for percent targets.'
+                : alert.auto_rearm
+                  ? 'Keeps watching after each trigger, re-anchoring to the new price.'
+                  : 'After trigger, re-anchor and keep watching for the next crossing.'}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.toggle,
+              !!alert.auto_rearm && styles.toggleOn,
+              alert.mode === 'price' && !alert.auto_rearm && styles.toggleDisabled,
+            ]}
+          >
+            <View
+              style={[styles.toggleKnob, !!alert.auto_rearm && styles.toggleKnobOn]}
+            />
+          </View>
+        </TouchableOpacity>
+
+        {/* History */}
         <Text style={styles.sectionLabel}>
           History · {events?.length ?? 0} trigger{(events?.length ?? 0) === 1 ? '' : 's'}
         </Text>
@@ -351,30 +391,15 @@ export default function AlertDetailScreen() {
             </Text>
           </View>
         ) : (
-          <View style={styles.timeline}>
+          <View style={styles.historyList}>
             {events!.map((e, idx) => (
-              <View key={e.id} style={styles.timelineItem}>
-                <View style={styles.timelineDotWrap}>
-                  <View
-                    style={[
-                      styles.timelineDot,
-                      {
-                        backgroundColor:
-                          e.direction === 'above' ? DIR_UP : DIR_DOWN,
-                      },
-                    ]}
-                  />
-                  {idx < events!.length - 1 && <View style={styles.timelineLine} />}
-                </View>
-                <View style={styles.timelineBody}>
-                  <Text style={styles.timelineTitle}>
-                    {formatUSD(e.current_price)}
-                  </Text>
-                  <Text style={styles.timelineMeta}>
-                    crossed {formatUSD(e.target_price)} · {formatDate(e.at)}
-                  </Text>
-                </View>
-              </View>
+              <HistoryEvent
+                key={e.id}
+                event={e}
+                snapshotAtCreate={alert.snapshot_price}
+                isFirst={idx === 0}
+                isLast={idx === events!.length - 1}
+              />
             ))}
           </View>
         )}
@@ -386,6 +411,44 @@ export default function AlertDetailScreen() {
         card={editing}
         existing={alert}
       />
+    </View>
+  );
+}
+
+function PriceCell({
+  label,
+  value,
+  subtitle,
+  subtitleColor,
+  emphasized,
+}: {
+  label: string;
+  value: string;
+  subtitle?: string;
+  subtitleColor?: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <View style={styles.priceCell}>
+      <Text style={styles.priceCellLabel}>{label}</Text>
+      <Text
+        style={[
+          styles.priceCellValue,
+          emphasized && styles.priceCellValueEmphasized,
+        ]}
+      >
+        {value}
+      </Text>
+      {subtitle && (
+        <Text
+          style={[
+            styles.priceCellSubtitle,
+            subtitleColor ? { color: subtitleColor } : null,
+          ]}
+        >
+          {subtitle}
+        </Text>
+      )}
     </View>
   );
 }
@@ -407,7 +470,7 @@ function Chip({
   );
 }
 
-function ActionBtn({
+function ActionTile({
   label,
   icon,
   onPress,
@@ -417,20 +480,84 @@ function ActionBtn({
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
   onPress: () => void;
-  color?: string;
+  color: string;
   disabled?: boolean;
 }) {
-  const tint = disabled ? colors.textMuted : color ?? colors.text;
   return (
     <TouchableOpacity
-      style={[styles.actionBtn, disabled && styles.actionBtnDisabled]}
+      style={[styles.actionTile, disabled && styles.actionTileDisabled]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
     >
-      <Ionicons name={icon} size={18} color={tint} />
-      <Text style={[styles.actionBtnLabel, { color: tint }]}>{label}</Text>
+      <View style={[styles.actionTileIcon, { backgroundColor: color + '15' }]}>
+        <Ionicons name={icon} size={18} color={disabled ? colors.textMuted : color} />
+      </View>
+      <Text
+        style={[
+          styles.actionTileLabel,
+          disabled && { color: colors.textMuted },
+        ]}
+      >
+        {label}
+      </Text>
     </TouchableOpacity>
+  );
+}
+
+function HistoryEvent({
+  event,
+  snapshotAtCreate,
+  isFirst,
+  isLast,
+}: {
+  event: EventRow;
+  snapshotAtCreate: number;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  const dir = event.direction as 'below' | 'above';
+  const color = dir === 'above' ? DIR_UP : DIR_DOWN;
+  const icon = dir === 'above' ? 'trending-up' : 'trending-down';
+  const verb = dir === 'below' ? 'Dropped to' : 'Rose to';
+  const delta =
+    snapshotAtCreate > 0
+      ? ((event.current_price - snapshotAtCreate) / snapshotAtCreate) * 100
+      : 0;
+
+  return (
+    <View style={styles.historyItem}>
+      <View style={styles.historyRailWrap}>
+        {!isFirst && <View style={styles.historyRailUp} />}
+        <View style={[styles.historyDotOuter, { backgroundColor: color + '25' }]}>
+          <Ionicons name={icon} size={14} color={color} />
+        </View>
+        {!isLast && <View style={styles.historyRailDown} />}
+      </View>
+      <View style={styles.historyCard}>
+        <View style={styles.historyHeaderRow}>
+          <Text style={styles.historyWhen}>{formatEventRelative(event.at)}</Text>
+          <Text style={styles.historyAbsolute}>{formatDateShort(event.at)}</Text>
+        </View>
+        <Text style={styles.historyHeadline}>
+          <Text style={styles.historyVerb}>{verb} </Text>
+          <Text style={[styles.historyPrice, { color }]}>{formatUSD(event.current_price)}</Text>
+        </Text>
+        <View style={styles.historyMetaRow}>
+          <Text style={styles.historyMetaKey}>Target</Text>
+          <Text style={styles.historyMetaValue}>{formatUSD(event.target_price)}</Text>
+        </View>
+        <View style={styles.historyMetaRow}>
+          <Text style={styles.historyMetaKey}>From snapshot</Text>
+          <Text style={styles.historyMetaValue}>
+            {formatUSD(snapshotAtCreate)}
+            <Text style={[styles.historyDelta, { color: delta >= 0 ? DIR_UP : DIR_DOWN }]}>
+              {'  '}{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%
+            </Text>
+          </Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -449,47 +576,153 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatDateShort(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatEventRelative(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (isNaN(diffMs)) return '';
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  const wks = Math.floor(days / 7);
+  return `${wks}w ago`;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
-  headerTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
-  headerSubtitle: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  card: {
+  headerTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+  },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  hero: {
+    flexDirection: 'row',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    flexDirection: 'row',
-    gap: spacing.md,
     ...shadows.sm,
   },
-  cardThumb: {
-    width: 80,
-    height: 112,
+  heroImage: {
+    width: 96,
+    height: 134,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
-  cardBody: { flex: 1, gap: spacing.sm },
-  conditionLine: {
+  heroBody: { flex: 1, gap: 6 },
+  cardName: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  cardMeta: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  conditionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+    marginTop: 6,
   },
-  conditionText: { fontSize: fontSize.md, fontWeight: '700' },
-  targetText: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '500' },
-  priceGrid: {
+  conditionPillText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  chipRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 6,
   },
-  priceCell: { flex: 1 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  chipText: { fontSize: 10, fontWeight: '700' },
+  // Re-activate CTA
+  reactivateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary + '10',
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  reactivateIconWrap: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactivateTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  reactivateBody: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  // Section
+  sectionLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.md,
+    marginBottom: 2,
+  },
+  // Prices
+  priceCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  priceCell: { flex: 1, alignItems: 'flex-start' },
+  priceDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.sm,
+  },
   priceCellLabel: {
     color: colors.textMuted,
     fontSize: 10,
@@ -497,51 +730,81 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  priceCellValue: { color: colors.text, fontSize: fontSize.md, fontWeight: '700', marginTop: 2 },
-  priceCellDelta: { fontSize: fontSize.xs, fontWeight: '700', marginTop: 2 },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
+  priceCellValue: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    marginTop: 4,
   },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+  priceCellValueEmphasized: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
   },
-  chipText: { fontSize: 10, fontWeight: '700' },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: spacing.sm,
+  priceCellSubtitle: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
   },
-  actionBtn: {
+  // Actions
+  actionsGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionTile: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 2,
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    ...shadows.sm,
   },
-  actionBtnDisabled: { opacity: 0.4 },
-  actionBtnLabel: { fontSize: 10, fontWeight: '600' },
-  rearmRow: {
+  actionTileDisabled: { opacity: 0.4 },
+  actionTileIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTileLabel: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  // Rearm
+  rearmToggleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    ...shadows.sm,
   },
-  rearmRowDisabled: { opacity: 0.5 },
-  rearmTitle: { color: colors.text, fontSize: fontSize.sm, fontWeight: '700' },
-  rearmHint: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2, lineHeight: 16 },
+  rearmDisabled: { opacity: 0.55 },
+  rearmIconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: REARM_COLOR + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rearmIconBubbleOn: { backgroundColor: REARM_COLOR },
+  rearmTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  rearmHint: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
+    marginTop: 2,
+  },
   toggle: {
     width: 40,
     height: 24,
@@ -559,47 +822,95 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   toggleKnobOn: { transform: [{ translateX: 16 }] },
-  sectionLabel: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.lg,
+  // History
+  historyList: {},
+  historyItem: {
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginBottom: spacing.sm,
   },
-  timeline: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    ...shadows.sm,
+  historyRailWrap: {
+    alignItems: 'center',
+    width: 32,
   },
-  timelineItem: {
-    flexDirection: 'row',
-    gap: spacing.md,
+  historyRailUp: {
+    width: StyleSheet.hairlineWidth * 2,
+    height: spacing.sm,
+    backgroundColor: colors.border,
   },
-  timelineDotWrap: { alignItems: 'center', width: 16 },
-  timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 5,
-  },
-  timelineLine: {
+  historyRailDown: {
     flex: 1,
     width: StyleSheet.hairlineWidth * 2,
     backgroundColor: colors.border,
     marginTop: 2,
   },
-  timelineBody: { flex: 1, paddingBottom: spacing.md },
-  timelineTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '700' },
-  timelineMeta: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
+  historyDotOuter: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  historyWhen: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  historyAbsolute: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  historyHeadline: {
+    marginTop: 6,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  historyVerb: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  historyPrice: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+  },
+  historyMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  historyMetaKey: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+  },
+  historyMetaValue: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  historyDelta: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
   historyEmpty: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     alignItems: 'center',
     gap: spacing.sm,
+    ...shadows.sm,
   },
   historyEmptyText: {
     color: colors.textSecondary,

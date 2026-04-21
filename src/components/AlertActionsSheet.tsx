@@ -20,7 +20,7 @@ type Props = {
   onPause: () => void;
   onSnooze: () => void;
   onToggleAutoRearm: () => void;
-  onViewDetails: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 };
 
@@ -31,7 +31,7 @@ export function AlertActionsSheet({
   onPause,
   onSnooze,
   onToggleAutoRearm,
-  onViewDetails,
+  onEdit,
   onDelete,
 }: Props) {
   if (!alert) return null;
@@ -79,13 +79,6 @@ export function AlertActionsSheet({
           disabled={isPaused}
         />
         <Option
-          color={colors.primary}
-          icon="document-text-outline"
-          title="View details & history"
-          description="Full trigger timeline, current price vs snapshot, and all actions in one place."
-          onPress={() => trigger(onViewDetails)}
-        />
-        <Option
           color={REARM_COLOR}
           icon="refresh"
           title={rearmOn ? 'Turn off auto re-arm' : 'Turn on auto re-arm'}
@@ -98,6 +91,13 @@ export function AlertActionsSheet({
           }
           onPress={() => trigger(onToggleAutoRearm)}
           disabled={alert.mode === 'price' && !rearmOn}
+        />
+        <Option
+          color={colors.primary}
+          icon="create-outline"
+          title="Edit target"
+          description="Change direction, mode, target value or finish. Keeps the alert's history."
+          onPress={() => trigger(onEdit)}
         />
         <Option
           color={colors.error}
