@@ -83,9 +83,12 @@ export function AlertActionsSheet({
           description={
             rearmOn
               ? 'The alert keeps watching after each trigger. Disable to revert to one-shot.'
-              : 'Keep watching after each trigger — re-anchors the price and fires again on the next crossing.'
+              : alert.mode === 'price'
+                ? 'Only available for percent targets. A fixed-price target would re-fire around the same price.'
+                : 'Keep watching after each trigger — re-anchors the price and fires again on the next crossing.'
           }
           onPress={() => trigger(onToggleAutoRearm)}
+          disabled={alert.mode === 'price' && !rearmOn}
         />
         <Option
           color={colors.error}

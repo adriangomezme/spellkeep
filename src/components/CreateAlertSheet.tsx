@@ -115,6 +115,14 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
     }
   }, [visible, existing, availableFinishes]);
 
+  // Auto re-arm only makes sense in percent mode — in price mode the
+  // absolute target stays put after a trigger, so "re-anchoring" the
+  // snapshot would just flip-flop the alert around the same price. If
+  // the user switches mode to price, force-disable the toggle.
+  useEffect(() => {
+    if (mode === 'price' && autoRearm) setAutoRearm(false);
+  }, [mode, autoRearm]);
+
   const currentPrice = useMemo(() => {
     if (!card) return existing?.snapshot_price ?? null;
     return priceFromCard(card, finish);
@@ -355,19 +363,35 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
           </View>
         )}
 
-        {/* Auto re-arm toggle */}
+        {/* Auto re-arm toggle — percent mode only */}
         <TouchableOpacity
-          style={styles.rearmRow}
+          style={[styles.rearmRow, mode === 'price' && styles.rearmRowDisabled]}
           onPress={() => setAutoRearm((v) => !v)}
+          disabled={mode === 'price'}
           activeOpacity={0.7}
         >
           <View style={styles.rearmTextWrap}>
-            <Text style={styles.rearmTitle}>Auto re-arm</Text>
+            <Text
+              style={[
+                styles.rearmTitle,
+                mode === 'price' && styles.rearmTitleDisabled,
+              ]}
+            >
+              Auto re-arm
+            </Text>
             <Text style={styles.rearmHint}>
-              After trigger, re-anchor to the new price and keep watching.
+              {mode === 'price'
+                ? 'Only available for percent targets. A fixed-price target would re-trigger around the same price without moving meaningfully.'
+                : 'After trigger, re-anchor to the new price and keep watching. Each re-fire requires another move of the same percentage.'}
             </Text>
           </View>
-          <View style={[styles.toggle, autoRearm && styles.toggleOn]}>
+          <View
+            style={[
+              styles.toggle,
+              autoRearm && styles.toggleOn,
+              mode === 'price' && styles.toggleDisabled,
+            ]}
+          >
             <View style={[styles.toggleKnob, autoRearm && styles.toggleKnobOn]} />
           </View>
         </TouchableOpacity>
@@ -507,8 +531,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.sm,
   },
+  rearmRowDisabled: { opacity: 0.55 },
   rearmTextWrap: { flex: 1 },
   rearmTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '600' },
+  rearmTitleDisabled: { color: colors.textMuted },
   rearmHint: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
   toggle: {
     width: 44,
@@ -519,6 +545,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleOn: { backgroundColor: colors.primary },
+  toggleDisabled: { opacity: 0.5 },
   toggleKnob: {
     width: 20,
     height: 20,
