@@ -151,6 +151,10 @@ export default function CardDetailScreen() {
   }, [cardJson]);
 
   const [card, setCard] = useState<ScryfallCard | null>(initialCard);
+  // Tracks whether the async lookup is still in flight. Without this we
+  // flash "Card not found" for the duration of the fetch when the route
+  // is opened without a `cardJson` param (e.g. from /alerts/[id] tap).
+  const [fetching, setFetching] = useState<boolean>(!initialCard);
 
   // Reset and lazy-refresh whenever the route changes. We resolve the
   // card metadata and the detail-only "extras" in parallel, merge them
@@ -159,15 +163,18 @@ export default function CardDetailScreen() {
   // renders with just the local catalog fields.
   useEffect(() => {
     setCard(initialCard);
+    setFetching(!initialCard);
     if (!id) return;
     Promise.all([
       getCard(id).catch(() => null),
       fetchCardExtras(id).catch(() => null),
-    ]).then(([baseCard, extras]) => {
-      if (!baseCard && !extras) return;
-      if (!baseCard) return;
-      setCard(extras ? { ...baseCard, ...extras } : baseCard);
-    });
+    ])
+      .then(([baseCard, extras]) => {
+        if (!baseCard && !extras) return;
+        if (!baseCard) return;
+        setCard(extras ? { ...baseCard, ...extras } : baseCard);
+      })
+      .finally(() => setFetching(false));
   }, [id, initialCard]);
 
   const [showAddSheet, setShowAddSheet] = useState(false);
@@ -351,8 +358,12 @@ export default function CardDetailScreen() {
 
   if (!card) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <Text style={styles.errorText}>Card not found</Text>
+      <View style={[styles.container, { paddingTop: insets.top, alignItems: 'center', justifyContent: 'center' }]}>
+        {fetching ? (
+          <ActivityIndicator size="large" color={colors.primary} />
+        ) : (
+          <Text style={styles.errorText}>Card not found</Text>
+        )}
       </View>
     );
   }

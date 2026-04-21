@@ -742,16 +742,9 @@ function EventRow({
           <View style={[styles.thumb, styles.thumbPlaceholder]} />
         )}
         <View style={styles.rowBody}>
-          <View style={styles.eventHeader}>
-            <Text style={styles.rowName} numberOfLines={1}>
-              {event.card_name}
-            </Text>
-            {isRecent && (
-              <View style={styles.newPill}>
-                <Text style={styles.newPillText}>NEW</Text>
-              </View>
-            )}
-          </View>
+          <Text style={styles.rowName} numberOfLines={1}>
+            {event.card_name}
+          </Text>
           <Text style={styles.rowMeta} numberOfLines={1}>
             {event.card_set.toUpperCase()} · #{event.card_collector_number} · {capitalize(event.finish)}
           </Text>
@@ -770,6 +763,11 @@ function EventRow({
           </Text>
         </View>
         <View style={styles.rowRight}>
+          {isRecent && (
+            <View style={styles.newPillOutline}>
+              <Text style={styles.newPillOutlineText}>NEW</Text>
+            </View>
+          )}
           <Text style={styles.eventAge}>{formatEventAge(event.at)}</Text>
           {!!event.auto_rearm && (
             <View style={styles.rearmTagInline}>
@@ -1257,11 +1255,6 @@ const styles = StyleSheet.create({
   eventRowWrap: {
     marginBottom: spacing.sm,
   },
-  eventHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
   eventHighlightLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1282,14 +1275,16 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '600',
   },
-  newPill: {
+  newPillOutline: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 1,
     borderRadius: 8,
-    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    marginBottom: 4,
   },
-  newPillText: {
-    color: '#FFFFFF',
+  newPillOutlineText: {
+    color: colors.primary,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,

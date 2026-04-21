@@ -222,45 +222,75 @@ export default function AlertDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero card */}
+        {/* Hero card — identity + condition + status + actions in one block */}
         <View style={styles.hero}>
-          {alert.card_image_uri && (
-            <Image
-              source={{ uri: alert.card_image_uri }}
-              style={styles.heroImage}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-            />
-          )}
-          <View style={styles.heroBody}>
-            <Text style={styles.cardName} numberOfLines={2}>
-              {alert.card_name}
-            </Text>
-            <Text style={styles.cardMeta} numberOfLines={1}>
-              {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
-            </Text>
-            <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
-              <Ionicons name={dirIcon} size={14} color={dirColor} />
-              <Text style={[styles.conditionPillText, { color: dirColor }]}>
-                {conditionLabel}
+          <View style={styles.heroTop}>
+            {alert.card_image_uri && (
+              <Image
+                source={{ uri: alert.card_image_uri }}
+                style={styles.heroImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            )}
+            <View style={styles.heroBody}>
+              <Text style={styles.cardName} numberOfLines={2}>
+                {alert.card_name}
               </Text>
+              <Text style={styles.cardMeta} numberOfLines={1}>
+                {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
+              </Text>
+              <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
+                <Ionicons name={dirIcon} size={14} color={dirColor} />
+                <Text style={[styles.conditionPillText, { color: dirColor }]}>
+                  {conditionLabel}
+                </Text>
+              </View>
+              {(alert.status === 'paused' || snoozed) && (
+                <View style={styles.chipRow}>
+                  {alert.status === 'paused' && (
+                    <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
+                  )}
+                  {snoozed && (
+                    <Chip
+                      label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
+                      color={SNOOZE_COLOR}
+                      icon="moon-outline"
+                    />
+                  )}
+                </View>
+              )}
             </View>
+          </View>
 
-            <View style={styles.chipRow}>
-              {alert.status === 'paused' && (
-                <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
-              )}
-              {snoozed && (
-                <Chip
-                  label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
-                  color={SNOOZE_COLOR}
-                  icon="moon-outline"
-                />
-              )}
-              {!!alert.auto_rearm && (
-                <Chip label="Auto re-arm" color={REARM_COLOR} icon="refresh" />
-              )}
-            </View>
+          <View style={styles.heroDivider} />
+
+          <View style={styles.actionsRow}>
+            <ActionTile
+              label={alert.status === 'paused' ? 'Resume' : 'Pause'}
+              icon={alert.status === 'paused' ? 'play' : 'pause'}
+              onPress={handleTogglePause}
+              color={PAUSE_COLOR}
+            />
+            <ActionTile
+              label={snoozed ? 'Snoozed' : 'Snooze'}
+              icon="moon-outline"
+              onPress={handleSnooze}
+              color={SNOOZE_COLOR}
+              disabled={alert.status === 'paused'}
+            />
+            <ActionTile
+              label="Edit"
+              icon="create-outline"
+              onPress={handleEdit}
+              color={colors.primary}
+            />
+            <ActionTile
+              label="Delete"
+              icon="trash-outline"
+              onPress={handleDelete}
+              color={colors.error}
+            />
           </View>
         </View>
 
@@ -299,46 +329,12 @@ export default function AlertDetailScreen() {
           <PriceCell
             label="Snapshot"
             value={formatUSD(alert.snapshot_price)}
-            subtitle="when alert was created"
           />
           <View style={styles.priceDivider} />
           <PriceCell
             label="Target"
             value={formatUSD(target)}
-            subtitle={
-              alert.direction === 'below' ? 'fires at or below' : 'fires at or above'
-            }
             subtitleColor={dirColor}
-          />
-        </View>
-
-        {/* Actions */}
-        <Text style={styles.sectionLabel}>Actions</Text>
-        <View style={styles.actionsGrid}>
-          <ActionTile
-            label={alert.status === 'paused' ? 'Resume' : 'Pause'}
-            icon={alert.status === 'paused' ? 'play' : 'pause'}
-            onPress={handleTogglePause}
-            color={PAUSE_COLOR}
-          />
-          <ActionTile
-            label={snoozed ? 'Snoozed' : 'Snooze'}
-            icon="moon-outline"
-            onPress={handleSnooze}
-            color={SNOOZE_COLOR}
-            disabled={alert.status === 'paused'}
-          />
-          <ActionTile
-            label="Edit"
-            icon="create-outline"
-            onPress={handleEdit}
-            color={colors.primary}
-          />
-          <ActionTile
-            label="Delete"
-            icon="trash-outline"
-            onPress={handleDelete}
-            color={colors.error}
           />
         </View>
 
@@ -618,12 +614,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   hero: {
-    flexDirection: 'row',
-    gap: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     ...shadows.sm,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  heroDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
   },
   heroImage: {
     width: 96,
@@ -747,8 +750,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
   },
-  // Actions
-  actionsGrid: {
+  // Actions inside the hero
+  actionsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
@@ -756,11 +759,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-    ...shadows.sm,
+    gap: 4,
+    paddingVertical: spacing.sm,
   },
   actionTileDisabled: { opacity: 0.4 },
   actionTileIcon: {
