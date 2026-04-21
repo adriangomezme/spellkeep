@@ -46,8 +46,7 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
             status, snoozed_until, auto_rearm, created_at, triggered_at, updated_at
        FROM price_alerts
       WHERE card_id = ?
-      ORDER BY CASE status WHEN 'triggered' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
-               created_at DESC`,
+      ORDER BY created_at DESC`,
     [card?.id ?? '']
   );
 
@@ -229,7 +228,7 @@ function AlertRow({
           <Ionicons
             name={alert.status === 'paused' ? 'play' : 'pause'}
             size={14}
-            color="#E0A52B"
+            color="#6B7280"
           />
         </TouchableOpacity>
         <TouchableOpacity onPress={onSnooze} hitSlop={6} style={styles.actionBtn}>

@@ -287,8 +287,12 @@ export default function CardDetailScreen() {
   const [prints, setPrints] = useState<ScryfallCard[]>([]);
   const [printsLoading, setPrintsLoading] = useState(false);
   const [showAlertSheet, setShowAlertSheet] = useState(false);
+  // Persistent count: all alerts for this print, regardless of status.
+  // Users asked for the bell badge to stick around even when every alert
+  // is paused or triggered, so pausing doesn't make it look like the card
+  // has no alerts anymore.
   const alertRows = usePowerSyncQuery<{ cnt: number }>(
-    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ? AND status = 'active'`,
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE card_id = ?`,
     [id ?? '']
   );
   const alertCount = Number(alertRows.data?.[0]?.cnt ?? 0);
