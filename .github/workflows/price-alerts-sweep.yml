@@ -13,6 +13,11 @@ on:
     - cron: '0 18 * * *'
     - cron: '0 23 * * *'
   workflow_dispatch:
+    inputs:
+      skip_price_refresh:
+        description: 'Skip Scryfall price refresh (QA only — evaluates DB as-is)'
+        required: false
+        default: 'false'
 
 concurrency:
   group: price-alerts-sweep
@@ -44,4 +49,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ALERTS_ONLY: 'true'
+          SKIP_PRICE_REFRESH: ${{ github.event.inputs.skip_price_refresh || 'false' }}
         run: npm start
