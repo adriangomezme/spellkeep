@@ -10,7 +10,6 @@ import {
 import { supabase } from './supabase';
 import { ensureCardExists } from './collection';
 import type { Condition, Finish } from './collection';
-import { invalidateCache, invalidateNamespace } from './collectionsCache';
 import { bulkUpsertCollectionCardsLocal } from './collections.local';
 
 export type ImportFormat = 'spellkeep' | 'plain' | 'csv' | 'hevault';
@@ -624,15 +623,6 @@ export async function importToCollection(
   result.imported_variants = stats.imported_variants;
   result.updated_variants = stats.updated_variants;
   onProgress?.({ phase: 'uploading', current: rows.length, total: rows.length });
-
-  // Drop caches so the next open of this collection (or the owned view)
-  // refetches fresh data instead of showing the pre-import snapshot
-  // behind the SWR revalidation. Includes the stats caches so the
-  // header doesn't flash old totals before the server stats come back.
-  invalidateCache('collection', collectionId);
-  invalidateCache('collection_stats', collectionId);
-  invalidateNamespace('owned');
-  invalidateNamespace('owned_stats');
 
   onProgress?.({ phase: 'done', current: rows.length, total: rows.length });
   return result;

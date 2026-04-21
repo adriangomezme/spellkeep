@@ -167,10 +167,6 @@ export async function deleteCollectionLocal(id: string): Promise<void> {
     });
 }
 
-export async function deleteFolderLocal(id: string): Promise<void> {
-  await db.execute(`DELETE FROM collection_folders WHERE id = ?`, [id]);
-}
-
 export async function deleteFolderWithContentsLocal(id: string): Promise<void> {
   // Same ps_crud purge pattern as deleteCollectionLocal — cancel any
   // pending writes targeting this folder's children so they don't

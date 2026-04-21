@@ -14,7 +14,6 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  fetchCollectionStats,
   duplicateCollection,
   type CollectionSummary,
   type FolderSummary,
@@ -85,13 +84,13 @@ export default function CollectionHubScreen() {
     useCallback(() => { revalidate(); }, [revalidate])
   );
 
-  // Reconcile hub stats whenever a background import finishes.
+  // The hub's useQuery hooks are reactive to local mutations, so an
+  // import firing local writes already triggers a re-render. We keep a
+  // revalidate() call to force the cache-backed pipeline (prices, etc.)
+  // to re-derive once the job lands.
   const { job } = useImportJob();
   useEffect(() => {
     if (job?.status !== 'completed') return;
-    // Touch the destination's stats first so the server-side aggregates
-    // refresh quickly, then full revalidate pulls owned totals.
-    fetchCollectionStats(job.collectionId).catch(() => {});
     revalidate();
   }, [job?.status, job?.id, job?.collectionId, revalidate]);
 

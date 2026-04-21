@@ -12,7 +12,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  fetchCollectionStats,
   duplicateCollection,
   type CollectionSummary,
   type CollectionType,
@@ -68,7 +67,6 @@ export default function FolderDetailScreen() {
   const { job } = useImportJob();
   useEffect(() => {
     if (job?.status !== 'completed') return;
-    fetchCollectionStats(job.collectionId).catch(() => {});
     revalidate();
   }, [job?.status, job?.id, job?.collectionId, revalidate]);
 
