@@ -91,9 +91,10 @@ export async function refreshAlertedPrices(): Promise<{ cards: number; updated: 
 
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  // Bulk update in batches. We upsert on scryfall_id — the rows already
-  // exist in `cards` (they came from the bulk sync), so the UPDATE branch
-  // is always taken and only the three price columns + updated_at change.
+  // Bulk UPDATE via RPC. Can't use supabase-js .upsert() against `cards`
+  // because Postgres evaluates NOT NULL on the prospective INSERT row
+  // (e.g. oracle_id) before resolving ON CONFLICT → the row is rejected
+  // even though the UPDATE branch is what we actually want.
   const now = new Date().toISOString();
   const BATCH = 500;
   let written = 0;
@@ -105,13 +106,14 @@ export async function refreshAlertedPrices(): Promise<{ cards: number; updated: 
       price_usd_etched: u.price_usd_etched,
       updated_at: now,
     }));
-    const { error: upErr } = await supabase
-      .from('cards')
-      .upsert(slice, { onConflict: 'scryfall_id' });
-    if (upErr) {
-      throw new Error(`cards price upsert failed: ${upErr.message}`);
+    const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+      'sp_update_card_prices',
+      { rows: slice }
+    );
+    if (rpcErr) {
+      throw new Error(`sp_update_card_prices failed: ${rpcErr.message}`);
     }
-    written += slice.length;
+    written += typeof rpcResult === 'number' ? rpcResult : slice.length;
   }
   console.log(`[alerts] price refresh wrote ${written} rows`);
   return { cards: ids.length, updated: written };
