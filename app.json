@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.spellkeep.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "SpellKeep needs camera access to scan Magic cards"
+        "NSCameraUsageDescription": "SpellKeep needs camera access to scan Magic cards",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
