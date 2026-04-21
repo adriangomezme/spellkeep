@@ -241,42 +241,4 @@ export async function setAlertStatusLocal(
   );
 }
 
-/**
- * Bulk-delete every triggered alert for the current user. Called from the
- * "Clear all" action on the Triggered tab once the user has reviewed them.
- */
-export async function clearTriggeredAlertsLocal(): Promise<number> {
-  const userId = await getUserId();
-  const before: any = await db.execute(
-    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE user_id = ? AND status = 'triggered'`,
-    [userId]
-  );
-  const count = extractCount(before);
-  if (count === 0) return 0;
-  await db.execute(
-    `DELETE FROM price_alerts WHERE user_id = ? AND status = 'triggered'`,
-    [userId]
-  );
-  return count;
-}
 
-/**
- * Stand-in for the eventual live-price feed. Returns a deterministic but
- * varied price per alert id, within ±20% of the snapshot, so the UI can
- * render current + delta meaningfully. Replace with a real lookup once the
- * price pipeline lands.
- */
-export function simulateCurrentPrice(
-  alertId: string,
-  snapshotPrice: number
-): number {
-  let seed = 0;
-  for (let i = 0; i < alertId.length; i++) {
-    seed = (seed * 31 + alertId.charCodeAt(i)) >>> 0;
-  }
-  // Map to a signed offset in [-0.2, 0.2]
-  const unit = (seed % 1000) / 1000; // 0..1
-  const offset = (unit - 0.5) * 0.4; // -0.2..0.2
-  const raw = snapshotPrice * (1 + offset);
-  return Math.max(0.01, Math.round(raw * 100) / 100);
-}

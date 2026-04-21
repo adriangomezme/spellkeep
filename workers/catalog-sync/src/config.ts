@@ -21,9 +21,4 @@ export const config = {
   // for cards that have active alerts and evaluate those alerts. Used by
   // the 18:00 / 23:00 UTC sweeps between the full daily run.
   alertsOnly: process.env.ALERTS_ONLY === 'true',
-
-  // Skip the price refresh step. For QA / manual testing only — lets you
-  // pre-load fake prices into `cards` and have the eval run against them
-  // instead of pulling fresh data from Scryfall.
-  skipPriceRefresh: process.env.SKIP_PRICE_REFRESH === 'true',
 };

@@ -15,11 +15,7 @@ async function main() {
   if (config.alertsOnly) {
     // Light sweep: no bulk download, no snapshot. Just refresh the prices
     // of alerted cards via Scryfall's individual endpoint and evaluate.
-    if (!config.skipPriceRefresh) {
-      await refreshAlertedPrices();
-    } else {
-      console.log('[alerts] SKIP_PRICE_REFRESH=true — evaluating against current DB prices');
-    }
+    await refreshAlertedPrices();
     const triggered = await evaluatePriceAlerts();
     const push = await sendPushForTriggered(triggered);
     await runPriceAlertMaintenance();
