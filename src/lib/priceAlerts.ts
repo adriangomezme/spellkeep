@@ -22,6 +22,8 @@ export interface PriceAlert {
   target_value: number;
   snapshot_price: number;
   status: PriceAlertStatus;
+  snoozed_until: string | null;
+  auto_rearm: number; // 0/1 in SQLite
   created_at: string;
   triggered_at: string | null;
   updated_at: string;
@@ -107,6 +109,7 @@ export async function createAlertFromCard(params: {
   mode: PriceAlertMode;
   targetValue: number;
   snapshotPrice: number;
+  autoRearm?: boolean;
 }): Promise<string> {
   const userId = await getUserId();
   const existingForCard = await countAlertsForCard(params.card.id);
@@ -128,8 +131,8 @@ export async function createAlertFromCard(params: {
     `INSERT INTO price_alerts
        (id, user_id, card_id, card_name, card_set, card_collector_number,
         card_image_uri, finish, direction, mode, target_value, snapshot_price,
-        status, created_at, triggered_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        status, snoozed_until, auto_rearm, created_at, triggered_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       userId,
@@ -144,6 +147,8 @@ export async function createAlertFromCard(params: {
       params.targetValue,
       params.snapshotPrice,
       'active',
+      null,
+      params.autoRearm ? 1 : 0,
       now,
       null,
       now,
@@ -160,6 +165,8 @@ export async function updateAlertLocal(
     targetValue?: number;
     finish?: Finish;
     status?: PriceAlertStatus;
+    autoRearm?: boolean;
+    snoozedUntil?: string | null;
   }
 ): Promise<void> {
   const now = new Date().toISOString();
@@ -170,6 +177,8 @@ export async function updateAlertLocal(
   if (patch.targetValue !== undefined) { sets.push('target_value = ?'); vals.push(patch.targetValue); }
   if (patch.finish !== undefined) { sets.push('finish = ?'); vals.push(patch.finish); }
   if (patch.status !== undefined) { sets.push('status = ?'); vals.push(patch.status); }
+  if (patch.autoRearm !== undefined) { sets.push('auto_rearm = ?'); vals.push(patch.autoRearm ? 1 : 0); }
+  if (patch.snoozedUntil !== undefined) { sets.push('snoozed_until = ?'); vals.push(patch.snoozedUntil); }
   vals.push(id);
   await db.execute(
     `UPDATE price_alerts SET ${sets.join(', ')} WHERE id = ?`,
@@ -177,8 +186,49 @@ export async function updateAlertLocal(
   );
 }
 
+/** Snooze an alert by N hours from now. Pass 0 to cancel snooze. */
+export async function snoozeAlertLocal(id: string, hours: number): Promise<void> {
+  const snoozedUntil =
+    hours > 0 ? new Date(Date.now() + hours * 3600 * 1000).toISOString() : null;
+  await updateAlertLocal(id, { snoozedUntil });
+}
+
 export async function deleteAlertLocal(id: string): Promise<void> {
   await db.execute(`DELETE FROM price_alerts WHERE id = ?`, [id]);
+}
+
+export async function setAlertStatusLocal(
+  id: string,
+  status: PriceAlertStatus
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(
+    `UPDATE price_alerts
+        SET status = ?,
+            triggered_at = CASE WHEN ? = 'active' THEN NULL ELSE triggered_at END,
+            updated_at = ?
+      WHERE id = ?`,
+    [status, status, now, id]
+  );
+}
+
+/**
+ * Bulk-delete every triggered alert for the current user. Called from the
+ * "Clear all" action on the Triggered tab once the user has reviewed them.
+ */
+export async function clearTriggeredAlertsLocal(): Promise<number> {
+  const userId = await getUserId();
+  const before: any = await db.execute(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE user_id = ? AND status = 'triggered'`,
+    [userId]
+  );
+  const count = extractCount(before);
+  if (count === 0) return 0;
+  await db.execute(
+    `DELETE FROM price_alerts WHERE user_id = ? AND status = 'triggered'`,
+    [userId]
+  );
+  return count;
 }
 
 /**

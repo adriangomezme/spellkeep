@@ -25,6 +25,9 @@ import { formatUSD, getCard, type ScryfallCard } from '../../src/lib/scryfall';
 import {
   computeTargetUsd,
   deleteAlertLocal,
+  setAlertStatusLocal,
+  snoozeAlertLocal,
+  clearTriggeredAlertsLocal,
   simulateCurrentPrice,
   MAX_ACTIVE_ALERTS_PER_USER,
   type PriceAlert,
@@ -62,7 +65,7 @@ export default function AlertsScreen() {
   const { data: rows } = useQuery<PriceAlert>(
     `SELECT id, user_id, card_id, card_name, card_set, card_collector_number,
             card_image_uri, finish, direction, mode, target_value, snapshot_price,
-            status, created_at, triggered_at, updated_at
+            status, snoozed_until, auto_rearm, created_at, triggered_at, updated_at
        FROM price_alerts
       ORDER BY CASE status WHEN 'triggered' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
                created_at DESC`
@@ -149,6 +152,53 @@ export default function AlertsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => deleteAlertLocal(alert.id),
+        },
+      ]
+    );
+  }
+
+  function togglePause(alert: PriceAlert) {
+    const next: PriceAlertStatus = alert.status === 'paused' ? 'active' : 'paused';
+    setAlertStatusLocal(alert.id, next).catch((err: any) =>
+      RNAlert.alert('Error', err?.message ?? 'Could not update alert')
+    );
+  }
+
+  function showMoreActions(alert: PriceAlert) {
+    const snoozed = !!alert.snoozed_until && new Date(alert.snoozed_until) > new Date();
+    RNAlert.alert(
+      alert.card_name,
+      snoozed ? 'This alert is snoozed.' : 'More actions',
+      [
+        snoozed
+          ? {
+              text: 'Cancel snooze',
+              onPress: () => snoozeAlertLocal(alert.id, 0),
+            }
+          : { text: 'Snooze 1 h', onPress: () => snoozeAlertLocal(alert.id, 1) },
+        { text: 'Snooze 24 h', onPress: () => snoozeAlertLocal(alert.id, 24) },
+        { text: 'Snooze 7 d', onPress: () => snoozeAlertLocal(alert.id, 24 * 7) },
+        { text: 'Close', style: 'cancel' },
+      ]
+    );
+  }
+
+  function confirmClearTriggered() {
+    const count = (rows ?? []).filter((a) => a.status === 'triggered').length;
+    if (count === 0) return;
+    RNAlert.alert(
+      `Clear ${count} triggered alert${count === 1 ? '' : 's'}?`,
+      'Removes alerts that already fired. You can create new ones anytime.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => {
+            clearTriggeredAlertsLocal().catch((err: any) =>
+              RNAlert.alert('Error', err?.message ?? 'Could not clear alerts')
+            );
+          },
         },
       ]
     );
@@ -323,18 +373,40 @@ export default function AlertsScreen() {
           </View>
         ) : viewMode === 'flat' ? (
           <View style={styles.list}>
+            {tab === 'triggered' && alerts.length > 0 && (
+              <TouchableOpacity
+                style={styles.bulkClearBtn}
+                onPress={confirmClearTriggered}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.error} />
+                <Text style={styles.bulkClearText}>Clear all triggered</Text>
+              </TouchableOpacity>
+            )}
             {alerts.map((a) => (
               <AlertRow
                 key={a.id}
                 alert={a}
                 highlighted={a.id === highlightedId}
                 onPress={() => openEdit(a)}
+                onLongPress={() => showMoreActions(a)}
                 onDelete={() => confirmDelete(a)}
+                onTogglePause={() => togglePause(a)}
               />
             ))}
           </View>
         ) : (
           <View style={styles.list}>
+            {tab === 'triggered' && alerts.length > 0 && (
+              <TouchableOpacity
+                style={styles.bulkClearBtn}
+                onPress={confirmClearTriggered}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.error} />
+                <Text style={styles.bulkClearText}>Clear all triggered</Text>
+              </TouchableOpacity>
+            )}
             {grouped.map((g) => (
               <GroupedCard
                 key={g.card.card_id}
@@ -348,6 +420,7 @@ export default function AlertsScreen() {
                 }
                 onEditAlert={openEdit}
                 onDeleteAlert={confirmDelete}
+                onTogglePauseAlert={togglePause}
               />
             ))}
           </View>
@@ -372,12 +445,16 @@ function AlertRow({
   alert,
   highlighted,
   onPress,
+  onLongPress,
   onDelete,
+  onTogglePause,
 }: {
   alert: PriceAlert;
   highlighted?: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
   onDelete: () => void;
+  onTogglePause: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -398,10 +475,14 @@ function AlertRow({
       ? `${alert.direction === 'below' ? '−' : '+'}${Math.abs(alert.target_value)}%`
       : `${alert.direction === 'below' ? 'Below' : 'Above'} ${formatUSD(alert.target_value)}`;
 
+  const snoozed =
+    !!alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now();
   const row = (
     <TouchableOpacity
       style={[styles.row, highlighted && styles.rowHighlighted]}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={0.7}
     >
       {alert.card_image_uri ? (
@@ -452,16 +533,49 @@ function AlertRow({
             <Text style={styles.pausedBadgeText}>Paused</Text>
           </View>
         )}
+        {snoozed && (
+          <View style={styles.pausedBadge}>
+            <Text style={styles.pausedBadgeText}>Snoozed</Text>
+          </View>
+        )}
+        {!!alert.auto_rearm && (
+          <View style={styles.rearmBadge}>
+            <Ionicons name="refresh" size={10} color="#1D9E58" />
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
 
+  const isPaused = alert.status === 'paused';
+
   return (
     <Swipeable
       renderRightActions={() => (
-        <TouchableOpacity style={styles.deleteAction} onPress={onDelete}>
-          <Ionicons name="trash-outline" size={24} color={colors.error} />
-        </TouchableOpacity>
+        <View style={styles.swipeActions}>
+          <TouchableOpacity
+            style={[styles.swipeAction, styles.swipeActionPause]}
+            onPress={onTogglePause}
+          >
+            <Ionicons
+              name={isPaused ? 'play' : 'pause'}
+              size={22}
+              color="#E0A52B"
+            />
+            <Text style={[styles.swipeActionLabel, { color: '#E0A52B' }]}>
+              {isPaused ? 'Resume' : 'Pause'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.swipeAction, styles.swipeActionDelete]}
+            onPress={onDelete}
+          >
+            <Ionicons name="trash-outline" size={22} color={colors.error} />
+            <Text style={[styles.swipeActionLabel, { color: colors.error }]}>
+              Delete
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
       overshootRight={false}
       containerStyle={styles.swipeContainer}
@@ -477,6 +591,7 @@ function GroupedCard({
   onOpen,
   onEditAlert,
   onDeleteAlert,
+  onTogglePauseAlert,
 }: {
   card: {
     card_id: string;
@@ -490,6 +605,7 @@ function GroupedCard({
   onOpen: () => void;
   onEditAlert: (a: PriceAlert) => void;
   onDeleteAlert: (a: PriceAlert) => void;
+  onTogglePauseAlert: (a: PriceAlert) => void;
 }) {
   return (
     <View style={styles.groupCard}>
@@ -527,6 +643,7 @@ function GroupedCard({
             alert={a}
             onEdit={() => onEditAlert(a)}
             onDelete={() => onDeleteAlert(a)}
+            onTogglePause={() => onTogglePauseAlert(a)}
           />
         ))}
       </View>
@@ -538,10 +655,12 @@ function GroupedAlertLine({
   alert,
   onEdit,
   onDelete,
+  onTogglePause,
 }: {
   alert: PriceAlert;
   onEdit: () => void;
   onDelete: () => void;
+  onTogglePause: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -588,9 +707,21 @@ function GroupedAlertLine({
         <Text style={[styles.groupLineDelta, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
           {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
         </Text>
+        {alert.status === 'paused' && (
+          <View style={styles.pausedBadgeInline}>
+            <Text style={styles.pausedBadgeInlineText}>Paused</Text>
+          </View>
+        )}
       </View>
 
-      <TouchableOpacity onPress={onDelete} hitSlop={10} style={styles.groupLineDelete}>
+      <TouchableOpacity onPress={onTogglePause} hitSlop={10} style={styles.groupLineBtn}>
+        <Ionicons
+          name={alert.status === 'paused' ? 'play' : 'pause'}
+          size={16}
+          color={colors.textMuted}
+        />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onDelete} hitSlop={10} style={styles.groupLineBtn}>
         <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -926,10 +1057,63 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   pausedBadgeText: { color: colors.textMuted, fontSize: fontSize.xs, fontWeight: '700' },
+  rearmBadge: {
+    marginTop: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#1D9E5820',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   deleteAction: {
     width: 72,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  swipeActions: {
+    flexDirection: 'row',
+  },
+  swipeAction: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  swipeActionPause: {},
+  swipeActionDelete: {},
+  swipeActionLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  bulkClearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  bulkClearText: {
+    color: colors.error,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+  },
+  groupLineBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  pausedBadgeInline: {
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+  },
+  pausedBadgeInlineText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
   },
   // Empty
   empty: {

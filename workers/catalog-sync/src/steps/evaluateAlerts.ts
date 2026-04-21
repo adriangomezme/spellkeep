@@ -17,6 +17,7 @@ type ActiveAlertRow = {
   mode: PriceAlertMode;
   target_value: number;
   snapshot_price: number;
+  auto_rearm: boolean;
 };
 
 type CardPriceRow = {
@@ -35,6 +36,7 @@ export type TriggeredAlert = {
   direction: PriceAlertDirection;
   target_price: number;
   current_price: number;
+  auto_rearm: boolean;
 };
 
 /**
@@ -46,12 +48,15 @@ export type TriggeredAlert = {
  * notifications to the owning users.
  */
 export async function evaluatePriceAlerts(): Promise<TriggeredAlert[]> {
+  const nowIso = new Date().toISOString();
   const { data: alerts, error: aErr } = await supabase
     .from('price_alerts')
     .select(
-      'id, user_id, card_id, card_name, finish, direction, mode, target_value, snapshot_price'
+      'id, user_id, card_id, card_name, finish, direction, mode, target_value, snapshot_price, auto_rearm'
     )
     .eq('status', 'active')
+    // Skip snoozed alerts (NULL or already elapsed are eligible).
+    .or(`snoozed_until.is.null,snoozed_until.lte.${nowIso}`)
     .returns<ActiveAlertRow[]>();
   if (aErr) throw new Error(`active alerts select failed: ${aErr.message}`);
   const active = alerts ?? [];
@@ -95,6 +100,7 @@ export async function evaluatePriceAlerts(): Promise<TriggeredAlert[]> {
       direction: a.direction,
       target_price: target,
       current_price: currentPrice,
+      auto_rearm: !!a.auto_rearm,
     });
   }
 
@@ -103,19 +109,71 @@ export async function evaluatePriceAlerts(): Promise<TriggeredAlert[]> {
     return [];
   }
 
-  console.log(`[alerts] flipping ${triggered.length} alert(s) to triggered`);
+  const oneShot = triggered.filter((t) => !t.auto_rearm);
+  const rearm = triggered.filter((t) => t.auto_rearm);
+  console.log(
+    `[alerts] flipping ${oneShot.length} one-shot alert(s), re-arming ${rearm.length}`
+  );
+
   const now = new Date().toISOString();
-  // Chunked UPDATE via `IN` to keep payloads small.
-  for (let i = 0; i < triggered.length; i += 200) {
-    const slice = triggered.slice(i, i + 200);
+
+  // Append history events for every trigger — one-shot and re-arm alike.
+  // Done before the status flip so if we crash mid-run the next sweep
+  // doesn't lose the historical record.
+  const events = triggered.map((t) => {
+    const modeFromActive = active.find((a) => a.id === t.id);
+    return {
+      alert_id: t.id,
+      user_id: t.user_id,
+      current_price: t.current_price,
+      target_price: t.target_price,
+      direction: t.direction,
+      mode: modeFromActive?.mode ?? 'price',
+      at: now,
+    };
+  });
+  for (let i = 0; i < events.length; i += 200) {
+    const slice = events.slice(i, i + 200);
+    const { error: eErr } = await supabase.from('price_alert_events').insert(slice);
+    if (eErr) {
+      // Non-fatal: we still want status flips + push to run.
+      console.warn(`[alerts] event insert failed: ${eErr.message}`);
+      break;
+    }
+  }
+
+  // One-shots → permanent triggered state until the user clears or edits.
+  for (let i = 0; i < oneShot.length; i += 200) {
+    const slice = oneShot.slice(i, i + 200);
     const { error: uErr } = await supabase
       .from('price_alerts')
       .update({ status: 'triggered', triggered_at: now })
-      .in(
-        'id',
-        slice.map((t) => t.id)
-      );
+      .in('id', slice.map((t) => t.id));
     if (uErr) throw new Error(`price_alerts flip failed: ${uErr.message}`);
   }
+
+  // Auto-rearm: stay active, but re-anchor snapshot_price to the price that
+  // just crossed and snooze for 1 h so we don't fire again until the
+  // market moves further in the same direction. Done per-row because the
+  // new snapshot differs for each alert.
+  const COOLDOWN_HOURS = 1;
+  const cooldownUntil = new Date(
+    Date.now() + COOLDOWN_HOURS * 3600 * 1000
+  ).toISOString();
+  for (const t of rearm) {
+    const { error: uErr } = await supabase
+      .from('price_alerts')
+      .update({
+        triggered_at: now,
+        snapshot_price: t.current_price,
+        snoozed_until: cooldownUntil,
+      })
+      .eq('id', t.id);
+    if (uErr) {
+      // Log but keep going so one bad row doesn't block the batch.
+      console.warn(`[alerts] rearm update failed for ${t.id}: ${uErr.message}`);
+    }
+  }
+
   return triggered;
 }

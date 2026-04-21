@@ -20,6 +20,7 @@ import { formatUSD, type ScryfallCard } from '../lib/scryfall';
 import {
   computeTargetUsd,
   deleteAlertLocal,
+  setAlertStatusLocal,
   simulateCurrentPrice,
   MAX_ALERTS_PER_CARD,
   type PriceAlert,
@@ -41,7 +42,7 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
   const { data: rows } = useQuery<PriceAlert>(
     `SELECT id, user_id, card_id, card_name, card_set, card_collector_number,
             card_image_uri, finish, direction, mode, target_value, snapshot_price,
-            status, created_at, triggered_at, updated_at
+            status, snoozed_until, auto_rearm, created_at, triggered_at, updated_at
        FROM price_alerts
       WHERE card_id = ?
       ORDER BY CASE status WHEN 'triggered' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
@@ -98,6 +99,11 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
                   alert={a}
                   onEdit={() => setEditing(a)}
                   onDelete={() => confirmDelete(a)}
+                  onTogglePause={() =>
+                    setAlertStatusLocal(a.id, a.status === 'paused' ? 'active' : 'paused').catch(
+                      (err: any) => RNAlert.alert('Error', err?.message ?? 'Could not update')
+                    )
+                  }
                 />
               ))}
             </View>
@@ -146,10 +152,12 @@ function AlertRow({
   alert,
   onEdit,
   onDelete,
+  onTogglePause,
 }: {
   alert: PriceAlert;
   onEdit: () => void;
   onDelete: () => void;
+  onTogglePause: () => void;
 }) {
   const target = computeTargetUsd(
     alert.snapshot_price,
@@ -193,6 +201,17 @@ function AlertRow({
           {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
         </Text>
       </View>
+      <TouchableOpacity
+        onPress={onTogglePause}
+        hitSlop={8}
+        style={styles.deleteBtn}
+      >
+        <Ionicons
+          name={alert.status === 'paused' ? 'play-outline' : 'pause-outline'}
+          size={18}
+          color={alert.status === 'paused' ? '#E0A52B' : colors.textMuted}
+        />
+      </TouchableOpacity>
       <TouchableOpacity
         onPress={onDelete}
         hitSlop={8}

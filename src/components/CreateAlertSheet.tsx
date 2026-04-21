@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@powersync/react';
 import { BottomSheet } from './BottomSheet';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
@@ -82,7 +83,19 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
     if (existing) return String(existing.target_value);
     return mode === 'percent' ? '15' : '';
   });
+  const [autoRearm, setAutoRearm] = useState<boolean>(!!existing?.auto_rearm);
   const [saving, setSaving] = useState(false);
+
+  // When editing, load the trigger history for the alert. Cheap — typically
+  // a handful of rows per alert.
+  const { data: events } = useQuery<{ at: string; current_price: number }>(
+    `SELECT at, current_price
+       FROM price_alert_events
+      WHERE alert_id = ?
+      ORDER BY at DESC
+      LIMIT 5`,
+    [existing?.id ?? '']
+  );
 
   // Re-seed state when the sheet opens anew or switches alert.
   useEffect(() => {
@@ -92,11 +105,13 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
       setDirection(existing.direction);
       setMode(existing.mode);
       setRawValue(String(existing.target_value));
+      setAutoRearm(!!existing.auto_rearm);
     } else {
       setFinish(availableFinishes[0]);
       setDirection('below');
       setMode('percent');
       setRawValue('15');
+      setAutoRearm(false);
     }
   }, [visible, existing, availableFinishes]);
 
@@ -165,6 +180,7 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
           mode,
           targetValue: parsedValue!,
           finish,
+          autoRearm,
         });
       } else if (card) {
         await createAlertFromCard({
@@ -174,6 +190,7 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
           mode,
           targetValue: parsedValue!,
           snapshotPrice: snapshotPrice!,
+          autoRearm,
         });
       }
       onSaved?.();
@@ -324,6 +341,37 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
           <Text style={styles.preview}>{preview}</Text>
         )}
 
+        {/* History (edit mode, only if we have events) */}
+        {isEdit && (events?.length ?? 0) > 0 && (
+          <View style={styles.historyWrap}>
+            <Text style={styles.historyLabel}>
+              Triggered {events!.length} time{events!.length === 1 ? '' : 's'}
+            </Text>
+            {events!.slice(0, 3).map((e, i) => (
+              <Text key={i} style={styles.historyRow}>
+                {formatDate(e.at)} · {formatUSD(e.current_price)}
+              </Text>
+            ))}
+          </View>
+        )}
+
+        {/* Auto re-arm toggle */}
+        <TouchableOpacity
+          style={styles.rearmRow}
+          onPress={() => setAutoRearm((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rearmTextWrap}>
+            <Text style={styles.rearmTitle}>Auto re-arm</Text>
+            <Text style={styles.rearmHint}>
+              After trigger, re-anchor to the new price and keep watching.
+            </Text>
+          </View>
+          <View style={[styles.toggle, autoRearm && styles.toggleOn]}>
+            <View style={[styles.toggleKnob, autoRearm && styles.toggleKnobOn]} />
+          </View>
+        </TouchableOpacity>
+
         {/* CTA */}
         <TouchableOpacity
           style={[styles.cta, !canSave && styles.ctaDisabled]}
@@ -344,6 +392,17 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 const styles = StyleSheet.create({
@@ -441,6 +500,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     fontWeight: '500',
+  },
+  rearmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  rearmTextWrap: { flex: 1 },
+  rearmTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '600' },
+  rearmHint: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
+  toggle: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.border,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  toggleOn: { backgroundColor: colors.primary },
+  toggleKnob: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  toggleKnobOn: { transform: [{ translateX: 18 }] },
+  historyWrap: {
+    gap: 4,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.md,
+  },
+  historyLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  historyRow: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   cta: {
     backgroundColor: colors.primary,

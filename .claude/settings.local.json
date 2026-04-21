@@ -102,7 +102,9 @@
       "mcp__supabase__get_advisors",
       "mcp__supabase__list_migrations",
       "Bash(npm run *)",
-      "Bash(npm --prefix workers/catalog-sync run typecheck)"
+      "Bash(npm --prefix workers/catalog-sync run typecheck)",
+      "Bash(gh workflow *)",
+      "Bash(gh run *)"
     ]
   },
   "enableAllProjectMcpServers": true,

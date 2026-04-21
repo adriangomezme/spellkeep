@@ -32,6 +32,9 @@ streams:
     # below 1000 in practice).
     user_price_alerts:
         query: "SELECT * FROM price_alerts WHERE user_id = auth.user_id()"
+    # Trigger history. Worker-only writes; client reads for history view.
+    user_price_alert_events:
+        query: "SELECT * FROM price_alert_events WHERE user_id = auth.user_id()"
 
 # NOTE: the previous user_collection_cards / user_deck_cards streams
 # synced rows from the `cards` table to the device based on what the user

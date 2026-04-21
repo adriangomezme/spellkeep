@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@powersync/react';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 type InsightTab = {
@@ -28,6 +29,11 @@ type Props = {
 };
 
 export function InsightTabs({ onTabPress }: Props) {
+  const { data: triggeredRows } = useQuery<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM price_alerts WHERE status = 'triggered'`
+  );
+  const triggeredCount = Number(triggeredRows?.[0]?.cnt ?? 0);
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -35,20 +41,28 @@ export function InsightTabs({ onTabPress }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={styles.tab}
-            onPress={() => onTabPress(tab.key)}
-            activeOpacity={0.5}
-          >
-            <View style={[styles.iconBubble, { backgroundColor: tab.color + '1A' }]}>
-              <Ionicons name={tab.icon} size={14} color={tab.color} />
-            </View>
-            <Text style={styles.tabText}>{tab.label}</Text>
-            <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
-          </TouchableOpacity>
-        ))}
+        {TABS.map((tab) => {
+          const badge = tab.key === 'price-alerts' && triggeredCount > 0 ? triggeredCount : 0;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.tab}
+              onPress={() => onTabPress(tab.key)}
+              activeOpacity={0.5}
+            >
+              <View style={[styles.iconBubble, { backgroundColor: tab.color + '1A' }]}>
+                <Ionicons name={tab.icon} size={14} color={tab.color} />
+              </View>
+              <Text style={styles.tabText}>{tab.label}</Text>
+              {badge > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{badge}</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -84,5 +98,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     fontWeight: '500',
+  },
+  badge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    backgroundColor: '#C24848',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
 });

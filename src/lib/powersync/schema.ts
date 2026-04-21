@@ -210,6 +210,8 @@ const price_alerts = new Table({
   target_value: column.real,            // absolute USD if mode='price'; signed % if mode='percent'
   snapshot_price: column.real,          // price at creation (anchor for later comparisons)
   status: column.text,                  // 'active' | 'triggered' | 'paused'
+  snoozed_until: column.text,           // ISO; NULL or past means eligible
+  auto_rearm: column.integer,           // 0/1
   created_at: column.text,
   triggered_at: column.text,
   updated_at: column.text,
@@ -218,6 +220,23 @@ const price_alerts = new Table({
     user_id: ['user_id'],
     card_id: ['card_id'],
     status: ['status'],
+  },
+});
+
+// Append-only history of alert trigger events. Written by the worker,
+// read-only on the client.
+const price_alert_events = new Table({
+  alert_id: column.text,
+  user_id: column.text,
+  current_price: column.real,
+  target_price: column.real,
+  direction: column.text,
+  mode: column.text,
+  at: column.text,
+}, {
+  indexes: {
+    alert_id: ['alert_id'],
+    user_id: ['user_id'],
   },
 });
 
@@ -272,6 +291,7 @@ export const AppSchema = new Schema({
   catalog_meta,
   price_overrides,
   price_alerts,
+  price_alert_events,
   collection_stats_cache,
 });
 
