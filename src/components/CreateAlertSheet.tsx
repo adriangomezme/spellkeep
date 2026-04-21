@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@powersync/react';
 import { BottomSheet } from './BottomSheet';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
@@ -85,17 +84,6 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
   });
   const [autoRearm, setAutoRearm] = useState<boolean>(!!existing?.auto_rearm);
   const [saving, setSaving] = useState(false);
-
-  // When editing, load the trigger history for the alert. Cheap — typically
-  // a handful of rows per alert.
-  const { data: events } = useQuery<{ at: string; current_price: number }>(
-    `SELECT at, current_price
-       FROM price_alert_events
-      WHERE alert_id = ?
-      ORDER BY at DESC
-      LIMIT 5`,
-    [existing?.id ?? '']
-  );
 
   // Re-seed state when the sheet opens anew or switches alert.
   useEffect(() => {
@@ -349,20 +337,6 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
           <Text style={styles.preview}>{preview}</Text>
         )}
 
-        {/* History (edit mode, only if we have events) */}
-        {isEdit && (events?.length ?? 0) > 0 && (
-          <View style={styles.historyWrap}>
-            <Text style={styles.historyLabel}>
-              Triggered {events!.length} time{events!.length === 1 ? '' : 's'}
-            </Text>
-            {events!.slice(0, 3).map((e, i) => (
-              <Text key={i} style={styles.historyRow}>
-                {formatDate(e.at)} · {formatUSD(e.current_price)}
-              </Text>
-            ))}
-          </View>
-        )}
-
         {/* Auto re-arm toggle — percent mode only */}
         <TouchableOpacity
           style={[styles.rearmRow, mode === 'price' && styles.rearmRowDisabled]}
@@ -418,16 +392,6 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -553,24 +517,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   toggleKnobOn: { transform: [{ translateX: 18 }] },
-  historyWrap: {
-    gap: 4,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-  },
-  historyLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  historyRow: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-  },
   cta: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.md,

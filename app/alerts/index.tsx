@@ -28,9 +28,10 @@ import {
   setAlertStatusLocal,
   snoozeAlertLocal,
   updateAlertLocal,
-  clearTriggeredAlertsLocal,
   MAX_ACTIVE_ALERTS_PER_USER,
   type PriceAlert,
+  type PriceAlertDirection,
+  type PriceAlertMode,
 } from '../../src/lib/priceAlerts';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
 import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
@@ -38,6 +39,28 @@ import { useAlertsViewMode } from '../../src/lib/hooks/useAlertsViewMode';
 import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
 
 type TabKey = 'all' | 'paused' | 'triggered';
+
+type TriggerEventRow = {
+  event_id: string;
+  at: string;
+  event_price: number;
+  target_price: number;
+  event_direction: PriceAlertDirection;
+  event_mode: PriceAlertMode;
+  alert_id: string;
+  card_id: string;
+  card_name: string;
+  card_set: string;
+  card_collector_number: string;
+  card_image_uri: string | null;
+  finish: PriceAlert['finish'];
+  status: PriceAlert['status'];
+  auto_rearm: number;
+  snoozed_until: string | null;
+  snapshot_price: number;
+};
+
+const RECENT_EVENT_WINDOW_MS = 24 * 3600 * 1000;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -75,6 +98,32 @@ export default function AlertsScreen() {
       ORDER BY created_at DESC`
   );
 
+  // Trigger-event feed used by the Triggered tab. Joined with the current
+  // alert row so each event knows the card it belongs to and whether the
+  // alert is one-shot (still needs user action) or auto-rearmed.
+  const { data: eventRows } = useQuery<TriggerEventRow>(
+    `SELECT e.id AS event_id,
+            e.at,
+            e.current_price AS event_price,
+            e.target_price,
+            e.direction AS event_direction,
+            e.mode AS event_mode,
+            a.id AS alert_id,
+            a.card_id,
+            a.card_name,
+            a.card_set,
+            a.card_collector_number,
+            a.card_image_uri,
+            a.finish,
+            a.status,
+            a.auto_rearm,
+            a.snoozed_until,
+            a.snapshot_price
+       FROM price_alert_events e
+       JOIN price_alerts a ON a.id = e.alert_id
+      ORDER BY e.at DESC`
+  );
+
   // Live prices from catalog.db for every alert currently in memory.
   // Includes alerts across all tabs so the data is warm when the user
   // flips between them.
@@ -106,15 +155,14 @@ export default function AlertsScreen() {
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
-    // "All" = everything the user is still watching (excludes triggered).
-    // "Paused" = only paused alerts.
-    // "Triggered" = only triggered alerts.
+    // Triggered tab is driven by eventRows (see `events` below) — here
+    // we only filter the active/paused inventory views.
     const byTab =
       tab === 'all'
         ? all.filter((a) => a.status !== 'triggered')
         : tab === 'paused'
           ? all.filter((a) => a.status === 'paused')
-          : all.filter((a) => a.status === 'triggered');
+          : [];
     const q = search.trim().toLowerCase();
     if (!q) return byTab;
     return byTab.filter(
@@ -125,14 +173,26 @@ export default function AlertsScreen() {
     );
   }, [rows, tab, search]);
 
+  const events = useMemo(() => {
+    const all = eventRows ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(
+      (e) =>
+        e.card_name.toLowerCase().includes(q) ||
+        e.card_set.toLowerCase().includes(q) ||
+        e.card_collector_number.toLowerCase().includes(q)
+    );
+  }, [eventRows, search]);
+
   // Kicker next to tabs: count of the currently visible tab.
-  const tabCount = alerts.length;
+  const tabCount = tab === 'triggered' ? events.length : alerts.length;
   const tabCountLabel =
     tab === 'all'
       ? `${tabCount} total`
       : tab === 'paused'
         ? `${tabCount} paused`
-        : `${tabCount} triggered`;
+        : `${tabCount} events`;
 
   // Grouped-by-card: one entry per card_id, with all its alerts under it.
   const grouped = useMemo(() => {
@@ -216,27 +276,6 @@ export default function AlertsScreen() {
       { text: '30 days', onPress: () => snoozeAlertLocal(alert.id, 24 * 30) },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }
-
-  function confirmClearTriggered() {
-    const count = (rows ?? []).filter((a) => a.status === 'triggered').length;
-    if (count === 0) return;
-    RNAlert.alert(
-      `Clear ${count} triggered alert${count === 1 ? '' : 's'}?`,
-      'Removes alerts that already fired. You can create new ones anytime.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear all',
-          style: 'destructive',
-          onPress: () => {
-            clearTriggeredAlertsLocal().catch((err: any) =>
-              RNAlert.alert('Error', err?.message ?? 'Could not clear alerts')
-            );
-          },
-        },
-      ]
-    );
   }
 
   // Crossfade: expanded big title visible at top; collapses as scrollY grows.
@@ -398,7 +437,33 @@ export default function AlertsScreen() {
         </View>
 
         {/* List or empty state */}
-        {alerts.length === 0 ? (
+        {tab === 'triggered' ? (
+          events.length === 0 ? (
+            <View style={styles.flexFill}>
+              <EmptyState
+                tab={tab}
+                hasQuery={search.trim().length > 0}
+                onFindCard={() => router.push('/(tabs)/search')}
+              />
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {events.map((e) => (
+                <EventRow
+                  key={e.event_id}
+                  event={e}
+                  highlighted={e.alert_id === highlightedId}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/alerts/[id]',
+                      params: { id: e.alert_id },
+                    })
+                  }
+                />
+              ))}
+            </View>
+          )
+        ) : alerts.length === 0 ? (
           <View style={styles.flexFill}>
             <EmptyState
               tab={tab}
@@ -408,16 +473,6 @@ export default function AlertsScreen() {
           </View>
         ) : viewMode === 'flat' ? (
           <View style={styles.list}>
-            {tab === 'triggered' && alerts.length > 0 && (
-              <TouchableOpacity
-                style={styles.bulkClearBtn}
-                onPress={confirmClearTriggered}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={14} color={colors.error} />
-                <Text style={styles.bulkClearText}>Clear all triggered</Text>
-              </TouchableOpacity>
-            )}
             {alerts.map((a) => (
               <AlertRow
                 key={a.id}
@@ -433,16 +488,6 @@ export default function AlertsScreen() {
           </View>
         ) : (
           <View style={styles.list}>
-            {tab === 'triggered' && alerts.length > 0 && (
-              <TouchableOpacity
-                style={styles.bulkClearBtn}
-                onPress={confirmClearTriggered}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={14} color={colors.error} />
-                <Text style={styles.bulkClearText}>Clear all triggered</Text>
-              </TouchableOpacity>
-            )}
             {grouped.map((g) => (
               <GroupedCard
                 key={g.card.card_id}
@@ -477,6 +522,10 @@ export default function AlertsScreen() {
         onPause={() => actionsAlert && togglePause(actionsAlert)}
         onSnooze={() => actionsAlert && showSnoozeMenu(actionsAlert)}
         onToggleAutoRearm={() => actionsAlert && toggleAutoRearm(actionsAlert)}
+        onViewDetails={() =>
+          actionsAlert &&
+          router.push({ pathname: '/alerts/[id]', params: { id: actionsAlert.id } })
+        }
         onDelete={() => actionsAlert && confirmDelete(actionsAlert)}
       />
     </View>
@@ -650,6 +699,93 @@ function AlertRow({
       {row}
     </Swipeable>
   );
+}
+
+function EventRow({
+  event,
+  highlighted,
+  onPress,
+}: {
+  event: TriggerEventRow;
+  highlighted?: boolean;
+  onPress: () => void;
+}) {
+  const dirColor = event.event_direction === 'above' ? DIR_UP : DIR_DOWN;
+  const dirIcon = event.event_direction === 'above' ? 'trending-up' : 'trending-down';
+
+  const conditionLabel =
+    event.event_mode === 'percent'
+      ? `${event.event_direction === 'below' ? '−' : '+'} crossed at ${formatUSD(event.target_price)}`
+      : `${event.event_direction === 'below' ? 'Below' : 'Above'} ${formatUSD(event.target_price)} hit`;
+
+  const ageMs = Date.now() - new Date(event.at).getTime();
+  const isRecent = ageMs < RECENT_EVENT_WINDOW_MS;
+  const stateChip =
+    event.status === 'triggered'
+      ? { label: 'Needs action', color: DIR_DOWN, bg: DIR_DOWN + '15' }
+      : event.auto_rearm
+        ? { label: 'Re-armed', color: '#1D9E58', bg: '#1D9E5815' }
+        : null;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.row,
+        highlighted && styles.rowHighlighted,
+        isRecent && styles.rowRecent,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {event.card_image_uri ? (
+        <Image
+          source={{ uri: event.card_image_uri }}
+          style={styles.thumb}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      ) : (
+        <View style={[styles.thumb, styles.thumbPlaceholder]} />
+      )}
+      <View style={styles.rowBody}>
+        <Text style={styles.rowName} numberOfLines={1}>
+          {event.card_name}
+        </Text>
+        <Text style={styles.rowMeta} numberOfLines={1}>
+          {event.card_set.toUpperCase()} · #{event.card_collector_number} · {capitalize(event.finish)}
+        </Text>
+        <View style={styles.conditionRow}>
+          <Ionicons name={dirIcon} size={14} color={dirColor} />
+          <Text style={[styles.conditionText, { color: dirColor }]}>{conditionLabel}</Text>
+        </View>
+      </View>
+      <View style={styles.rowRight}>
+        <Text style={styles.currentValue}>{formatUSD(event.event_price)}</Text>
+        <Text style={styles.snapshotLabel}>{formatEventAge(event.at)}</Text>
+        {stateChip && (
+          <View style={[styles.eventStateChip, { backgroundColor: stateChip.bg }]}>
+            <Text style={[styles.eventStateChipText, { color: stateChip.color }]}>
+              {stateChip.label}
+            </Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function formatEventAge(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (isNaN(diffMs)) return '';
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function GroupedCard({
@@ -845,8 +981,8 @@ function EmptyState({
             cta: null as string | null,
           }
         : {
-            title: 'Nothing triggered yet',
-            body: 'Alerts that cross their target will land here.',
+            title: 'No triggers yet',
+            body: 'Every time one of your alerts fires, it lands here as a permanent record.',
             cta: null as string | null,
           };
 
@@ -1109,6 +1245,20 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primary + '08',
   },
+  rowRecent: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  eventStateChip: {
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  eventStateChipText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
   thumb: {
     width: 44,
     height: 62,
@@ -1216,19 +1366,6 @@ const styles = StyleSheet.create({
   swipeActionDelete: {},
   swipeActionLabel: {
     fontSize: fontSize.xs,
-    fontWeight: '600',
-  },
-  bulkClearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  bulkClearText: {
-    color: colors.error,
-    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   groupLineBtnGroup: {
