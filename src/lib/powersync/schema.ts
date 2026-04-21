@@ -224,7 +224,9 @@ const price_alerts = new Table({
 });
 
 // Append-only history of alert trigger events. Written by the worker,
-// read-only on the client.
+// read-only on the client. `snapshot_price` is the alert's snapshot at
+// the moment of the trigger — needed to compute meaningful deltas after
+// the worker re-anchors the snapshot on auto-rearm flips.
 const price_alert_events = new Table({
   alert_id: column.text,
   user_id: column.text,
@@ -232,6 +234,7 @@ const price_alert_events = new Table({
   target_price: column.real,
   direction: column.text,
   mode: column.text,
+  snapshot_price: column.real,
   at: column.text,
 }, {
   indexes: {

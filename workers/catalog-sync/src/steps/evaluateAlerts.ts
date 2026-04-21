@@ -119,16 +119,19 @@ export async function evaluatePriceAlerts(): Promise<TriggeredAlert[]> {
 
   // Append history events for every trigger — one-shot and re-arm alike.
   // Done before the status flip so if we crash mid-run the next sweep
-  // doesn't lose the historical record.
+  // doesn't lose the historical record. We persist `snapshot_price` on
+  // the event so the history view stays accurate even after auto-rearm
+  // overwrites the parent alert's snapshot below.
   const events = triggered.map((t) => {
-    const modeFromActive = active.find((a) => a.id === t.id);
+    const fromActive = active.find((a) => a.id === t.id);
     return {
       alert_id: t.id,
       user_id: t.user_id,
       current_price: t.current_price,
       target_price: t.target_price,
       direction: t.direction,
-      mode: modeFromActive?.mode ?? 'price',
+      mode: fromActive?.mode ?? 'price',
+      snapshot_price: fromActive?.snapshot_price ?? null,
       at: now,
     };
   });

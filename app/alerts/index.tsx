@@ -99,8 +99,9 @@ export default function AlertsScreen() {
   );
 
   // Trigger-event feed used by the Triggered tab. Joined with the current
-  // alert row so each event knows the card it belongs to and whether the
-  // alert is one-shot (still needs user action) or auto-rearmed.
+  // alert row for card metadata. `snapshot_price` comes from the EVENT
+  // (the alert's snapshot at trigger time) so auto-rearmed events still
+  // show a meaningful "from snapshot" delta after re-anchoring.
   const { data: eventRows } = useQuery<TriggerEventRow>(
     `SELECT e.id AS event_id,
             e.at,
@@ -108,6 +109,7 @@ export default function AlertsScreen() {
             e.target_price,
             e.direction AS event_direction,
             e.mode AS event_mode,
+            COALESCE(e.snapshot_price, a.snapshot_price) AS snapshot_price,
             a.id AS alert_id,
             a.card_id,
             a.card_name,
@@ -117,8 +119,7 @@ export default function AlertsScreen() {
             a.finish,
             a.status,
             a.auto_rearm,
-            a.snoozed_until,
-            a.snapshot_price
+            a.snoozed_until
        FROM price_alert_events e
        JOIN price_alerts a ON a.id = e.alert_id
       ORDER BY e.at DESC`

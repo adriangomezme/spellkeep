@@ -44,6 +44,7 @@ type EventRow = {
   target_price: number;
   direction: string;
   mode: string;
+  snapshot_price: number | null;
   at: string;
 };
 
@@ -64,7 +65,7 @@ export default function AlertDetailScreen() {
   const alert = alertRows?.[0] ?? null;
 
   const { data: events } = useQuery<EventRow>(
-    `SELECT id, current_price, target_price, direction, mode, at
+    `SELECT id, current_price, target_price, direction, mode, snapshot_price, at
        FROM price_alert_events
       WHERE alert_id = ?
       ORDER BY at DESC`,
@@ -396,7 +397,7 @@ export default function AlertDetailScreen() {
               <HistoryEvent
                 key={e.id}
                 event={e}
-                snapshotAtCreate={alert.snapshot_price}
+                snapshotAtCreate={e.snapshot_price ?? alert.snapshot_price}
                 isFirst={idx === 0}
                 isLast={idx === events!.length - 1}
               />
