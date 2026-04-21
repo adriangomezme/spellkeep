@@ -97,7 +97,9 @@
       "Bash(~/bin/supabase db *)",
       "Bash(tee /tmp/tsc.out)",
       "Bash(echo \"---exit $?\")",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(xargs -I {} git log -1 --format=\"%h %s\" {})",
+      "mcp__supabase__get_advisors"
     ]
   },
   "enableAllProjectMcpServers": true,
