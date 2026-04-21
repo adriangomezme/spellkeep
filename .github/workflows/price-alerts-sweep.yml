@@ -1,0 +1,47 @@
+name: price-alerts-sweep
+
+# Light sweeps between the daily full catalog-sync run. We skip the bulk
+# download / upsert / snapshot and instead pull fresh prices for just the
+# cards that have at least one active alert, via Scryfall's individual
+# /cards/:id endpoint. Then evaluate alerts and flip to triggered.
+#
+# Schedule covers the remaining two USA-business-hours slots (13:00 is
+# handled by catalog-sync.yml itself).
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: price-alerts-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: workers/catalog-sync
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: workers/catalog-sync/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run alerts-only sweep
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALERTS_ONLY: 'true'
+        run: npm start

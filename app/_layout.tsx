@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { colors } from '../src/constants';
 import { AuthProvider } from '../src/components/AuthProvider';
+import { PushNotificationsProvider } from '../src/components/PushNotificationsProvider';
 import { PowerSyncProvider } from '../src/components/PowerSyncProvider';
 import { ImportJobProvider } from '../src/components/collection/ImportJobProvider';
 import { MinimizedImportPill } from '../src/components/collection/MinimizedImportPill';
@@ -14,6 +15,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
       <AuthProvider>
+        <PushNotificationsProvider>
         <PowerSyncProvider>
           <ImportJobProvider>
             <StatusBar style="dark" />
@@ -29,6 +31,7 @@ export default function RootLayout() {
             <Toast />
           </ImportJobProvider>
         </PowerSyncProvider>
+        </PushNotificationsProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

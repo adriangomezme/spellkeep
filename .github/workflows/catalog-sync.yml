@@ -2,9 +2,11 @@ name: catalog-sync
 
 on:
   schedule:
-    # Runs daily at 06:00 UTC. Scryfall publishes fresh bulk data around 09:00 UTC,
-    # so our first production schedule will shift to match once we confirm cadence.
-    - cron: '0 6 * * *'
+    # Full daily run at 13:00 UTC. Scryfall publishes fresh bulk data
+    # around 09:00 UTC, so by 13:00 it's stable. This slot also happens
+    # to be the first of the three daily price-alert sweep windows
+    # (13:00 / 18:00 / 23:00 UTC) that cover USA business hours.
+    - cron: '0 13 * * *'
   workflow_dispatch:
     inputs:
       force_snapshot:

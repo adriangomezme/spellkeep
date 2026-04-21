@@ -16,4 +16,9 @@ export const config = {
 
   // Skip snapshot generation entirely (e.g. for fast iteration / debug runs).
   skipSnapshot: process.env.SKIP_SNAPSHOT === 'true',
+
+  // Light-mode: skip sets + cards bulk + snapshot. Only refresh prices
+  // for cards that have active alerts and evaluate those alerts. Used by
+  // the 18:00 / 23:00 UTC sweeps between the full daily run.
+  alertsOnly: process.env.ALERTS_ONLY === 'true',
 };

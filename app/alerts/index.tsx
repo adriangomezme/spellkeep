@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@powersync/react';
 import {
   colors,
@@ -51,11 +51,13 @@ const COLLAPSE_DISTANCE = 80;
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { focusId } = useLocalSearchParams<{ focusId?: string }>();
   const [tab, setTab] = useState<TabKey>('active');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('flat');
   const [editing, setEditing] = useState<{ alert: PriceAlert; card: ScryfallCard | null } | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const { data: rows } = useQuery<PriceAlert>(
     `SELECT id, user_id, card_id, card_name, card_set, card_collector_number,
@@ -72,6 +74,19 @@ export default function AlertsScreen() {
   );
   const nearLimit =
     activeUsageCount >= Math.floor(MAX_ACTIVE_ALERTS_PER_USER * 0.8);
+
+  // Deep-link handler: if a push notification routed us here with a focusId,
+  // switch to the Triggered tab (where the row will be sitting) and light
+  // it up briefly so the user can spot which alert just fired.
+  useEffect(() => {
+    if (!focusId) return;
+    const row = (rows ?? []).find((r) => r.id === focusId);
+    if (!row) return;
+    setTab(row.status === 'triggered' ? 'triggered' : 'all');
+    setHighlightedId(focusId);
+    const t = setTimeout(() => setHighlightedId(null), 2500);
+    return () => clearTimeout(t);
+  }, [focusId, rows]);
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
@@ -312,6 +327,7 @@ export default function AlertsScreen() {
               <AlertRow
                 key={a.id}
                 alert={a}
+                highlighted={a.id === highlightedId}
                 onPress={() => openEdit(a)}
                 onDelete={() => confirmDelete(a)}
               />
@@ -354,10 +370,12 @@ export default function AlertsScreen() {
 
 function AlertRow({
   alert,
+  highlighted,
   onPress,
   onDelete,
 }: {
   alert: PriceAlert;
+  highlighted?: boolean;
   onPress: () => void;
   onDelete: () => void;
 }) {
@@ -381,7 +399,11 @@ function AlertRow({
       : `${alert.direction === 'below' ? 'Below' : 'Above'} ${formatUSD(alert.target_value)}`;
 
   const row = (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[styles.row, highlighted && styles.rowHighlighted]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
       {alert.card_image_uri ? (
         <Image
           source={{ uri: alert.card_image_uri }}
@@ -854,6 +876,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     ...shadows.sm,
+  },
+  rowHighlighted: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '08',
   },
   thumb: {
     width: 44,

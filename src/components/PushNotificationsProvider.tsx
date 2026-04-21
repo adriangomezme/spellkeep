@@ -1,0 +1,39 @@
+import { useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
+import { useAuthContext } from './AuthProvider';
+import { registerPushToken, subscribeToPushTaps } from '../lib/pushNotifications';
+
+/**
+ * Mount this inside <AuthProvider>. It registers the device's push token
+ * the first time a non-anonymous session is available and every time the
+ * user id changes, and forwards notification taps to /alerts with the
+ * alert id as `focusId`.
+ */
+export function PushNotificationsProvider({ children }: { children: React.ReactNode }) {
+  const { user, isAnonymous } = useAuthContext();
+  const router = useRouter();
+  const lastRegisteredUser = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Anonymous accounts don't need push — tokens live with real accounts.
+    if (!user || isAnonymous) return;
+    if (lastRegisteredUser.current === user.id) return;
+    lastRegisteredUser.current = user.id;
+    registerPushToken(user.id).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[push] registration failed: ${msg}`);
+    });
+  }, [user, isAnonymous]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToPushTaps((alertId, _cardId) => {
+      router.push({
+        pathname: '/alerts',
+        params: alertId ? { focusId: alertId } : {},
+      });
+    });
+    return unsubscribe;
+  }, [router]);
+
+  return <>{children}</>;
+}

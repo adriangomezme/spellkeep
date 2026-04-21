@@ -100,7 +100,9 @@
       "Bash(echo \"exit: $?\")",
       "Bash(xargs -I {} git log -1 --format=\"%h %s\" {})",
       "mcp__supabase__get_advisors",
-      "mcp__supabase__list_migrations"
+      "mcp__supabase__list_migrations",
+      "Bash(npm run *)",
+      "Bash(npm --prefix workers/catalog-sync run typecheck)"
     ]
   },
   "enableAllProjectMcpServers": true,
