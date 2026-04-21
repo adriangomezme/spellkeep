@@ -26,11 +26,11 @@ export function PushNotificationsProvider({ children }: { children: React.ReactN
   }, [user, isAnonymous]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToPushTaps((alertId, _cardId) => {
-      router.push({
-        pathname: '/alerts',
-        params: alertId ? { focusId: alertId } : {},
-      });
+    // Tapping a price-alert push drops the user on the Triggered tab.
+    // No focus id, no row highlight — the "NEW" pill on each fresh
+    // event already makes it obvious which entry fired.
+    const unsubscribe = subscribeToPushTaps(() => {
+      router.push({ pathname: '/alerts', params: { tab: 'triggered' } });
     });
     return unsubscribe;
   }, [router]);

@@ -81,14 +81,15 @@ const COLLAPSE_DISTANCE = 80;
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { focusId } = useLocalSearchParams<{ focusId?: string }>();
-  const [tab, setTab] = useState<TabKey>('all');
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<TabKey>(
+    tabParam === 'paused' || tabParam === 'triggered' ? tabParam : 'all'
+  );
   const [search, setSearch] = useState('');
   const { viewMode, setViewMode } = useAlertsViewMode();
   const [editing, setEditing] = useState<{ alert: PriceAlert; card: ScryfallCard | null } | null>(null);
   const [actionsAlert, setActionsAlert] = useState<PriceAlert | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const { data: rows } = useQuery<PriceAlert>(
     `SELECT id, user_id, card_id, card_name, card_set, card_collector_number,
@@ -141,18 +142,13 @@ export default function AlertsScreen() {
   const nearLimit =
     activeUsageCount >= Math.floor(MAX_ACTIVE_ALERTS_PER_USER * 0.8);
 
-  // Deep-link handler: if a push notification routed us here with a focusId,
-  // switch to the Triggered tab (where the row will be sitting) and light
-  // it up briefly so the user can spot which alert just fired.
+  // If the route param changes after mount (e.g. a second push arrives
+  // while /alerts is already open), respect the new tab.
   useEffect(() => {
-    if (!focusId) return;
-    const row = (rows ?? []).find((r) => r.id === focusId);
-    if (!row) return;
-    setTab(row.status === 'triggered' ? 'triggered' : 'all');
-    setHighlightedId(focusId);
-    const t = setTimeout(() => setHighlightedId(null), 2500);
-    return () => clearTimeout(t);
-  }, [focusId, rows]);
+    if (tabParam === 'paused' || tabParam === 'triggered' || tabParam === 'all') {
+      setTab(tabParam);
+    }
+  }, [tabParam]);
 
   const alerts = useMemo(() => {
     const all = rows ?? [];
@@ -453,7 +449,6 @@ export default function AlertsScreen() {
                 <EventRow
                   key={e.event_id}
                   event={e}
-                  highlighted={e.alert_id === highlightedId}
                   onPress={() =>
                     router.push({
                       pathname: '/alerts/[id]',
@@ -479,7 +474,6 @@ export default function AlertsScreen() {
                 key={a.id}
                 alert={a}
                 currentPrice={priceMap.get(priceKey(a.card_id, a.finish)) ?? null}
-                highlighted={a.id === highlightedId}
                 onPress={() =>
                   router.push({ pathname: '/alerts/[id]', params: { id: a.id } })
                 }
@@ -541,7 +535,6 @@ export default function AlertsScreen() {
 function AlertRow({
   alert,
   currentPrice,
-  highlighted,
   onPress,
   onDelete,
   onTogglePause,
@@ -549,7 +542,6 @@ function AlertRow({
 }: {
   alert: PriceAlert;
   currentPrice: number | null;
-  highlighted?: boolean;
   onPress: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
@@ -580,7 +572,7 @@ function AlertRow({
     !!alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now();
   const row = (
     <TouchableOpacity
-      style={[styles.row, highlighted && styles.rowHighlighted]}
+      style={styles.row}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -705,11 +697,9 @@ function AlertRow({
 
 function EventRow({
   event,
-  highlighted,
   onPress,
 }: {
   event: TriggerEventRow;
-  highlighted?: boolean;
   onPress: () => void;
 }) {
   const dirColor = event.event_direction === 'above' ? DIR_UP : DIR_DOWN;
@@ -727,7 +717,7 @@ function EventRow({
   return (
     <View style={styles.eventRowWrap}>
       <TouchableOpacity
-        style={[styles.row, highlighted && styles.rowHighlighted]}
+        style={styles.row}
         onPress={onPress}
         activeOpacity={0.7}
       >
@@ -1246,11 +1236,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     ...shadows.sm,
-  },
-  rowHighlighted: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '08',
   },
   eventRowWrap: {
     marginBottom: spacing.sm,
