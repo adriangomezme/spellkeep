@@ -11,9 +11,9 @@ export const colors = {
   textMuted: '#9CA3AF',
 
   // Brand
-  primary: '#023BFD',
+  primary: '#3B5BDB',
   primaryLight: '#E8EEFF',
-  primaryDark: '#0130D0',
+  primaryDark: '#3B5BDB',
 
   // MTG Mana colors
   manaWhite: '#F9FAF4',

@@ -42,6 +42,94 @@ function newId(): string {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Sort preferences + custom ordering (migration 00045)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type SortMode =
+  | 'name_asc'
+  | 'name_desc'
+  | 'created_asc'
+  | 'created_desc'
+  | 'custom';
+
+export type SortPrefKey =
+  | 'folder_sort_mode'
+  | 'binder_sort_mode'
+  | 'list_sort_mode';
+
+/**
+ * PATCH one sort-mode column on the signed-in user's `profiles` row.
+ * One row per user, keyed by the session user_id — this is a PATCH so
+ * it goes through the connector as a single-row UPDATE (PATCH is never
+ * batched, per SupabaseConnector rules).
+ */
+export async function updateSortPreferenceLocal(
+  key: SortPrefKey,
+  value: SortMode
+): Promise<void> {
+  const userId = await getUserId();
+  const now = new Date().toISOString();
+  // Whitelist the column name — `key` is typed but we still avoid any
+  // chance of SQL injection by switching on the allowed keys.
+  const column =
+    key === 'folder_sort_mode' ? 'folder_sort_mode'
+    : key === 'binder_sort_mode' ? 'binder_sort_mode'
+    : 'list_sort_mode';
+  await db.execute(
+    `UPDATE profiles SET ${column} = ?, updated_at = ? WHERE id = ?`,
+    [value, now, userId]
+  );
+}
+
+/**
+ * Renumber every folder in `orderedIds` with sort_order = i * 1024.
+ * Caller passes the full visible order (what the user dragged into
+ * place). Rebuilding from scratch each time keeps the code simple and
+ * the result deterministic across devices; for realistic folder
+ * counts (~dozens) the write cost is trivial.
+ */
+export async function reorderCollectionFoldersLocal(
+  orderedIds: string[]
+): Promise<void> {
+  if (orderedIds.length === 0) return;
+  const now = new Date().toISOString();
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx.execute(
+        `UPDATE collection_folders SET sort_order = ?, updated_at = ? WHERE id = ?`,
+        [(i + 1) * 1024, now, orderedIds[i]]
+      );
+    }
+  });
+}
+
+/**
+ * Renumber every collection inside a given folder (or root when
+ * `parentFolderId` is null). sort_order scope is (user_id, folder_id);
+ * we only touch rows whose folder matches to avoid cross-scope
+ * collateral.
+ */
+export async function reorderCollectionsLocal(
+  parentFolderId: string | null,
+  orderedIds: string[]
+): Promise<void> {
+  if (orderedIds.length === 0) return;
+  const now = new Date().toISOString();
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await tx.execute(
+        `UPDATE collections SET sort_order = ?, updated_at = ? WHERE id = ?`,
+        [(i + 1) * 1024, now, orderedIds[i]]
+      );
+    }
+  });
+  // parentFolderId is accepted for clarity / future guard rails but
+  // isn't used in the UPDATE — orderedIds are already scoped by the
+  // caller.
+  void parentFolderId;
+}
+
 export async function createCollectionLocal(params: {
   name: string;
   type: CollectionType;
@@ -52,20 +140,33 @@ export async function createCollectionLocal(params: {
   const userId = await getUserId();
   const id = newId();
   const now = new Date().toISOString();
+  const folderId = params.folderId ?? null;
+  // Seed sort_order at max+1024 within the destination scope so a new
+  // binder in custom-order mode lands at the bottom of its folder.
+  const maxRows = await db.getAll<{ max_order: number | null }>(
+    folderId === null
+      ? `SELECT MAX(sort_order) AS max_order FROM collections
+           WHERE user_id = ? AND folder_id IS NULL`
+      : `SELECT MAX(sort_order) AS max_order FROM collections
+           WHERE user_id = ? AND folder_id = ?`,
+    folderId === null ? [userId] : [userId, folderId]
+  );
+  const sortOrder = (maxRows?.[0]?.max_order ?? 0) + 1024;
   // Omit is_public and share_token — Supabase sets defaults, and including
   // integer 0 for the boolean is_public column trips PostgREST type coercion.
   await db.execute(
     `INSERT INTO collections
-       (id, user_id, name, type, folder_id, color, description, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, name, type, folder_id, color, description, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       userId,
       params.name,
       params.type,
-      params.folderId ?? null,
+      folderId,
       params.color ?? null,
       params.description ?? null,
+      sortOrder,
       now,
       now,
     ]
@@ -81,11 +182,16 @@ export async function createFolderLocal(
   const userId = await getUserId();
   const id = newId();
   const now = new Date().toISOString();
+  const maxRows = await db.getAll<{ max_order: number | null }>(
+    `SELECT MAX(sort_order) AS max_order FROM collection_folders WHERE user_id = ?`,
+    [userId]
+  );
+  const sortOrder = (maxRows?.[0]?.max_order ?? 0) + 1024;
   await db.execute(
     `INSERT INTO collection_folders
-       (id, user_id, name, type, color, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, userId, name, type, color ?? null, now, now]
+       (id, user_id, name, type, color, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, name, type, color ?? null, sortOrder, now, now]
   );
   return id;
 }
@@ -212,11 +318,27 @@ export async function moveToFolderLocal(
   collectionId: string,
   folderId: string | null
 ): Promise<void> {
+  const userId = await getUserId();
   const now = new Date().toISOString();
-  await db.execute(
-    `UPDATE collections SET folder_id = ?, updated_at = ? WHERE id = ?`,
-    [folderId, now, collectionId]
-  );
+  // Drop the moved binder at the bottom of the destination folder.
+  // sort_order scope is (user_id, folder_id) — NULL folder_id = root.
+  // The row's previous sort_order is discarded; moving in/out resets
+  // position per product decision.
+  await db.writeTransaction(async (tx) => {
+    const maxRows = await tx.getAll<{ max_order: number | null }>(
+      folderId === null
+        ? `SELECT MAX(sort_order) AS max_order FROM collections
+             WHERE user_id = ? AND folder_id IS NULL AND id != ?`
+        : `SELECT MAX(sort_order) AS max_order FROM collections
+             WHERE user_id = ? AND folder_id = ? AND id != ?`,
+      folderId === null ? [userId, collectionId] : [userId, folderId, collectionId]
+    );
+    const nextOrder = (maxRows?.[0]?.max_order ?? 0) + 1024;
+    await tx.execute(
+      `UPDATE collections SET folder_id = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+      [folderId, nextOrder, now, collectionId]
+    );
+  });
 }
 
 /**

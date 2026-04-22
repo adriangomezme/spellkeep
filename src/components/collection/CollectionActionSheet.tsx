@@ -24,6 +24,10 @@ type Props = {
   /** Whether this item is the current Quick Add target. Toggles the label
    *  of the "Set/Clear Quick Add target" action. */
   isQuickAddTarget?: boolean;
+  /** Hide the Reorder action — used when the sheet is opened from a
+   *  context where reordering siblings would be confusing (the folder's
+   *  own detail screen, a binder's own detail screen). */
+  hideReorder?: boolean;
   onAction: (key: string) => void;
   onClose: () => void;
 };
@@ -34,6 +38,7 @@ export function CollectionActionSheet({
   itemType,
   inFolder,
   isQuickAddTarget,
+  hideReorder,
   onAction,
   onClose,
 }: Props) {
@@ -43,10 +48,11 @@ export function CollectionActionSheet({
   const listActions: ActionOption[] = [];
 
   if (itemType === 'folder') {
-    quickActions.push(
-      { key: 'edit', label: 'Edit', icon: 'create-outline' },
-      { key: 'delete', label: 'Delete', icon: 'trash-outline', destructive: true },
-    );
+    quickActions.push({ key: 'edit', label: 'Edit', icon: 'create-outline' });
+    if (!hideReorder) {
+      quickActions.push({ key: 'reorder', label: 'Reorder', icon: 'reorder-three-outline' });
+    }
+    quickActions.push({ key: 'delete', label: 'Delete', icon: 'trash-outline', destructive: true });
   } else {
     // Quick actions: Edit, Duplicate, Move/Remove folder
     quickActions.push(
@@ -69,13 +75,16 @@ export function CollectionActionSheet({
       { key: 'merge', label: 'Merge', icon: 'git-merge-outline' },
       { key: 'import', label: 'Import', icon: 'arrow-down-circle-outline' },
       { key: 'export', label: 'Export', icon: 'arrow-up-circle-outline' },
+      ...(hideReorder
+        ? []
+        : [{ key: 'reorder' as const, label: 'Reorder', icon: 'reorder-three-outline' as const }]),
       { key: 'empty', label: 'Empty', icon: 'refresh-outline', destructive: true },
       { key: 'delete', label: 'Delete', icon: 'trash-outline', destructive: true },
     );
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '18%' : '55%']}>
+    <BottomSheet visible={visible} onClose={onClose} snapPoints={[itemType === 'folder' ? '22%' : '60%']}>
       <Text style={styles.title} numberOfLines={1}>{itemName}</Text>
 
       {/* Quick action buttons */}

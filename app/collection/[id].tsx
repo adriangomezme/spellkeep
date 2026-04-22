@@ -459,6 +459,7 @@ export default function CollectionDetailScreen() {
         itemType={(collectionType as 'binder' | 'list') ?? 'binder'}
         inFolder={!!collectionFolderId}
         isQuickAddTarget={id === quickAddTargetId}
+        hideReorder
         onAction={(key) => {
           setShowActions(false);
           if (key === 'edit') setShowEditInfo(true);

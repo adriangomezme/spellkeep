@@ -21,8 +21,12 @@ import {
   deleteFolderWithContentsLocal,
   emptyCollectionLocal,
   moveToFolderLocal,
+  reorderCollectionsLocal,
+  updateSortPreferenceLocal,
 } from '../../../src/lib/collections.local';
 import { useCollectionsHub } from '../../../src/lib/hooks/useCollectionsHub';
+import { useSortPreference } from '../../../src/lib/hooks/useSortPreference';
+import { ReorderableListView } from '../../../src/components/collection/ReorderableList';
 import { useImportJob } from '../../../src/components/collection/ImportJobProvider';
 import { MergeModal } from '../../../src/components/collection/MergeModal';
 import { ExportModal } from '../../../src/components/collection/ExportModal';
@@ -31,6 +35,7 @@ import { CollectionListItem } from '../../../src/components/collection/Collectio
 import { CollectionActionSheet } from '../../../src/components/collection/CollectionActionSheet';
 import { setQuickAddTargetId, useQuickAddTargetId } from '../../../src/lib/quickAdd';
 import { showToast } from '../../../src/components/Toast';
+// showToast handles the "switched to custom" notice after a reorder commit.
 import { EditCollectionInfoModal } from '../../../src/components/collection/EditCollectionInfoModal';
 import { CreateCollectionModal } from '../../../src/components/collection/CreateCollectionModal';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../../src/constants';
@@ -56,6 +61,8 @@ export default function FolderDetailScreen() {
   const [showItemMerge, setShowItemMerge] = useState(false);
   const [showItemExport, setShowItemExport] = useState(false);
   const [showItemImport, setShowItemImport] = useState(false);
+  const [reorderMode, setReorderMode] = useState(false);
+  const sortPref = useSortPreference();
 
   const refresh = useCallback(async () => {
     revalidate();
@@ -92,7 +99,11 @@ export default function FolderDetailScreen() {
 
   function handleItemAction(key: string) {
     if (!selectedItem) return;
-    if (key === 'edit') {
+    if (key === 'reorder') {
+      setShowItemActions(false);
+      setSelectedItem(null);
+      setReorderMode(true);
+    } else if (key === 'edit') {
       setShowItemActions(false);
       setShowItemEdit(true);
     } else if (key === 'merge') {
@@ -190,6 +201,27 @@ export default function FolderDetailScreen() {
   }
 
   const itemTypeLabel = (folderType as string) === 'list' ? 'List' : 'Binder';
+  const folderTypeIsList = (folderType as string) === 'list';
+
+  async function commitReorder(orderedIds: string[]) {
+    await reorderCollectionsLocal(id!, orderedIds);
+    const prefKey = folderTypeIsList ? 'list_sort_mode' : 'binder_sort_mode';
+    const current = folderTypeIsList ? sortPref.list : sortPref.binder;
+    const needFlip = current !== 'custom';
+    if (needFlip) {
+      await updateSortPreferenceLocal(prefKey, 'custom');
+    }
+    // Let PowerSync's useQuery re-emit with the new order before we
+    // unmount the reorder view — otherwise the folder screen paints
+    // one frame with the old order, causing a flicker.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+    setReorderMode(false);
+    if (needFlip) {
+      showToast(`${folderTypeIsList ? 'Lists' : 'Binders'} now ordered by custom`);
+    }
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -207,6 +239,25 @@ export default function FolderDetailScreen() {
         </TouchableOpacity>
       </View>
 
+      {reorderMode ? (
+        <ReorderableListView
+          title={`Reorder ${folderTypeIsList ? 'Lists' : 'Binders'}`}
+          items={items}
+          onCommit={commitReorder}
+          onCancel={() => setReorderMode(false)}
+          renderRow={(item) => (
+            <CollectionListItem
+              name={item.name}
+              type={item.type}
+              color={item.color}
+              subtitle={item.statsReady
+                ? `${item.card_count} Cards · ${item.unique_cards} unique`
+                : '\u00A0'}
+              onPress={() => {}}
+            />
+          )}
+        />
+      ) : (
       <ScrollView
           contentContainerStyle={styles.list}
           refreshControl={
@@ -244,11 +295,13 @@ export default function FolderDetailScreen() {
             ))
           )}
         </ScrollView>
+      )}
 
       <CollectionActionSheet
         visible={showActions && !showEdit}
         itemName={folderName ?? ''}
         itemType="folder"
+        hideReorder
         onAction={handleFolderAction}
         onClose={() => setShowActions(false)}
       />
@@ -343,7 +396,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     color: colors.text,
-    fontSize: fontSize.xxl,
+    fontSize: fontSize.xl,
     fontWeight: '800',
   },
   list: {

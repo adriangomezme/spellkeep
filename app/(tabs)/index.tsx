@@ -23,8 +23,13 @@ import {
   deleteFolderWithContentsLocal,
   emptyCollectionLocal,
   moveToFolderLocal,
+  reorderCollectionFoldersLocal,
+  reorderCollectionsLocal,
+  updateSortPreferenceLocal,
 } from '../../src/lib/collections.local';
 import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
+import { useSortPreference } from '../../src/lib/hooks/useSortPreference';
+import { ReorderableListView } from '../../src/components/collection/ReorderableList';
 import { CatalogBadge } from '../../src/components/CatalogBadge';
 import { CollectionListItem } from '../../src/components/collection/CollectionListItem';
 import { FolderListItem } from '../../src/components/collection/FolderListItem';
@@ -48,6 +53,11 @@ type ActionTarget =
   | { kind: 'collection'; item: CollectionSummary }
   | { kind: 'folder'; item: FolderSummary };
 
+// Reorder mode is a per-section toggle: 'folders' rearranges the folder
+// list for the active tab; 'items' rearranges the root binders/lists for
+// the active tab. Inside a folder the folder screen owns its own mode.
+type ReorderSection = 'folders' | 'items' | null;
+
 export default function CollectionHubScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -66,6 +76,8 @@ export default function CollectionHubScreen() {
   const [showSearch, setShowSearch] = useState(false);
 
   const quickAddTargetId = useQuickAddTargetId();
+  const sortPref = useSortPreference();
+  const [reorderSection, setReorderSection] = useState<ReorderSection>(null);
 
   // Action sheet / modals state
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
@@ -110,6 +122,13 @@ export default function CollectionHubScreen() {
 
   function handleAction(key: string) {
     if (!actionTarget) return;
+
+    if (key === 'reorder') {
+      const wantFolder = actionTarget.kind === 'folder';
+      setActionTarget(null);
+      setReorderSection(wantFolder ? 'folders' : 'items');
+      return;
+    }
 
     if (key === 'edit') {
       setShowEdit(true);
@@ -220,6 +239,42 @@ export default function CollectionHubScreen() {
   const allFolders = activeTab === 'binder' ? binderFolders : listFolders;
   const items = query ? allItems.filter((i) => i.name.toLowerCase().includes(query)) : allItems;
   const folders = query ? allFolders.filter((f) => f.name.toLowerCase().includes(query)) : allFolders;
+
+  // Wait for PowerSync's `useQuery` to re-emit after a write.
+  // Without this pause the reorder screen unmounts before the Hub's
+  // sorted view updates, producing a visible flicker from old to new
+  // order on Done. Two animation frames has been enough empirically.
+  async function waitForReactiveTick() {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+  }
+
+  async function commitFolderReorder(orderedIds: string[]) {
+    await reorderCollectionFoldersLocal(orderedIds);
+    const needFlip = sortPref.folder !== 'custom';
+    if (needFlip) {
+      await updateSortPreferenceLocal('folder_sort_mode', 'custom');
+    }
+    await waitForReactiveTick();
+    setReorderSection(null);
+    if (needFlip) showToast('Folders now ordered by custom');
+  }
+
+  async function commitItemReorder(orderedIds: string[]) {
+    await reorderCollectionsLocal(null, orderedIds);
+    const prefKey = activeTab === 'binder' ? 'binder_sort_mode' : 'list_sort_mode';
+    const current = activeTab === 'binder' ? sortPref.binder : sortPref.list;
+    const needFlip = current !== 'custom';
+    if (needFlip) {
+      await updateSortPreferenceLocal(prefKey, 'custom');
+    }
+    await waitForReactiveTick();
+    setReorderSection(null);
+    if (needFlip) {
+      showToast(`${activeTab === 'binder' ? 'Binders' : 'Lists'} now ordered by custom`);
+    }
+  }
   const emptyMessage = activeTab === 'binder'
     ? 'Create a binder to organize your cards'
     : 'Create a list for wishlists or trades';
@@ -305,6 +360,40 @@ export default function CollectionHubScreen() {
         </View>
       </View>
 
+      {reorderSection === 'folders' ? (
+        <ReorderableListView
+          title="Reorder Folders"
+          items={allFolders}
+          onCommit={commitFolderReorder}
+          onCancel={() => setReorderSection(null)}
+          renderRow={(folder) => (
+            <FolderListItem
+              name={folder.name}
+              itemCount={folder.item_count}
+              color={folder.color}
+              onPress={() => {}}
+            />
+          )}
+        />
+      ) : reorderSection === 'items' ? (
+        <ReorderableListView
+          title={`Reorder ${activeTab === 'binder' ? 'Binders' : 'Lists'}`}
+          items={allItems}
+          onCommit={commitItemReorder}
+          onCancel={() => setReorderSection(null)}
+          renderRow={(item) => (
+            <CollectionListItem
+              name={item.name}
+              type={item.type}
+              color={item.color}
+              subtitle={item.statsReady
+                ? `${item.card_count} Cards · ${item.unique_cards} unique`
+                : '\u00A0'}
+              onPress={() => {}}
+            />
+          )}
+        />
+      ) : (
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -314,7 +403,6 @@ export default function CollectionHubScreen() {
             onRefresh={() => { setIsRefreshing(true); fetchAll(); }}
             tintColor={colors.primary}
           />
-
         }
       >
         {activeTab === 'binder' && (
@@ -402,6 +490,7 @@ export default function CollectionHubScreen() {
           </View>
         )}
       </ScrollView>
+      )}
 
       {/* Modals */}
       <CreateCollectionModal
@@ -516,11 +605,12 @@ const styles = StyleSheet.create({
   },
   ownedRow: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, gap: spacing.md, ...shadows.sm,
+    borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: 15,
+    marginBottom: spacing.sm, gap: spacing.md, ...shadows.sm,
   },
   ownedIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#6B8AFF18', alignItems: 'center', justifyContent: 'center' },
   ownedInfo: { flex: 1 },
-  ownedTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
+  ownedTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '600' },
   ownedSubtitle: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 2 },
   ownedValue: { color: colors.primary, fontSize: fontSize.md, fontWeight: '700', marginRight: spacing.xs },
   emptyContainer: { alignItems: 'center', paddingTop: 60 },

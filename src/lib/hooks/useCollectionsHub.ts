@@ -4,6 +4,8 @@ import { batchResolveBySupabaseId } from '../catalog/catalogQueries';
 import { resolveCardsBySupabaseId } from '../catalog/resolveFromSupabase';
 import { subscribePriceOverrides } from '../pricing/priceOverrides';
 import { writeCollectionStatsCache } from './useCollectionStatsCache';
+import { useSortPreference } from './useSortPreference';
+import type { SortMode } from '../collections.local';
 import type {
   CollectionSummary,
   CollectionType,
@@ -40,6 +42,8 @@ type LocalFolderRow = {
   type: CollectionType;
   color: string | null;
   item_count: number;
+  sort_order: number | null;
+  created_at: string | null;
 };
 
 type CollectionRow = {
@@ -48,7 +52,49 @@ type CollectionRow = {
   type: CollectionType;
   folder_id: string | null;
   color: string | null;
+  sort_order: number | null;
+  created_at: string | null;
 };
+
+/**
+ * JS-side sort that mirrors the SQL ORDER BY clause in orderByClause().
+ * Applied AFTER filtering by type so binders / lists / folders can each
+ * honour their own sort mode even though they come from a single query.
+ */
+function sortByMode<T extends { name: string; sort_order?: number | null; created_at?: string | null }>(
+  rows: T[],
+  mode: SortMode
+): T[] {
+  const copy = rows.slice();
+  copy.sort((a, b) => {
+    switch (mode) {
+      case 'name_asc':
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      case 'name_desc':
+        return b.name.toLowerCase().localeCompare(a.name.toLowerCase());
+      case 'created_asc': {
+        const ax = a.created_at ?? '';
+        const bx = b.created_at ?? '';
+        return ax.localeCompare(bx);
+      }
+      case 'created_desc': {
+        const ax = a.created_at ?? '';
+        const bx = b.created_at ?? '';
+        return bx.localeCompare(ax);
+      }
+      case 'custom': {
+        const ao = a.sort_order ?? 0;
+        const bo = b.sort_order ?? 0;
+        if (ao !== bo) return ao - bo;
+        // Stable tie-break — keeps sibling rows with the same sort_order
+        // (shouldn't happen with the 1024-gap scheme, but we guard) from
+        // shuffling across renders.
+        return (a.created_at ?? '').localeCompare(b.created_at ?? '');
+      }
+    }
+  });
+  return copy;
+}
 
 type CountRow = {
   collection_id: string;
@@ -107,16 +153,15 @@ function toPriceRow(card: ScryfallCard): PriceRow {
 }
 
 export function useCollectionsHub() {
+  const sortPref = useSortPreference();
   const folderRows = useQuery<LocalFolderRow>(
-    `SELECT f.id, f.name, f.type, f.color,
+    `SELECT f.id, f.name, f.type, f.color, f.sort_order, f.created_at,
             (SELECT COUNT(*) FROM collections c WHERE c.folder_id = f.id) AS item_count
-       FROM collection_folders f
-      ORDER BY LOWER(f.name)`
+       FROM collection_folders f`
   );
   const collectionRows = useQuery<CollectionRow>(
-    `SELECT id, name, type, folder_id, color
-       FROM collections
-      ORDER BY LOWER(name)`
+    `SELECT id, name, type, folder_id, color, sort_order, created_at
+       FROM collections`
   );
 
   // Per-collection counts via SQL aggregate. Unique cards = distinct
@@ -353,14 +398,22 @@ export function useCollectionsHub() {
   };
 
   const binders: CollectionSummary[] = useMemo(
-    () => (collectionRows.data ?? []).filter((c) => c.type === 'binder').map(enrich),
+    () =>
+      sortByMode(
+        (collectionRows.data ?? []).filter((c) => c.type === 'binder'),
+        sortPref.binder
+      ).map(enrich),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady]
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady, sortPref.binder]
   );
   const lists: CollectionSummary[] = useMemo(
-    () => (collectionRows.data ?? []).filter((c) => c.type === 'list').map(enrich),
+    () =>
+      sortByMode(
+        (collectionRows.data ?? []).filter((c) => c.type === 'list'),
+        sortPref.list
+      ).map(enrich),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady]
+    [collectionRows.data, countsById, valueByCollection, cachedStatsById, liveCountsReady, cachedStatsReady, sortPref.list]
   );
 
   // Write each collection's freshly-computed stats back to the local
@@ -402,12 +455,12 @@ export function useCollectionsHub() {
   }, [binders, lists, liveCountsReady, countsById, cachedStatsById]);
 
   const binderFolders: FolderSummary[] = useMemo(
-    () => (folderRows.data ?? []).filter((f) => f.type === 'binder'),
-    [folderRows.data]
+    () => sortByMode((folderRows.data ?? []).filter((f) => f.type === 'binder'), sortPref.folder),
+    [folderRows.data, sortPref.folder]
   );
   const listFolders: FolderSummary[] = useMemo(
-    () => (folderRows.data ?? []).filter((f) => f.type === 'list'),
-    [folderRows.data]
+    () => sortByMode((folderRows.data ?? []).filter((f) => f.type === 'list'), sortPref.folder),
+    [folderRows.data, sortPref.folder]
   );
 
   // Owned stats: iterate the merged aggregation rows (same dedup that

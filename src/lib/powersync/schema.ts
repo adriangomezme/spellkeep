@@ -70,6 +70,9 @@ const profiles = new Table({
   username: column.text,
   display_name: column.text,
   avatar_url: column.text,
+  folder_sort_mode: column.text,
+  binder_sort_mode: column.text,
+  list_sort_mode: column.text,
   created_at: column.text,
   updated_at: column.text,
 });
@@ -79,6 +82,7 @@ const collection_folders = new Table({
   name: column.text,
   type: column.text,
   color: column.text,
+  sort_order: column.integer,
   created_at: column.text,
   updated_at: column.text,
 }, { indexes: { user_id: ['user_id'] } });
@@ -92,6 +96,7 @@ const collections = new Table({
   share_token: column.text,
   folder_id: column.text,
   color: column.text,
+  sort_order: column.integer,
   created_at: column.text,
   updated_at: column.text,
 }, { indexes: { user_id: ['user_id'], folder_id: ['folder_id'] } });

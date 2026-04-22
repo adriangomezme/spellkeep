@@ -54,7 +54,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 16,
     marginBottom: spacing.sm,
     overflow: 'hidden',
     ...shadows.sm,
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
   name: {
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   subtitle: {
     color: colors.textMuted,
