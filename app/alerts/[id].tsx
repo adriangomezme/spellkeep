@@ -219,7 +219,7 @@ export default function AlertDetailScreen() {
           hitSlop={8}
           accessibilityLabel="More actions"
         >
-          <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
         </TouchableOpacity>
       </View>
 

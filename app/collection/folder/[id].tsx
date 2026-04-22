@@ -235,7 +235,7 @@ export default function FolderDetailScreen() {
           <Ionicons name="add-circle" size={26} color={colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
         </TouchableOpacity>
       </View>
 

@@ -4,13 +4,20 @@ import { useQuery } from '@powersync/react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import Animated, {
+  interpolate,
+  Extrapolation,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CardImage } from '../../src/components/collection/CardImage';
@@ -38,6 +45,8 @@ const GRID_ITEM_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 const CARD_IMAGE_RATIO = 1.395;
 
 const SEARCH_DEBOUNCE_MS = 200;
+
+const TOOLBAR_HEIGHT = 44;
 // How many rows to render up-front. Grows by the same amount on end-reached
 // — pagination is free locally (just slicing in-memory) so we only do it to
 // keep the initial FlatList mount cheap for 100k-row collections.
@@ -397,6 +406,32 @@ export default function OwnedCardsScreen() {
     </View>
   ) : null;
 
+  // Direction-driven toolbar collapse — see app/collection/[id].tsx.
+  const lastY = useSharedValue(0);
+  const hidden = useSharedValue(0);
+  const SPRING = { damping: 20, stiffness: 140, mass: 0.8 } as const;
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const y = e.contentOffset.y;
+      const delta = y - lastY.value;
+      if (y <= 0) {
+        hidden.value = withSpring(0, SPRING);
+      } else if (delta > 2 && y > 40) {
+        hidden.value = withSpring(1, SPRING);
+      } else if (delta < -2) {
+        hidden.value = withSpring(0, SPRING);
+      }
+      lastY.value = y;
+    },
+  });
+
+  const toolbarStyle = useAnimatedStyle(() => ({
+    opacity: 1 - hidden.value,
+    height: interpolate(hidden.value, [0, 1], [TOOLBAR_HEIGHT, 0], Extrapolation.CLAMP),
+    overflow: 'hidden',
+  }));
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* ── Header ── */}
@@ -417,20 +452,22 @@ export default function OwnedCardsScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      {/* ── Toolbar ── */}
-      <CollectionToolbar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        viewMode={viewMode}
-        onToggleView={() => setViewMode(nextViewMode(viewMode))}
-        onSortPress={() => setShowSort(true)}
-        onFilterPress={() => setShowFilter(true)}
-        activeFilters={countActiveFilters(filters)}
-      />
+      {/* ── Toolbar (collapses on scroll) ── */}
+      <Animated.View style={toolbarStyle}>
+        <CollectionToolbar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          viewMode={viewMode}
+          onToggleView={() => setViewMode(nextViewMode(viewMode))}
+          onSortPress={() => setShowSort(true)}
+          onFilterPress={() => setShowFilter(true)}
+          activeFilters={countActiveFilters(filters)}
+        />
+      </Animated.View>
 
       {/* ── Content ── */}
       {isGrid ? (
-        <FlatList
+        <Animated.FlatList
           key={viewMode}
           data={visibleRows}
           keyExtractor={rowKey}
@@ -444,9 +481,11 @@ export default function OwnedCardsScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.6}
           removeClippedSubviews
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
           key="list"
           data={visibleRows}
           keyExtractor={rowKey}
@@ -458,6 +497,8 @@ export default function OwnedCardsScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.6}
           removeClippedSubviews
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
         />
       )}
 

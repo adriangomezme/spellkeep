@@ -1,10 +1,17 @@
 import { useState, useCallback, useMemo } from 'react';
+import Animated, {
+  interpolate,
+  Extrapolation,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useQuery } from '@powersync/react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   RefreshControl,
   Alert,
@@ -50,6 +57,9 @@ const GRID_GAP = spacing.sm;
 const GRID_PADDING = spacing.lg;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 const CARD_IMAGE_RATIO = 1.395; // MTG card ratio (h/w)
+
+// Toolbar (search + filter + view toggle) animated-height collapse.
+const TOOLBAR_HEIGHT = 44;
 
 type CollectionEntry = EnrichedEntry;
 
@@ -350,6 +360,35 @@ export default function CollectionDetailScreen() {
     );
   }
 
+  // Direction-driven toolbar collapse.
+  // `hidden` is a 0..1 flag: scroll down past 40 px flips it to 1, any
+  // reverse drag flips it back to 0 — even mid-scroll, matching Safari
+  // / Instagram. Spring keeps the motion fluid, not on/off.
+  const lastY = useSharedValue(0);
+  const hidden = useSharedValue(0);
+  const SPRING = { damping: 20, stiffness: 140, mass: 0.8 } as const;
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const y = e.contentOffset.y;
+      const delta = y - lastY.value;
+      if (y <= 0) {
+        hidden.value = withSpring(0, SPRING);
+      } else if (delta > 2 && y > 40) {
+        hidden.value = withSpring(1, SPRING);
+      } else if (delta < -2) {
+        hidden.value = withSpring(0, SPRING);
+      }
+      lastY.value = y;
+    },
+  });
+
+  const toolbarStyle = useAnimatedStyle(() => ({
+    opacity: 1 - hidden.value,
+    height: interpolate(hidden.value, [0, 1], [TOOLBAR_HEIGHT, 0], Extrapolation.CLAMP),
+    overflow: 'hidden',
+  }));
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* ── Header ── */}
@@ -359,11 +398,6 @@ export default function CollectionDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-          {/* Always render the subtitle so the header height is
-              reserved from the first frame. Before the stats resolve
-              we use opacity:0 with a placeholder string so the slot
-              takes its real vertical space but shows no visible
-              character — the numbers fade in cleanly when they land. */}
           <Text
             style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
           >
@@ -373,20 +407,22 @@ export default function CollectionDetailScreen() {
           </Text>
         </View>
         <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="ellipsis-horizontal" size={24} color={colors.text} />
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
         </TouchableOpacity>
       </View>
 
-      {/* ── Toolbar ── */}
-      <CollectionToolbar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        viewMode={viewMode}
-        onToggleView={() => setViewMode(nextViewMode(viewMode))}
-        onSortPress={() => setShowSort(true)}
-        onFilterPress={() => setShowFilter(true)}
-        activeFilters={countActiveFilters(filters)}
-      />
+      {/* ── Toolbar (collapses on scroll) ── */}
+      <Animated.View style={toolbarStyle}>
+        <CollectionToolbar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          viewMode={viewMode}
+          onToggleView={() => setViewMode(nextViewMode(viewMode))}
+          onSortPress={() => setShowSort(true)}
+          onFilterPress={() => setShowFilter(true)}
+          activeFilters={countActiveFilters(filters)}
+        />
+      </Animated.View>
 
       {/* ── Content ──
           We render the list immediately even before enrichment lands:
@@ -395,7 +431,7 @@ export default function CollectionDetailScreen() {
           from the first frame. Names, prices and real images fill in as
           the catalog chunks resolve. */}
       {isGrid ? (
-        <FlatList
+        <Animated.FlatList
           key={viewMode}
           data={displayEntries}
           keyExtractor={(item) => item.id}
@@ -405,9 +441,11 @@ export default function CollectionDetailScreen() {
           contentContainerStyle={styles.gridList}
           refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
           key="list"
           data={displayEntries}
           keyExtractor={(item) => item.id}
@@ -415,6 +453,8 @@ export default function CollectionDetailScreen() {
           contentContainerStyle={styles.listList}
           refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
         />
       )}
 

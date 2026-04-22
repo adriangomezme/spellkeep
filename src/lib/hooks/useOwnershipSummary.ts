@@ -29,14 +29,18 @@ export type OwnershipEntry = {
 };
 
 export type OwnershipSummary = {
+  /** Total copies across binders + lists. */
   total: number;
+  /** Copies held in binders only — lists are wish/trade surfaces so the
+   *  card-detail "owned" count should ignore them. */
+  binderTotal: number;
   normal: number;
   foil: number;
   etched: number;
   entries: OwnershipEntry[];
 };
 
-const EMPTY: OwnershipSummary = { total: 0, normal: 0, foil: 0, etched: 0, entries: [] };
+const EMPTY: OwnershipSummary = { total: 0, binderTotal: 0, normal: 0, foil: 0, etched: 0, entries: [] };
 
 type Row = {
   id: string;
@@ -98,6 +102,7 @@ export function useOwnershipSummary(
     if (!cardId || !rows.data) return EMPTY;
     const entries: OwnershipEntry[] = [];
     let total = 0;
+    let binderTotal = 0;
     let normal = 0;
     let foil = 0;
     let etched = 0;
@@ -105,6 +110,7 @@ export function useOwnershipSummary(
       const qn = Number(r.quantity_normal ?? 0);
       const qf = Number(r.quantity_foil ?? 0);
       const qe = Number(r.quantity_etched ?? 0);
+      const rowTotal = qn + qf + qe;
       entries.push({
         id: r.id,
         collection_id: r.collection_id,
@@ -120,9 +126,10 @@ export function useOwnershipSummary(
       normal += qn;
       foil += qf;
       etched += qe;
-      total += qn + qf + qe;
+      total += rowTotal;
+      if (r.collection_type === 'binder') binderTotal += rowTotal;
     }
-    return { total, normal, foil, etched, entries };
+    return { total, binderTotal, normal, foil, etched, entries };
   }, [cardId, rows.data]);
 }
 

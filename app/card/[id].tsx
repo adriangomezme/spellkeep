@@ -14,6 +14,14 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import Animated, {
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  Extrapolation,
+} from 'react-native-reanimated';
+import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -357,6 +365,27 @@ export default function CardDetailScreen() {
 
   // printOwned is derived via useOwnedQtyByOracleId — live update on +/-.
 
+  // World-class scroll-driven header (Apple News / App Store pattern).
+  // Hooks MUST be declared before the `if (!card)` early return below —
+  // otherwise navigating here without a preloaded cardJson (e.g. from
+  // price alerts) skips these hooks on the loading frame and tips over
+  // React's "same hook order every render" rule.
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y;
+    },
+  });
+  const blurStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 120], [0, 1], Extrapolation.CLAMP),
+  }));
+  const titleStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [120, 180], [0, 1], Extrapolation.CLAMP),
+    transform: [
+      { translateY: interpolate(scrollY.value, [120, 180], [6, 0], Extrapolation.CLAMP) },
+    ],
+  }));
+
   if (!card) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, alignItems: 'center', justifyContent: 'center' }]}>
@@ -372,21 +401,44 @@ export default function CardDetailScreen() {
   const multiFace = isMultiFaceCard(card);
   const imageUri = getCardImageUri(card, 'large');
   const rarityColor = RARITY_COLORS[card.rarity] ?? colors.textSecondary;
-  const ownedTotal = ownership?.total ?? 0;
+  const ownedBinder = ownership?.binderTotal ?? 0;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Header
-        title={card.name}
-        owned={ownedTotal}
-        onBack={() => router.back()}
-        alertCount={alertCount}
-        onOpenAlert={() => setShowAlertSheet(true)}
-      />
+    <View style={styles.container}>
+      <View style={[styles.headerWrap, { paddingTop: insets.top }]}>
+        <Animated.View style={[StyleSheet.absoluteFillObject, blurStyle]}>
+          <BlurView
+            tint="light"
+            intensity={8}
+            style={[StyleSheet.absoluteFillObject, styles.headerBlur]}
+          />
+        </Animated.View>
+        <Header
+          title={card.name}
+          owned={ownedBinder}
+          ownedReady={ownership !== null}
+          titleStyle={titleStyle}
+          onBack={() => router.back()}
+          alertCount={alertCount}
+          onOpenAlert={() => setShowAlertSheet(true)}
+        />
+      </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 96 }]}
+      <Animated.ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          {
+            // Content starts just under the status bar so the hero can
+            // breathe into the header region. The header (back + alert)
+            // floats on top at y=0 with no blur — the card art shows
+            // through to the very top edge with a hair of breathing room.
+            paddingTop: insets.top + 10,
+            paddingBottom: insets.bottom + 96,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         {/* Hero image */}
         {multiFace ? (
@@ -616,7 +668,7 @@ export default function CardDetailScreen() {
             </View>
           )}
         </CollapsibleSection>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Sticky CTA */}
       <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.sm }]}>
@@ -744,27 +796,34 @@ function HeroFaceCarousel({
 function Header({
   title,
   owned,
+  ownedReady,
+  titleStyle,
   onBack,
   alertCount,
   onOpenAlert,
 }: {
   title: string;
   owned: number;
+  ownedReady: boolean;
+  titleStyle: ReturnType<typeof useAnimatedStyle>;
   onBack: () => void;
   alertCount: number;
   onOpenAlert: () => void;
 }) {
+  // Render the subtitle slot unconditionally so the header's vertical
+  // rhythm stays the same whether the user owns zero or ten copies.
+  // '\u00A0' (nbsp) keeps the line height reserved while invisible.
+  let subtitleText = '\u00A0';
+  if (ownedReady && owned > 0) subtitleText = `${owned} owned`;
   return (
     <View style={styles.header}>
       <TouchableOpacity style={styles.headerBtn} onPress={onBack} hitSlop={8}>
         <Ionicons name="chevron-back" size={26} color={colors.text} />
       </TouchableOpacity>
-      <View style={styles.headerTitleWrap}>
+      <Animated.View style={[styles.headerTitleWrap, titleStyle]}>
         <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-        {owned > 0 && (
-          <Text style={styles.headerSubtitle}>{owned} owned</Text>
-        )}
-      </View>
+        <Text style={styles.headerSubtitle}>{subtitleText}</Text>
+      </Animated.View>
       <TouchableOpacity
         style={styles.headerBtn}
         onPress={onOpenAlert}
@@ -776,7 +835,7 @@ function Header({
         <Ionicons
           name={alertCount > 0 ? 'notifications' : 'notifications-outline'}
           size={22}
-          color={alertCount > 0 ? colors.primary : colors.text}
+          color={colors.text}
         />
         {alertCount > 0 && (
           <View style={styles.headerBtnBadge}>
@@ -1385,6 +1444,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    overflow: 'hidden',
+  },
+  headerBlur: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
   errorText: {
     color: colors.error,
     fontSize: fontSize.lg,
@@ -1401,7 +1472,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
+    // Transparent so the blur layer beneath shows through. Back + alert
+    // icons stay visible regardless because they paint over the header.
+    backgroundColor: 'transparent',
   },
   headerBtn: {
     width: 44,

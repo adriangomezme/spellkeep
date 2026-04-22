@@ -96,10 +96,10 @@ export const QuickAddButton = forwardRef<QuickAddButtonHandle, Props>(
         >
           <Animated.View style={[styles.btn, btnAnim]}>
             <Animated.View style={flashAnim}>
-              <Ionicons name="flash" size={22} color={colors.primary} />
+              <Ionicons name="flash-outline" size={22} color={colors.primary} />
             </Animated.View>
             <Animated.View style={[styles.overlayIcon, checkAnim]}>
-              <Ionicons name="checkmark" size={24} color={colors.primary} />
+              <Ionicons name="checkmark-outline" size={24} color={colors.primary} />
             </Animated.View>
           </Animated.View>
         </TouchableOpacity>
