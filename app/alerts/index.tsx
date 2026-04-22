@@ -73,8 +73,10 @@ const DIR_UP = '#1D9E58';
 const DIR_DOWN = '#C24848';
 const PAUSE_COLOR = '#6B7280'; // neutral slate, replaces the prior gold
 const SNOOZE_COLOR = '#6B8AFF';
-const HEADER_BLUE = '#023BFD';
-const HEADER_BLUE_DARK = '#011F9A';
+// Hero / active-tab colors come from the theme so a brand repalette
+// propagates here automatically.
+const HEADER_BLUE = colors.primary;
+const HEADER_BLUE_DARK = colors.primaryDark;
 
 // How far you scroll before the expanded hero is fully collapsed.
 const COLLAPSE_DISTANCE = 80;
@@ -1398,7 +1400,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
   },
   emptyCtaText: { color: '#FFFFFF', fontSize: fontSize.md, fontWeight: '700' },
 });

@@ -43,6 +43,7 @@ import { DestinationPickerModal } from '../../src/components/DestinationPickerMo
 import type { CollectionSummary, CollectionType } from '../../src/lib/collections';
 import { showToast } from '../../src/components/Toast';
 import { QuickAddButton, type QuickAddButtonHandle } from '../../src/components/QuickAddButton';
+import { PrimaryCTA } from '../../src/components/PrimaryCTA';
 import * as Haptics from 'expo-haptics';
 import {
   useOwnershipSummary,
@@ -619,14 +620,12 @@ export default function CardDetailScreen() {
 
       {/* Sticky CTA */}
       <View style={[styles.ctaBar, { paddingBottom: insets.bottom + spacing.sm }]}>
-        <TouchableOpacity
-          style={styles.cta}
+        <PrimaryCTA
+          icon="add"
+          label="Add to collection"
           onPress={() => setShowAddSheet(true)}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="add" size={20} color="#FFFFFF" />
-          <Text style={styles.ctaText}>Add to collection</Text>
-        </TouchableOpacity>
+          style={styles.cta}
+        />
         <QuickAddButton
           ref={quickAddBtnRef}
           onPress={handleQuickAddTap}
@@ -1984,19 +1983,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cta: {
-    flex: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: 14,
+    flex: 1,
+    minHeight: 44,
     ...shadows.md,
-  },
-  ctaText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
   },
 });

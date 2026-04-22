@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
   infoText: { color: colors.textSecondary, fontSize: fontSize.sm, lineHeight: 20 },
   cta: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
     paddingVertical: spacing.md + 2,
     alignItems: 'center',
     justifyContent: 'center',

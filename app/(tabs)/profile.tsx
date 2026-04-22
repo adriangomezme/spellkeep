@@ -273,8 +273,8 @@ export default function ProfileScreen() {
           onPress={handleRefreshPrices}
           disabled={!!priceProgress}
         >
-          <View style={[styles.iconCircle, { backgroundColor: '#22C55E1A' }]}>
-            <Ionicons name="cash" size={20} color="#22C55E" />
+          <View style={[styles.iconCircle, { backgroundColor: colors.success + '1A' }]}>
+            <Ionicons name="cash" size={20} color={colors.success} />
           </View>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Prices</Text>
@@ -304,13 +304,13 @@ export default function ProfileScreen() {
               <View
                 style={[
                   styles.iconCircle,
-                  { backgroundColor: hasQueue ? '#EF44441A' : colors.surfaceSecondary },
+                  { backgroundColor: hasQueue ? colors.error + '1A' : colors.surfaceSecondary },
                 ]}
               >
                 <Ionicons
                   name={hasQueue ? 'alert-circle' : 'checkmark-circle'}
                   size={20}
-                  color={hasQueue ? '#EF4444' : colors.textMuted}
+                  color={hasQueue ? colors.error : colors.textMuted}
                 />
               </View>
               <View style={styles.rowInfo}>

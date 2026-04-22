@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   mergeButton: {
     alignItems: 'center',
     paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
     backgroundColor: colors.primary,
     marginTop: spacing.lg,
   },

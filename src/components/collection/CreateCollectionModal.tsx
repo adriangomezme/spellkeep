@@ -17,6 +17,7 @@ import {
 } from '../../lib/collections';
 import { createCollectionLocal, createFolderLocal } from '../../lib/collections.local';
 import { ColorPicker } from './ColorPicker';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 type CreateType = 'binder' | 'list' | 'folder';
 type ModalView = 'form' | 'folder-picker';
@@ -246,7 +247,7 @@ export function CreateCollectionModal({
               <Ionicons
                 name={opt.icon}
                 size={18}
-                color={type === opt.value ? '#FFFFFF' : colors.textSecondary}
+                color={type === opt.value ? colors.primary : colors.textSecondary}
               />
               <Text style={[styles.typeLabel, type === opt.value && styles.typeLabelActive]}>
                 {opt.label}
@@ -283,7 +284,7 @@ export function CreateCollectionModal({
               onPress={() => setFolderFor('binder')}
               activeOpacity={0.6}
             >
-              <Ionicons name="albums" size={16} color={folderFor === 'binder' ? '#FFFFFF' : colors.textSecondary} />
+              <Ionicons name="albums" size={16} color={folderFor === 'binder' ? colors.primary : colors.textSecondary} />
               <Text style={[styles.folderForText, folderFor === 'binder' && styles.folderForTextActive]}>Binders</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -291,7 +292,7 @@ export function CreateCollectionModal({
               onPress={() => setFolderFor('list')}
               activeOpacity={0.6}
             >
-              <Ionicons name="list" size={16} color={folderFor === 'list' ? '#FFFFFF' : colors.textSecondary} />
+              <Ionicons name="list" size={16} color={folderFor === 'list' ? colors.primary : colors.textSecondary} />
               <Text style={[styles.folderForText, folderFor === 'list' && styles.folderForTextActive]}>Lists</Text>
             </TouchableOpacity>
           </View>
@@ -316,17 +317,14 @@ export function CreateCollectionModal({
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity
-        style={[styles.saveButton, (!name.trim() || isSaving) && styles.saveButtonDisabled]}
+      <PrimaryCTA
+        variant="solid"
+        style={styles.saveButton}
+        label={`Create ${isFolder ? 'folder' : type}`}
         onPress={handleSave}
-        disabled={!name.trim() || isSaving}
-      >
-        {isSaving ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
-        ) : (
-          <Text style={styles.saveText}>Create</Text>
-        )}
-      </TouchableOpacity>
+        loading={isSaving}
+        disabled={!name.trim()}
+      />
     </BottomSheet>
   );
 }
@@ -354,7 +352,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   typeButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   typeLabel: {
     color: colors.textSecondary,
@@ -362,7 +360,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   typeLabelActive: {
-    color: '#FFFFFF',
+    color: colors.primary,
+    fontWeight: '700',
   },
   input: {
     backgroundColor: colors.surfaceSecondary,
@@ -396,7 +395,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   folderForButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   folderForText: {
     color: colors.textSecondary,
@@ -404,7 +403,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   folderForTextActive: {
-    color: '#FFFFFF',
+    color: colors.primary,
+    fontWeight: '700',
   },
   folderPicker: {
     flexDirection: 'row',
@@ -423,19 +423,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
   },
   saveButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary,
     marginTop: spacing.md,
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: '600',
+    minHeight: 44,
   },
   pickerHeader: {
     flexDirection: 'row',

@@ -412,7 +412,7 @@ export default function CollectionHubScreen() {
             activeOpacity={0.6}
           >
             <View style={styles.ownedIconCircle}>
-              <Ionicons name="library" size={20} color="#6B8AFF" />
+              <Ionicons name="library" size={20} color={colors.primary} />
             </View>
             <View style={styles.ownedInfo}>
               <Text style={styles.ownedTitle}>Owned Cards</Text>
@@ -608,7 +608,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: 15,
     marginBottom: spacing.sm, gap: spacing.md, ...shadows.sm,
   },
-  ownedIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#6B8AFF18', alignItems: 'center', justifyContent: 'center' },
+  ownedIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   ownedInfo: { flex: 1 },
   ownedTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '600' },
   ownedSubtitle: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 2 },
@@ -617,7 +617,7 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   emptyTitle: { color: colors.text, fontSize: fontSize.xxl, fontWeight: '700' },
   emptySubtitle: { color: colors.textSecondary, fontSize: fontSize.md, textAlign: 'center', marginTop: spacing.sm, marginHorizontal: spacing.xl },
-  emptyButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, borderRadius: borderRadius.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm, marginTop: spacing.lg },
+  emptyButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm, marginTop: spacing.lg },
   emptyButtonText: { color: '#FFFFFF', fontSize: fontSize.lg, fontWeight: '600' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
+import { colors } from '../constants';
 
 // We lazy-require the native modules so a dev-client that hasn't been
 // rebuilt yet (or a simulator build without them) doesn't crash on
@@ -75,7 +76,7 @@ export async function registerPushToken(userId: string): Promise<void> {
       importance: Notifications.AndroidImportance.HIGH,
       sound: 'default',
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#023BFD',
+      lightColor: colors.primary,
     });
   }
 

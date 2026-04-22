@@ -1,3 +1,9 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Deep Navy palette — #0A2385 as SpellKeep's brand anchor. Editorial,
+// sober, unambiguously "blue" without the electric SaaS feel. Paired
+// with an amber accent for warm contrast and emerald success.
+// ─────────────────────────────────────────────────────────────────────────
+
 export const colors = {
   // Base
   background: '#F5F5F7',
@@ -10,12 +16,16 @@ export const colors = {
   textSecondary: '#6B7280',
   textMuted: '#9CA3AF',
 
-  // Brand
-  primary: '#3B5BDB',
-  primaryLight: '#E8EEFF',
-  primaryDark: '#3B5BDB',
+  // Brand — Deep Navy
+  primary: '#0A2385',
+  primaryLight: '#DBE3F7',
+  primaryDark: '#061A6E',
 
-  // MTG Mana colors
+  // Warm accent — amber, semantically distinct from `warning`
+  accent: '#F59E0B',
+  accentLight: '#FEF4C5',
+
+  // MTG mana (canon)
   manaWhite: '#F9FAF4',
   manaBlue: '#0E68AB',
   manaBlack: '#150B00',
@@ -32,12 +42,11 @@ export const colors = {
   error: '#EF4444',
   errorLight: '#FEF2F2',
 
-  // Borders & Dividers
+  // Borders & dividers
   border: '#E5E7EB',
   borderLight: '#F3F4F6',
   divider: '#F0F0F0',
 
-  // Shadows (used programmatically)
   shadow: '#000000',
 
   // Tab bar

@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   },
   grantButton: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
+    borderRadius: 10,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
   },

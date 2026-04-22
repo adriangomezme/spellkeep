@@ -18,6 +18,7 @@ import { TrayItemEditor } from './TrayItemEditor';
 import { DestinationPicker } from './DestinationPicker';
 import { ScryfallCard } from '../../lib/scryfall';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 type Props = {
   items: TrayItemType[];
@@ -129,20 +130,17 @@ export function ScanTray({
                 <Text style={styles.clearText}>Clear</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <PrimaryCTA
                 style={styles.addButton}
+                leading={
+                  <Text style={styles.countBadge}>
+                    {items.reduce((n, it) => n + (it.quantity ?? 1), 0)}×
+                  </Text>
+                }
+                label="Add to..."
                 onPress={onOpenDestinationPicker}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.addText}>Add to...</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={isSaving}
+              />
             </View>
           </>
         )}
@@ -267,17 +265,11 @@ const styles = StyleSheet.create({
   },
   addButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-    gap: spacing.xs,
   },
-  addText: {
+  countBadge: {
     color: '#FFFFFF',
     fontSize: fontSize.md,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

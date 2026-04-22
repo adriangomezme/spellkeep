@@ -1,10 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Text,
-  TouchableOpacity,
-  ActivityIndicator,
-  StyleSheet,
-} from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
@@ -15,6 +10,7 @@ import {
   updateFolderColorLocal,
 } from '../../lib/collections.local';
 import { ColorPicker } from './ColorPicker';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 type Props = {
   visible: boolean;
@@ -79,17 +75,14 @@ export function EditCollectionInfoModal({ visible, itemId, itemName, itemColor, 
       <Text style={styles.fieldLabel}>Color Identifier</Text>
       <ColorPicker selected={color} onSelect={setColor} />
 
-      <TouchableOpacity
-        style={[styles.saveButton, (!name.trim() || isSaving) && styles.saveButtonDisabled]}
+      <PrimaryCTA
+        variant="solid"
+        style={styles.saveButton}
+        label="Save changes"
         onPress={handleSave}
-        disabled={!name.trim() || isSaving}
-      >
-        {isSaving ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
-        ) : (
-          <Text style={styles.saveText}>Save</Text>
-        )}
-      </TouchableOpacity>
+        loading={isSaving}
+        disabled={!name.trim()}
+      />
     </BottomSheet>
   );
 }
@@ -118,18 +111,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   saveButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary,
     marginTop: spacing.sm,
-  },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: '600',
+    minHeight: 44,
   },
 });

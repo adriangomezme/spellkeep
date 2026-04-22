@@ -14,6 +14,7 @@ import { Condition, Finish, CONDITIONS } from '../../lib/collection';
 import { getPriceForFinish, ScanTrayItem } from './useScanState';
 import { VersionPicker } from './VersionPicker';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 const FINISH_LABELS: Record<Finish, string> = {
   normal: 'Normal',
@@ -198,13 +199,13 @@ export function TrayItemEditor({ visible, item, onSave, onDelete, onClose }: Pro
               <Ionicons name="trash-outline" size={18} color={colors.error} />
               <Text style={styles.deleteBtnText}>Remove</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveBtn, !hasChanges && styles.saveBtnDisabled]}
+            <PrimaryCTA
+              style={styles.saveBtn}
+              leading={<Text style={styles.qtyBadge}>{quantity}×</Text>}
+              label="Save changes"
               onPress={handleSave}
               disabled={!hasChanges}
-            >
-              <Text style={styles.saveBtnText}>Save Changes</Text>
-            </TouchableOpacity>
+            />
           </View>
         </View>
       </View>
@@ -409,18 +410,11 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
   },
-  saveBtnDisabled: {
-    opacity: 0.4,
-  },
-  saveBtnText: {
+  qtyBadge: {
     color: '#FFFFFF',
     fontSize: fontSize.md,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
     paddingVertical: spacing.md,
     marginTop: spacing.md,
   },

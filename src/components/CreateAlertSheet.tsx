@@ -519,7 +519,7 @@ const styles = StyleSheet.create({
   toggleKnobOn: { transform: [{ translateX: 18 }] },
   cta: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
     paddingVertical: spacing.md + 2,
     alignItems: 'center',
     justifyContent: 'center',

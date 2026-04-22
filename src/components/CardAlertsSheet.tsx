@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
+    borderRadius: 10,
     paddingVertical: spacing.md + 2,
     marginTop: spacing.xs,
   },

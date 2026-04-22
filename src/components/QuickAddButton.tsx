@@ -15,7 +15,7 @@ import Animated, {
   withDelay,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, borderRadius, shadows, fontSize } from '../constants';
+import { colors, fontSize } from '../constants';
 
 export type QuickAddButtonHandle = {
   playSuccess: (accentColor?: string | null) => void;
@@ -90,16 +90,16 @@ export const QuickAddButton = forwardRef<QuickAddButtonHandle, Props>(
         <TouchableOpacity
           onPress={onPress}
           onLongPress={onLongPress}
-          activeOpacity={0.85}
+          activeOpacity={0.7}
           accessibilityLabel={accessibilityLabel}
           style={styles.touchable}
         >
           <Animated.View style={[styles.btn, btnAnim]}>
             <Animated.View style={flashAnim}>
-              <Ionicons name="flash" size={22} color="#FFFFFF" />
+              <Ionicons name="flash" size={22} color={colors.primary} />
             </Animated.View>
             <Animated.View style={[styles.overlayIcon, checkAnim]}>
-              <Ionicons name="checkmark" size={24} color="#FFFFFF" />
+              <Ionicons name="checkmark" size={24} color={colors.primary} />
             </Animated.View>
           </Animated.View>
         </TouchableOpacity>
@@ -110,7 +110,8 @@ export const QuickAddButton = forwardRef<QuickAddButtonHandle, Props>(
 
 const styles = StyleSheet.create({
   wrap: {
-    flex: 1,
+    width: 44,
+    height: 44,
     position: 'relative',
   },
   touchable: {
@@ -120,10 +121,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: 14,
-    ...shadows.md,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 10,
   },
   overlayIcon: {
     ...StyleSheet.absoluteFillObject,

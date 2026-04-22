@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
+    borderRadius: 10,
     padding: spacing.md,
   },
   saveButtonDisabled: {

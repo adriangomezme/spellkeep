@@ -27,6 +27,7 @@ import {
 } from '../lib/collections';
 import { useCollectionsHub } from '../lib/hooks/useCollectionsHub';
 import { colors, spacing, fontSize, borderRadius } from '../constants';
+import { PrimaryCTA } from './PrimaryCTA';
 
 type Props = {
   visible: boolean;
@@ -348,22 +349,17 @@ export function AddCardSheet({
             </View>
           </View>
 
-          {/* Footer CTA */}
+          {/* Footer CTA — Stripe-style: quantity lives in the left slot
+              as a structural badge, not buried inside the label copy. */}
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.cta, (!destinationId || isLoading) && styles.ctaDisabled]}
+            <PrimaryCTA
+              style={styles.cta}
+              leading={<Text style={styles.ctaCount}>{quantity}×</Text>}
+              label={`Add to ${selectedDest?.name ?? '…'}`}
               onPress={handleAdd}
-              disabled={isLoading || !destinationId}
-              activeOpacity={0.85}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.ctaText}>
-                  Add {quantity}× to {selectedDest?.name ?? '…'}
-                </Text>
-              )}
-            </TouchableOpacity>
+              loading={isLoading}
+              disabled={!destinationId}
+            />
           </View>
         </View>
       </BottomSheet>
@@ -601,18 +597,12 @@ const styles = StyleSheet.create({
     borderTopColor: colors.divider,
   },
   cta: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: 14,
+    minHeight: 44,
   },
-  ctaDisabled: {
-    opacity: 0.4,
-  },
-  ctaText: {
+  ctaCount: {
     color: '#FFFFFF',
     fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

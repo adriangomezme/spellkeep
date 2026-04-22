@@ -12,6 +12,7 @@ export const COLLECTION_COLORS = [
   '#150B00', // Black
   // Extended palette
   '#6B8AFF', // Soft blue (default binder)
+  '#0A2385', // Brand navy
   '#9B59B6', // Purple
   '#E84393', // Pink
   '#FF6B6B', // Coral
