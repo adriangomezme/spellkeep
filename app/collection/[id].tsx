@@ -55,8 +55,11 @@ import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/cons
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = spacing.sm;
 const GRID_PADDING = spacing.lg;
-const GRID_ITEM_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 const CARD_IMAGE_RATIO = 1.395; // MTG card ratio (h/w)
+
+function computeGridItemWidth(cardsPerRow: number): number {
+  return (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * (cardsPerRow - 1)) / cardsPerRow;
+}
 
 // Toolbar (search + filter + view toggle) animated-height collapse.
 const TOOLBAR_HEIGHT = 44;
@@ -94,8 +97,9 @@ export default function CollectionDetailScreen() {
   // UI state — view mode + sort are persisted per device (AsyncStorage)
   // via the shared hook so flipping them in any binder carries over to
   // the next open. Filters are intentionally NOT persisted.
-  const { viewMode, sortBy, sortAsc, setViewMode, setSortBy, setSortAsc } =
+  const { viewMode, sortBy, sortAsc, cardsPerRow, setViewMode, setSortBy, setSortAsc } =
     useCollectionViewPrefs();
+  const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
@@ -247,6 +251,10 @@ export default function CollectionDetailScreen() {
     </View>
   );
 
+  // When numColumns is 1, FlatList ignores columnWrapperStyle — fall back
+  // to per-item marginBottom so row spacing stays consistent.
+  const itemSpacingStyle = cardsPerRow === 1 ? { marginBottom: GRID_GAP } : null;
+
   /* ── Grid compact: pure card, no overlays ── */
   function renderGridCompactItem({ item }: { item: CollectionEntry }) {
     const card = item.cards;
@@ -254,7 +262,7 @@ export default function CollectionDetailScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.gridCompactCard}
+        style={[styles.gridCompactCard, { width: gridItemWidth }, itemSpacingStyle]}
         onPress={() => handleCardPress(item)}
         onLongPress={() => handleEditPress(item)}
         activeOpacity={0.7}
@@ -283,7 +291,7 @@ export default function CollectionDetailScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.gridCard}
+        style={[styles.gridCard, { width: gridItemWidth }, itemSpacingStyle]}
         onPress={() => handleCardPress(item)}
         onLongPress={() => handleEditPress(item)}
         activeOpacity={0.7}
@@ -432,12 +440,12 @@ export default function CollectionDetailScreen() {
           the catalog chunks resolve. */}
       {isGrid ? (
         <Animated.FlatList
-          key={viewMode}
+          key={`${viewMode}-${cardsPerRow}`}
           data={displayEntries}
           keyExtractor={(item) => item.id}
           renderItem={viewMode === 'grid-compact' ? renderGridCompactItem : renderGridItem}
-          numColumns={2}
-          columnWrapperStyle={styles.gridRow}
+          numColumns={cardsPerRow}
+          columnWrapperStyle={cardsPerRow > 1 ? styles.gridRow : undefined}
           contentContainerStyle={styles.gridList}
           refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
@@ -640,7 +648,6 @@ const styles = StyleSheet.create({
 
   /* ── Grid compact (image only) ── */
   gridCompactCard: {
-    width: GRID_ITEM_WIDTH,
     aspectRatio: 1 / CARD_IMAGE_RATIO,
     borderRadius: borderRadius.md,
     overflow: 'hidden',
@@ -653,7 +660,6 @@ const styles = StyleSheet.create({
 
   /* ── Grid with meta ── */
   gridCard: {
-    width: GRID_ITEM_WIDTH,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     overflow: 'hidden',

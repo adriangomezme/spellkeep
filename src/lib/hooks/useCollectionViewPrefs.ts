@@ -10,16 +10,27 @@ import type { SortOption } from '../../components/collection/SortSheet';
 
 const KEY = '@spellkeep/collection_view_prefs.v1';
 
+export const CARDS_PER_ROW_OPTIONS = [1, 2, 3, 4] as const;
+export type CardsPerRow = (typeof CARDS_PER_ROW_OPTIONS)[number];
+
+function coerceCardsPerRow(v: unknown): CardsPerRow {
+  return (CARDS_PER_ROW_OPTIONS as readonly number[]).includes(v as number)
+    ? (v as CardsPerRow)
+    : 2;
+}
+
 type Prefs = {
   viewMode: ViewMode;
   sortBy: SortOption;
   sortAsc: boolean;
+  cardsPerRow: CardsPerRow;
 };
 
 const DEFAULTS: Prefs = {
   viewMode: 'grid-compact',
   sortBy: 'added',
   sortAsc: false,
+  cardsPerRow: 2,
 };
 
 let inFlightLoad: Promise<Prefs> | null = null;
@@ -35,6 +46,7 @@ async function loadPrefs(): Promise<Prefs> {
         viewMode: parsed.viewMode ?? DEFAULTS.viewMode,
         sortBy: parsed.sortBy ?? DEFAULTS.sortBy,
         sortAsc: typeof parsed.sortAsc === 'boolean' ? parsed.sortAsc : DEFAULTS.sortAsc,
+        cardsPerRow: coerceCardsPerRow(parsed.cardsPerRow),
       };
     } catch {
       return DEFAULTS;
@@ -102,13 +114,23 @@ export function useCollectionViewPrefs() {
     });
   }, []);
 
+  const setCardsPerRow = useCallback((n: CardsPerRow) => {
+    setPrefs((p) => {
+      const next = { ...p, cardsPerRow: n };
+      savePrefs(next);
+      return next;
+    });
+  }, []);
+
   return {
     viewMode: prefs.viewMode,
     sortBy: prefs.sortBy,
     sortAsc: prefs.sortAsc,
+    cardsPerRow: prefs.cardsPerRow,
     isHydrated,
     setViewMode,
     setSortBy,
     setSortAsc,
+    setCardsPerRow,
   };
 }
