@@ -50,6 +50,8 @@ import {
   emptyCollectionLocal,
   moveToFolderLocal,
   deleteCollectionCardsLocal,
+  moveCollectionCardsLocal,
+  duplicateCollectionCardsLocal,
 } from '../../src/lib/collections.local';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
@@ -57,6 +59,9 @@ import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPre
 import { useBulkSelection } from '../../src/lib/hooks/useBulkSelection';
 import { GridCard, GridCompactCard } from '../../src/components/collection/CollectionGridCards';
 import { BulkActionsBar } from '../../src/components/collection/BulkActionsBar';
+import { DestinationPickerModal } from '../../src/components/DestinationPickerModal';
+import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
+import { type CollectionSummary } from '../../src/lib/collections';
 import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -121,6 +126,19 @@ export default function CollectionDetailScreen() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // Bulk picker mode: 'move' re-parents selected rows, 'add' duplicates
+  // them. Null means the picker is closed.
+  const [bulkPickerMode, setBulkPickerMode] = useState<'move' | 'add' | null>(null);
+
+  // Destinations for the picker — same shape Add-to-collection uses.
+  // Move excludes the current collection; Add includes everything
+  // (duplicating into the same binder is valid — it merges quantities).
+  const { binders: hubBinders, lists: hubLists } = useCollectionsHub();
+  const bulkDestinations = useMemo<CollectionSummary[]>(() => {
+    const all = [...hubBinders, ...hubLists];
+    if (bulkPickerMode === 'move') return all.filter((d) => d.id !== id);
+    return all;
+  }, [hubBinders, hubLists, bulkPickerMode, id]);
 
   // Watch the collection row itself for color / folder_id. Local query so
   // rename/move/color-edit propagate without a refetch.
@@ -249,6 +267,40 @@ export default function CollectionDetailScreen() {
         },
       ]
     );
+  }
+
+  function handleBulkMove() {
+    if (bulk.size === 0) return;
+    setBulkPickerMode('move');
+  }
+
+  function handleBulkAdd() {
+    if (bulk.size === 0) return;
+    setBulkPickerMode('add');
+  }
+
+  function handleBulkPickerSelect(destId: string) {
+    const ids = Array.from(bulk.selectedIds);
+    const mode = bulkPickerMode;
+    const dest = bulkDestinations.find((d) => d.id === destId);
+    setBulkPickerMode(null);
+    if (ids.length === 0 || mode === null || !dest) return;
+
+    const op =
+      mode === 'move'
+        ? moveCollectionCardsLocal(ids, dest.id)
+        : duplicateCollectionCardsLocal(ids, dest.id);
+
+    op
+      .then(() => {
+        const verb = mode === 'move' ? 'Moved' : 'Added';
+        showToast(`${verb} ${ids.length} ${ids.length === 1 ? 'card' : 'cards'} to ${dest.name}`);
+      })
+      .catch((err) => {
+        console.warn(`[bulk-${mode}] failed`, err);
+        Alert.alert('Error', `Failed to ${mode} cards.`);
+      });
+    bulk.exit();
   }
 
   const displayEntries = useMemo(
@@ -527,7 +579,12 @@ export default function CollectionDetailScreen() {
           entering={FadeIn.duration(180)}
           exiting={FadeOut.duration(180)}
         >
-          <BulkActionsBar count={bulk.size} onDelete={handleBulkDelete} />
+          <BulkActionsBar
+            count={bulk.size}
+            onMove={handleBulkMove}
+            onAdd={handleBulkAdd}
+            onDelete={handleBulkDelete}
+          />
         </Animated.View>
       ) : (
         <Animated.View
@@ -726,6 +783,14 @@ export default function CollectionDetailScreen() {
         collectionType={(collectionType as CollectionType) ?? 'binder'}
         onClose={() => setShowFolderPicker(false)}
         onMoved={() => setShowFolderPicker(false)}
+      />
+
+      <DestinationPickerModal
+        visible={bulkPickerMode !== null}
+        destinations={bulkDestinations}
+        selectedId={null}
+        onSelect={handleBulkPickerSelect}
+        onClose={() => setBulkPickerMode(null)}
       />
     </View>
   );

@@ -922,6 +922,254 @@ export async function deleteCollectionCardsLocal(entryIds: string[]): Promise<vo
   });
 }
 
+type RowForMove = {
+  id: string;
+  card_id: string;
+  condition: string;
+  language: string;
+  quantity_normal: number;
+  quantity_foil: number;
+  quantity_etched: number;
+};
+
+async function fetchRowsByIds(ids: string[]): Promise<RowForMove[]> {
+  if (ids.length === 0) return [];
+  // 500 is safely below SQLite's default variable limit (999).
+  const BATCH = 500;
+  const out: RowForMove[] = [];
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const ph = slice.map(() => '?').join(', ');
+    const rows = await db.getAll<RowForMove>(
+      `SELECT id, card_id, condition, language,
+              quantity_normal, quantity_foil, quantity_etched
+         FROM collection_cards WHERE id IN (${ph})`,
+      slice
+    );
+    out.push(...rows);
+  }
+  return out;
+}
+
+async function fetchDestMap(destCollectionId: string): Promise<Map<string, RowForMove>> {
+  const rows = await db.getAll<RowForMove>(
+    `SELECT id, card_id, condition, language,
+            quantity_normal, quantity_foil, quantity_etched
+       FROM collection_cards WHERE collection_id = ?`,
+    [destCollectionId]
+  );
+  const map = new Map<string, RowForMove>();
+  for (const r of rows) {
+    map.set(`${r.card_id}|${r.condition}|${r.language}`, {
+      id: r.id,
+      card_id: r.card_id,
+      condition: r.condition,
+      language: r.language,
+      quantity_normal: r.quantity_normal ?? 0,
+      quantity_foil: r.quantity_foil ?? 0,
+      quantity_etched: r.quantity_etched ?? 0,
+    });
+  }
+  return map;
+}
+
+/**
+ * Move N collection_cards rows into a different collection. Rows
+ * whose (card_id, condition, language) already exist in the
+ * destination are merged — the destination row's quantities sum with
+ * the source row's, and the source row is deleted. Rows without a
+ * match are re-parented in place via UPDATE collection_id so their
+ * id (and any references) stay stable.
+ *
+ * Also handles the case where multiple source rows share a key that
+ * the dest doesn't have yet: the first moves in place, subsequent
+ * ones merge into it.
+ */
+export async function moveCollectionCardsLocal(
+  entryIds: string[],
+  destCollectionId: string
+): Promise<void> {
+  if (entryIds.length === 0) return;
+
+  const sourceRows = await fetchRowsByIds(entryIds);
+  const destMap = await fetchDestMap(destCollectionId);
+
+  const now = new Date().toISOString();
+  const toUpdateInPlace: string[] = [];
+  const toDelete: string[] = [];
+  // dest-row-id → accumulated quantities
+  const mergeUpdates = new Map<
+    string,
+    { quantity_normal: number; quantity_foil: number; quantity_etched: number }
+  >();
+
+  for (const src of sourceRows) {
+    const key = `${src.card_id}|${src.condition}|${src.language}`;
+    const hit = destMap.get(key);
+    if (hit) {
+      const cur = mergeUpdates.get(hit.id) ?? {
+        quantity_normal: hit.quantity_normal,
+        quantity_foil: hit.quantity_foil,
+        quantity_etched: hit.quantity_etched,
+      };
+      cur.quantity_normal += src.quantity_normal ?? 0;
+      cur.quantity_foil += src.quantity_foil ?? 0;
+      cur.quantity_etched += src.quantity_etched ?? 0;
+      mergeUpdates.set(hit.id, cur);
+      toDelete.push(src.id);
+    } else {
+      // First source row with this key — move in place; register in
+      // the dest map so any later source rows with the same key
+      // merge into it instead of piling up as duplicates at dest.
+      toUpdateInPlace.push(src.id);
+      destMap.set(key, {
+        id: src.id,
+        card_id: src.card_id,
+        condition: src.condition,
+        language: src.language,
+        quantity_normal: src.quantity_normal ?? 0,
+        quantity_foil: src.quantity_foil ?? 0,
+        quantity_etched: src.quantity_etched ?? 0,
+      });
+    }
+  }
+
+  const BATCH = 500;
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < toUpdateInPlace.length; i += BATCH) {
+      const slice = toUpdateInPlace.slice(i, i + BATCH);
+      const ph = slice.map(() => '?').join(', ');
+      await tx.execute(
+        `UPDATE collection_cards
+            SET collection_id = ?, updated_at = ?
+          WHERE id IN (${ph})`,
+        [destCollectionId, now, ...slice]
+      );
+    }
+
+    for (const [destId, qty] of mergeUpdates) {
+      await tx.execute(
+        `UPDATE collection_cards
+            SET quantity_normal = ?, quantity_foil = ?, quantity_etched = ?,
+                updated_at = ?
+          WHERE id = ?`,
+        [qty.quantity_normal, qty.quantity_foil, qty.quantity_etched, now, destId]
+      );
+    }
+
+    for (let i = 0; i < toDelete.length; i += BATCH) {
+      const slice = toDelete.slice(i, i + BATCH);
+      const ph = slice.map(() => '?').join(', ');
+      await tx.execute(
+        `DELETE FROM collection_cards WHERE id IN (${ph})`,
+        slice
+      );
+    }
+  });
+}
+
+/**
+ * Add copies of N collection_cards rows to a different collection
+ * without touching the source. On match in dest (same card_id /
+ * condition / language), the dest row's quantities are incremented.
+ * Without a match, a fresh row is inserted with a new id.
+ */
+export async function duplicateCollectionCardsLocal(
+  entryIds: string[],
+  destCollectionId: string
+): Promise<void> {
+  if (entryIds.length === 0) return;
+
+  const sourceRows = await fetchRowsByIds(entryIds);
+  const destMap = await fetchDestMap(destCollectionId);
+
+  const userId = await getUserId();
+  const now = new Date().toISOString();
+  const mergeUpdates = new Map<
+    string,
+    { quantity_normal: number; quantity_foil: number; quantity_etched: number }
+  >();
+  const inserts: Array<{
+    id: string;
+    card_id: string;
+    condition: string;
+    language: string;
+    quantity_normal: number;
+    quantity_foil: number;
+    quantity_etched: number;
+  }> = [];
+
+  for (const src of sourceRows) {
+    const key = `${src.card_id}|${src.condition}|${src.language}`;
+    const hit = destMap.get(key);
+    if (hit) {
+      const cur = mergeUpdates.get(hit.id) ?? {
+        quantity_normal: hit.quantity_normal,
+        quantity_foil: hit.quantity_foil,
+        quantity_etched: hit.quantity_etched,
+      };
+      cur.quantity_normal += src.quantity_normal ?? 0;
+      cur.quantity_foil += src.quantity_foil ?? 0;
+      cur.quantity_etched += src.quantity_etched ?? 0;
+      mergeUpdates.set(hit.id, cur);
+    } else {
+      const row = {
+        id: newId(),
+        card_id: src.card_id,
+        condition: src.condition,
+        language: src.language,
+        quantity_normal: src.quantity_normal ?? 0,
+        quantity_foil: src.quantity_foil ?? 0,
+        quantity_etched: src.quantity_etched ?? 0,
+      };
+      inserts.push(row);
+      destMap.set(key, { ...row });
+    }
+  }
+
+  const INS_BATCH = 80;
+  await db.writeTransaction(async (tx) => {
+    for (const [destId, qty] of mergeUpdates) {
+      await tx.execute(
+        `UPDATE collection_cards
+            SET quantity_normal = ?, quantity_foil = ?, quantity_etched = ?,
+                updated_at = ?
+          WHERE id = ?`,
+        [qty.quantity_normal, qty.quantity_foil, qty.quantity_etched, now, destId]
+      );
+    }
+
+    for (let i = 0; i < inserts.length; i += INS_BATCH) {
+      const slice = inserts.slice(i, i + INS_BATCH);
+      const placeholders = slice.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const params: any[] = [];
+      for (const r of slice) {
+        params.push(
+          r.id,
+          userId,
+          destCollectionId,
+          r.card_id,
+          r.condition,
+          r.language,
+          r.quantity_normal,
+          r.quantity_foil,
+          r.quantity_etched,
+          now,
+          now
+        );
+      }
+      await tx.execute(
+        `INSERT INTO collection_cards
+           (id, user_id, collection_id, card_id, condition, language,
+            quantity_normal, quantity_foil, quantity_etched,
+            added_at, updated_at)
+         VALUES ${placeholders}`,
+        params
+      );
+    }
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Card mutations — local-first alternatives to src/lib/collection.ts
 // addToCollection / adjustOwnershipQuantity. These write straight to the
