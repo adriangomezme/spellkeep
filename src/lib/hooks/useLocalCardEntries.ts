@@ -8,20 +8,15 @@ import type { ScryfallCard } from '../scryfall';
 // ─────────────────────────────────────────────────────────────────────────
 // Local card entries (binder/list detail + owned view)
 //
-// Non-blocking design: the hook NEVER makes the UI wait for enrichment.
 //   1. `useQuery` emits rows from local SQLite — typically sub-5ms.
-//   2. Rows render immediately with a placeholder card shape. The grid /
-//      list shows the right COUNT of cards right away (with the bundled
-//      CardImage placeholder) — no "No cards yet" empty state, no
-//      spinner.
-//   3. Enrichment runs in chunked batches in the background. Each chunk
-//      that resolves pushes a fresh cardMap so the UI progressively
-//      fills in names, prices, and real images.
-//
-// The `isReady` flag is purely informational — signals that enrichment
-// has finished for the current resultset — so screens can gate secondary
-// decorations (e.g. hide the `$X.XX` in the header until prices land).
-// It is NOT used to gate rendering of the list itself.
+//   2. Enrichment runs in chunked batches against catalog.db (with a
+//      Supabase fallback for rows added after the last catalog
+//      snapshot). Each chunk bumps a `tick` so memos that depend on
+//      card data re-run and pick up the freshly-resolved cards.
+//   3. `isReady` flips true only after every chunk lands. Consumers
+//      gate the grid render on isReady so the user never sees a
+//      cascade of placeholders resolving chunk-by-chunk — they get a
+//      loader first, then the fully-enriched grid in one paint.
 // ─────────────────────────────────────────────────────────────────────────
 
 const LRU_CAP = 20000;
@@ -169,18 +164,24 @@ function normalize(row: RawRow): RawRow {
 type Options = {
   where: string;
   params: any[];
+  // Optional JOIN clause so callers like Owned can filter across a
+  // related table (e.g. only rows whose collection is a binder) in a
+  // single query — avoids a cascade of `binderIds` → `useLocalCardEntries`
+  // that re-fires every time PowerSync re-emits the binder list.
+  join?: string;
 };
 
-export function useLocalCardEntries({ where, params }: Options): {
+export function useLocalCardEntries({ where, params, join = '' }: Options): {
   entries: EnrichedEntry[];
   isReady: boolean;
 } {
   const rows = useQuery<RawRow>(
-    `SELECT id, collection_id, card_id, condition, language,
-            quantity_normal, quantity_foil, quantity_etched, added_at
-       FROM collection_cards
+    `SELECT cc.id, cc.collection_id, cc.card_id, cc.condition, cc.language,
+            cc.quantity_normal, cc.quantity_foil, cc.quantity_etched, cc.added_at
+       FROM collection_cards cc
+       ${join}
       WHERE ${where}
-      ORDER BY added_at DESC, id DESC`,
+      ORDER BY cc.added_at DESC, cc.id DESC`,
     params
   );
 
@@ -189,9 +190,17 @@ export function useLocalCardEntries({ where, params }: Options): {
     [rows.data]
   );
 
-  // cardMap is a rev-counter map. Instead of storing per-entry,
-  // cardShape() pulls from cardCache at render time. We bump `tick` to
-  // invalidate memos after each enrichment chunk lands.
+  // useQuery flashes `[]` with isLoading=true on the very first render
+  // before the SQLite read resolves. If we treat that as "empty + ready"
+  // downstream consumers latch onto the empty state and then the real
+  // rows land as placeholders — exactly the flicker the loader was
+  // meant to avoid. Gate isReady until the first query resolves.
+  const hasInitialLoad = !rows.isLoading;
+
+  // `tick` invalidates the `entries` memo after each enrichment chunk
+  // lands — cardShape() pulls from the module-level cardCache at
+  // render time, so the tick bump is all that's needed to surface new
+  // data.
   const [tick, setTick] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [priceTick, setPriceTick] = useState(0);
@@ -213,9 +222,24 @@ export function useLocalCardEntries({ where, params }: Options): {
     const self = { cancelled: false };
     cancelRef.current = self;
 
-    if (normalizedRows.length === 0) {
-      setIsReady(true);
+    // Query still resolving — don't flip isReady yet.
+    if (!hasInitialLoad) {
       return;
+    }
+
+    if (normalizedRows.length === 0) {
+      // PowerSync useQuery can briefly emit `data=[], isLoading=false`
+      // before the real result lands. Flipping isReady=true in that
+      // microstate flashes "ready+empty" to consumers that commit to
+      // paint (loader→grid swap, placeholder rows). Delay the flip so
+      // any pending useEffect re-run with real rows supersedes it.
+      const t = setTimeout(() => {
+        if (!self.cancelled) setIsReady(true);
+      }, 100);
+      return () => {
+        clearTimeout(t);
+        self.cancelled = true;
+      };
     }
 
     setIsReady(false);
@@ -270,7 +294,7 @@ export function useLocalCardEntries({ where, params }: Options): {
       self.cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsSignature, priceTick]);
+  }, [rowsSignature, priceTick, hasInitialLoad]);
 
   const entries = useMemo<EnrichedEntry[]>(() => {
     return normalizedRows.map((r) => ({

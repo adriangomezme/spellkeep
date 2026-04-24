@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@powersync/react';
 import {
   View,
   Text,
@@ -20,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 import { CardImage } from '../../src/components/collection/CardImage';
 import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
@@ -105,27 +105,42 @@ export default function OwnedCardsScreen() {
   }, [searchQuery]);
 
   // "Owned" = every card in every binder. Lists are wishlists / trade
-  // targets and never count toward Owned. We limit the useQuery scope to
-  // binder ids directly so PowerSync watches only those rows.
-  const binderIds = useQuery<{ id: string }>(
-    `SELECT id FROM collections WHERE type = 'binder'`
+  // targets and never count toward Owned. Single query with JOIN —
+  // earlier we had two useQuerys (binderIds → useLocalCardEntries),
+  // which caused a cascade: every time PowerSync re-emitted the binder
+  // list (even with identical IDs) the inner params ref changed, the
+  // inner query refetched, isReady flipped, and 21k merged rows
+  // re-enriched chunk-by-chunk in the background — the Owned blink.
+  // One query removes that whole feedback loop.
+  const ownedQuery = useMemo(
+    () => ({
+      join: `JOIN collections c ON c.id = cc.collection_id`,
+      where: `c.type = 'binder'`,
+      params: [] as any[],
+    }),
+    []
   );
-  const binderIdList = useMemo(
-    () => (binderIds.data ?? []).map((b) => b.id),
-    [binderIds.data]
-  );
-
-  const whereClause = useMemo(() => {
-    if (binderIdList.length === 0) return { where: '0 = 1', params: [] as any[] };
-    const placeholders = binderIdList.map(() => '?').join(',');
-    return {
-      where: `collection_id IN (${placeholders})`,
-      params: binderIdList,
-    };
-  }, [binderIdList]);
-
-  const { entries: rawEntries, isReady } = useLocalCardEntries(whereClause);
+  const { entries: rawEntries, isReady } = useLocalCardEntries(ownedQuery);
   const cachedStats = useCachedCollectionStats(OWNED_CACHE_ID);
+
+  // ── Paint gate ──
+  // Hide the grid until enrichment resolves. Once painted we stay
+  // painted — writes re-enrich in the background without hiding it.
+  const [hasPaintedGrid, setHasPaintedGrid] = useState(false);
+  const [loaderVisible, setLoaderVisible] = useState(false);
+  const canCommitPaint = isReady && rawEntries.length > 0;
+  const showGrid =
+    hasPaintedGrid || canCommitPaint || (isReady && rawEntries.length === 0);
+
+  useEffect(() => {
+    if (showGrid) {
+      if (!hasPaintedGrid) setHasPaintedGrid(true);
+      if (loaderVisible) setLoaderVisible(false);
+      return;
+    }
+    const t = setTimeout(() => setLoaderVisible(true), 120);
+    return () => clearTimeout(t);
+  }, [showGrid, hasPaintedGrid, loaderVisible]);
 
   // Merge duplicate (card_id, condition, language) across multiple binders
   // so one copy in Binder A + one copy in Binder B shows as a single row
@@ -188,6 +203,18 @@ export default function OwnedCardsScreen() {
     [displayRows, visibleCount]
   );
   const hasMore = displayRows.length > visibleCount;
+
+  // Non-blocking prefetch for the first viewport of images. Paired with
+  // transition={0} on the grid cards, disk-cached images pop in instant
+  // and uncached ones swap the placeholder without a fade cascade.
+  useEffect(() => {
+    if (!isReady || visibleRows.length === 0) return;
+    const uris = visibleRows
+      .slice(0, cardsPerRow * 6)
+      .map((r) => r.cards.image_uri_normal || r.cards.image_uri_small)
+      .filter((u): u is string => !!u);
+    if (uris.length > 0) ExpoImage.prefetch(uris).catch(() => {});
+  }, [isReady, visibleRows, cardsPerRow]);
 
   const loadMore = useCallback(() => {
     if (!hasMore) return;
@@ -268,10 +295,11 @@ export default function OwnedCardsScreen() {
 
   const totalCards = liveStats.totalCards;
   const uniqueCards = liveStats.uniqueCards;
-  const displayValue =
-    liveStats.displayValue > 0
-      ? liveStats.displayValue
-      : (!isFilterActive && cachedStats ? cachedStats.total_value : 0);
+  // During enrichment the live value ticks up chunk-by-chunk as prices
+  // land. Pin to cached value while loading; swap to live once ready.
+  const displayValue = isReady
+    ? liveStats.displayValue
+    : (!isFilterActive && cachedStats ? cachedStats.total_value : 0);
 
   const isGrid = viewMode !== 'list';
 
@@ -317,6 +345,7 @@ export default function OwnedCardsScreen() {
         <CardImage
           uri={card.image_uri_normal || card.image_uri_small}
           style={styles.gridCompactImage}
+          transition={0}
         />
       </TouchableOpacity>
     );
@@ -344,6 +373,7 @@ export default function OwnedCardsScreen() {
           <CardImage
             uri={card.image_uri_normal || card.image_uri_small}
             style={styles.gridImage}
+            transition={0}
           />
           <LanguageBadge language={item.language} style="corner" />
           {qty > 1 && (
@@ -474,7 +504,13 @@ export default function OwnedCardsScreen() {
       </Animated.View>
 
       {/* ── Content ── */}
-      {isGrid ? (
+      {!showGrid ? (
+        <View style={styles.centered}>
+          {loaderVisible && (
+            <ActivityIndicator color={colors.primary} size="large" />
+          )}
+        </View>
+      ) : isGrid ? (
         <Animated.FlatList
           key={`${viewMode}-${cardsPerRow}`}
           data={visibleRows}

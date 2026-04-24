@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import Animated, {
   interpolate,
   Extrapolation,
@@ -14,12 +14,14 @@ import {
   Text,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
   Alert,
   StyleSheet,
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 import { CardImage } from '../../src/components/collection/CardImage';
 import { formatPrice } from '../../src/lib/scryfall';
 import { serializeCardForNavigation } from '../../src/lib/cardDetail';
@@ -138,6 +140,23 @@ export default function CollectionDetailScreen() {
   // frame instead of waiting for the catalog enrichment to finish.
   const cachedStats = useCachedCollectionStats(id);
 
+  // Hide the grid until enrichment finishes. Once painted we stay
+  // painted — writes re-enrich in the background without hiding it.
+  const [hasPaintedGrid, setHasPaintedGrid] = useState(false);
+  const [loaderVisible, setLoaderVisible] = useState(false);
+  const canCommitPaint = isReady && entries.length > 0;
+  const showGrid = hasPaintedGrid || canCommitPaint || (isReady && entries.length === 0);
+
+  useEffect(() => {
+    if (showGrid) {
+      if (!hasPaintedGrid) setHasPaintedGrid(true);
+      if (loaderVisible) setLoaderVisible(false);
+      return;
+    }
+    const t = setTimeout(() => setLoaderVisible(true), 120);
+    return () => clearTimeout(t);
+  }, [showGrid, hasPaintedGrid, loaderVisible]);
+
   function handleCardPress(entry: CollectionEntry) {
     router.push({
       pathname: '/card/[id]',
@@ -170,6 +189,19 @@ export default function CollectionDetailScreen() {
     () => filterAndSort(entries, searchQuery, sortBy, sortAsc, filters),
     [entries, searchQuery, sortBy, sortAsc, filters],
   );
+
+  // Non-blocking image prefetch for the first viewport. Fire-and-forget
+  // so the paint isn't gated by CDN latency — with transition=0 on the
+  // grid cards, disk-cached images pop in instantly and uncached ones
+  // just swap the placeholder without a 150 ms fade cascade.
+  useEffect(() => {
+    if (!isReady || displayEntries.length === 0) return;
+    const uris = displayEntries
+      .slice(0, cardsPerRow * 6)
+      .map((e) => e.cards.image_uri_normal || e.cards.image_uri_small)
+      .filter((u): u is string => !!u);
+    if (uris.length > 0) ExpoImage.prefetch(uris).catch(() => {});
+  }, [isReady, displayEntries, cardsPerRow]);
 
   const availableSets = useMemo(() => deriveAvailableSets(entries), [entries]);
   const availableLanguages = useMemo(() => deriveAvailableLanguages(entries), [entries]);
@@ -217,10 +249,11 @@ export default function CollectionDetailScreen() {
   // always immediate.
   const totalCards = liveStats.totalCards;
   const uniqueCards = liveStats.uniqueCards;
-  const displayValue =
-    liveStats.displayValue > 0
-      ? liveStats.displayValue
-      : (!isFiltered && cachedStats ? cachedStats.total_value : 0);
+  // During enrichment the live value ticks up chunk-by-chunk. Pin to
+  // the cached value until isReady so the header doesn't flicker.
+  const displayValue = isReady
+    ? liveStats.displayValue
+    : (!isFiltered && cachedStats ? cachedStats.total_value : 0);
   const isGrid = viewMode !== 'list';
 
   // Pull-to-refresh is now a cosmetic gesture — the data is always live
@@ -270,6 +303,7 @@ export default function CollectionDetailScreen() {
         <CardImage
           uri={card.image_uri_normal || card.image_uri_small}
           style={styles.gridCompactImage}
+          transition={0}
         />
       </TouchableOpacity>
     );
@@ -300,6 +334,7 @@ export default function CollectionDetailScreen() {
           <CardImage
             uri={card.image_uri_normal || card.image_uri_small}
             style={styles.gridImage}
+            transition={0}
           />
           <LanguageBadge language={item.language} style="corner" />
           {qty > 1 && (
@@ -433,12 +468,17 @@ export default function CollectionDetailScreen() {
       </Animated.View>
 
       {/* ── Content ──
-          We render the list immediately even before enrichment lands:
-          rows carry placeholder card data (CardImage falls back to the
-          bundled placeholder) so the grid takes the right shape and size
-          from the first frame. Names, prices and real images fill in as
-          the catalog chunks resolve. */}
-      {isGrid ? (
+          On first open we wait for enrichment before painting the grid
+          — placeholder cards resolving chunk-by-chunk looked like
+          flickering on big binders. Once painted the grid stays up;
+          later writes re-enrich in the background without hiding it. */}
+      {!showGrid ? (
+        <View style={styles.centered}>
+          {loaderVisible && (
+            <ActivityIndicator color={colors.primary} size="large" />
+          )}
+        </View>
+      ) : isGrid ? (
         <Animated.FlatList
           key={`${viewMode}-${cardsPerRow}`}
           data={displayEntries}
