@@ -899,6 +899,29 @@ export async function emptyCollectionLocal(collectionId: string): Promise<number
   return count;
 }
 
+/**
+ * Delete N collection_cards rows by id in a single write transaction.
+ * Used by the bulk-select UI on binder/list detail screens. PowerSync
+ * picks up each DELETE as a CRUD op and drains them in the background
+ * — no need to touch ps_crud manually; the server-side RLS handles
+ * the rest. Batched in chunks of 500 to stay under SQLite's variable
+ * limit and keep the transaction short.
+ */
+export async function deleteCollectionCardsLocal(entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) return;
+  const DEL_BATCH = 500;
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < entryIds.length; i += DEL_BATCH) {
+      const slice = entryIds.slice(i, i + DEL_BATCH);
+      const placeholders = slice.map(() => '?').join(', ');
+      await tx.execute(
+        `DELETE FROM collection_cards WHERE id IN (${placeholders})`,
+        slice
+      );
+    }
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Card mutations — local-first alternatives to src/lib/collection.ts
 // addToCollection / adjustOwnershipQuantity. These write straight to the

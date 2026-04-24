@@ -28,6 +28,10 @@ type Props = {
    *  context where reordering siblings would be confusing (the folder's
    *  own detail screen, a binder's own detail screen). */
   hideReorder?: boolean;
+  /** Whether the "Select cards" option is available. Only true on
+   *  binder/list detail when the user is in a grid view (bulk mode
+   *  is grid-only by design). */
+  canSelectCards?: boolean;
   onAction: (key: string) => void;
   onClose: () => void;
 };
@@ -39,6 +43,7 @@ export function CollectionActionSheet({
   inFolder,
   isQuickAddTarget,
   hideReorder,
+  canSelectCards,
   onAction,
   onClose,
 }: Props) {
@@ -66,6 +71,13 @@ export function CollectionActionSheet({
     }
 
     // Remaining list actions
+    if (canSelectCards) {
+      listActions.push({
+        key: 'select-cards',
+        label: 'Select cards',
+        icon: 'checkbox-outline',
+      });
+    }
     listActions.push(
       {
         key: isQuickAddTarget ? 'clear-quick-add' : 'set-quick-add',

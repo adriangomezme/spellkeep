@@ -1,7 +1,9 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import Animated, {
   interpolate,
   Extrapolation,
+  FadeIn,
+  FadeOut,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -47,10 +49,14 @@ import {
   deleteCollectionLocal,
   emptyCollectionLocal,
   moveToFolderLocal,
+  deleteCollectionCardsLocal,
 } from '../../src/lib/collections.local';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
 import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
+import { useBulkSelection } from '../../src/lib/hooks/useBulkSelection';
+import { GridCard, GridCompactCard } from '../../src/components/collection/CollectionGridCards';
+import { BulkActionsBar } from '../../src/components/collection/BulkActionsBar';
 import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -102,6 +108,7 @@ export default function CollectionDetailScreen() {
   const { viewMode, sortBy, sortAsc, cardsPerRow, setViewMode, setSortBy, setSortAsc } =
     useCollectionViewPrefs();
   const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
+  const bulk = useBulkSelection();
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
@@ -157,7 +164,20 @@ export default function CollectionDetailScreen() {
     return () => clearTimeout(t);
   }, [showGrid, hasPaintedGrid, loaderVisible]);
 
-  function handleCardPress(entry: CollectionEntry) {
+  // Ref-stable handlers are critical: GridCompactCard / GridCard are
+  // React.memo'd, so if these refs changed every render the memo would
+  // be defeated and 21k items would repaint on every tap.
+  const bulkRef = useRef(bulk);
+  useEffect(() => { bulkRef.current = bulk; }, [bulk]);
+  const viewModeRef = useRef(viewMode);
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+
+  const handleCardPress = useCallback((entry: CollectionEntry) => {
+    const b = bulkRef.current;
+    if (b.isActive) {
+      b.toggle(entry.id);
+      return;
+    }
     router.push({
       pathname: '/card/[id]',
       params: {
@@ -169,9 +189,18 @@ export default function CollectionDetailScreen() {
         fromCollectionId: id!,
       },
     });
-  }
+  }, [router, id]);
 
-  function handleEditPress(entry: CollectionEntry) {
+  const handleEditPress = useCallback((entry: CollectionEntry) => {
+    // Long-press in a grid view enters / extends bulk mode. In list
+    // view it keeps the original behavior (open edit modal) — bulk is
+    // grid-only.
+    const b = bulkRef.current;
+    if (viewModeRef.current !== 'list') {
+      if (b.isActive) b.toggle(entry.id);
+      else b.enter(entry.id);
+      return;
+    }
     const card = entry.cards;
     setEditEntry({
       id: entry.id,
@@ -183,6 +212,43 @@ export default function CollectionDetailScreen() {
       setName: card.set_name,
       collectorNumber: card.collector_number,
     });
+  }, []);
+
+  // Auto-exit bulk mode if the user switches to list view (bulk is
+  // grid-only) — prevents a stale selection bar over list rows that
+  // can't render the checkmark overlay.
+  useEffect(() => {
+    if (bulk.isActive && viewMode === 'list') bulk.exit();
+  }, [bulk, viewMode]);
+
+  function handleBulkDelete() {
+    const ids = Array.from(bulk.selectedIds);
+    if (ids.length === 0) return;
+    // Count copies across selected rows for an honest "M copies" in the
+    // alert. Defensive: the entry may have disappeared between the
+    // selection and the tap (e.g. background sync removed it).
+    const selectedRows = entries.filter((e) => bulk.selectedIds.has(e.id));
+    const totalCopies = selectedRows.reduce(
+      (sum, e) =>
+        sum + e.quantity_normal + e.quantity_foil + e.quantity_etched,
+      0
+    );
+    Alert.alert(
+      `Delete ${ids.length} ${ids.length === 1 ? 'card' : 'cards'}?`,
+      `This removes ${totalCopies} ${totalCopies === 1 ? 'copy' : 'copies'} from "${collectionName ?? 'this collection'}". This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteCollectionCardsLocal(ids)
+              .catch((err) => console.warn('[bulk-delete] failed', err));
+            bulk.exit();
+          },
+        },
+      ]
+    );
   }
 
   const displayEntries = useMemo(
@@ -285,78 +351,47 @@ export default function CollectionDetailScreen() {
   );
 
   // When numColumns is 1, FlatList ignores columnWrapperStyle — fall back
-  // to per-item marginBottom so row spacing stays consistent.
-  const itemSpacingStyle = cardsPerRow === 1 ? { marginBottom: GRID_GAP } : null;
+  // to per-item marginBottom so row spacing stays consistent. useMemo
+  // so the style object is ref-stable between renders; otherwise the
+  // memoized card components would repaint on every parent render.
+  const itemSpacingStyle = useMemo(
+    () => (cardsPerRow === 1 ? { marginBottom: GRID_GAP } : null),
+    [cardsPerRow]
+  );
 
-  /* ── Grid compact: pure card, no overlays ── */
-  function renderGridCompactItem({ item }: { item: CollectionEntry }) {
-    const card = item.cards;
-    if (!card) return null;
+  // Render funcs are recreated when the selection changes (so the
+  // individual `isSelected` props update), but the heavy lifting —
+  // deciding whether to actually repaint — happens inside each memo'd
+  // card: if that card's isSelected + stable refs didn't change, it
+  // skips the render. Net effect: toggling one card repaints two
+  // cards, not 21k.
+  const renderGridCompactItem = useCallback(
+    ({ item }: { item: CollectionEntry }) => (
+      <GridCompactCard
+        item={item}
+        width={gridItemWidth}
+        spacingStyle={itemSpacingStyle}
+        isSelected={bulk.isSelected(item.id)}
+        onPress={handleCardPress}
+        onLongPress={handleEditPress}
+      />
+    ),
+    [gridItemWidth, itemSpacingStyle, bulk.isSelected, handleCardPress, handleEditPress]
+  );
 
-    return (
-      <TouchableOpacity
-        style={[styles.gridCompactCard, { width: gridItemWidth }, itemSpacingStyle]}
-        onPress={() => handleCardPress(item)}
-        onLongPress={() => handleEditPress(item)}
-        activeOpacity={0.7}
-      >
-        <CardImage
-          uri={card.image_uri_normal || card.image_uri_small}
-          style={styles.gridCompactImage}
-          transition={0}
-        />
-      </TouchableOpacity>
-    );
-  }
-
-  /* ── Grid with meta: image + name/set/price ── */
-  function renderGridItem({ item }: { item: CollectionEntry }) {
-    const card = item.cards;
-    if (!card) return null;
-    const qty = getTotalQuantity(item);
-    const rowPrice = displayPriceForRow(
-      item.quantity_normal,
-      item.quantity_foil,
-      item.quantity_etched,
-      card.price_usd,
-      card.price_usd_foil,
-      card.price_usd_etched
-    );
-
-    return (
-      <TouchableOpacity
-        style={[styles.gridCard, { width: gridItemWidth }, itemSpacingStyle]}
-        onPress={() => handleCardPress(item)}
-        onLongPress={() => handleEditPress(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.gridImageWrap}>
-          <CardImage
-            uri={card.image_uri_normal || card.image_uri_small}
-            style={styles.gridImage}
-            transition={0}
-          />
-          <LanguageBadge language={item.language} style="corner" />
-          {qty > 1 && (
-            <View style={styles.qtyBadge}>
-              <Text style={styles.qtyBadgeText}>x{qty}</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.gridMeta}>
-          <Text style={styles.gridName} numberOfLines={1}>{card.name}</Text>
-          <View style={styles.gridBottom}>
-            <Text style={styles.gridSet} numberOfLines={1}>
-              {card.set_code.toUpperCase()} #{card.collector_number}
-            </Text>
-            <Text style={styles.gridPrice}>
-              {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }
+  const renderGridItem = useCallback(
+    ({ item }: { item: CollectionEntry }) => (
+      <GridCard
+        item={item}
+        width={gridItemWidth}
+        spacingStyle={itemSpacingStyle}
+        isSelected={bulk.isSelected(item.id)}
+        onPress={handleCardPress}
+        onLongPress={handleEditPress}
+      />
+    ),
+    [gridItemWidth, itemSpacingStyle, bulk.isSelected, handleCardPress, handleEditPress]
+  );
 
   /* ── List view ── */
   function renderListItem({ item }: { item: CollectionEntry }) {
@@ -434,38 +469,84 @@ export default function CollectionDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={28} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-          <Text
-            style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
-          >
-            {uniqueCards > 0
-              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
-              : '\u00A0'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
-        </TouchableOpacity>
-      </View>
+      {/* ── Header ── Cross-fade between normal and bulk so the switch
+          doesn't feel like a jump cut. 180 ms fade is long enough to
+          read as "smooth" and short enough to not impede bulk entry.
+          The bulk header uses a non-breaking-space subtitle so its
+          height matches the normal header — no layout shift. */}
+      {bulk.isActive ? (
+        <Animated.View
+          key="bulk-header"
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(180)}
+          style={styles.header}
+        >
+          <TouchableOpacity onPress={bulk.exit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close" size={28} color={colors.text} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.title} numberOfLines={1}>
+              {bulk.size === 0 ? 'Select cards' : `${bulk.size} selected`}
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              {bulk.size === 0 ? 'Tap cards to select' : '\u00A0'}
+            </Text>
+          </View>
+          <View style={{ width: 28 }} />
+        </Animated.View>
+      ) : (
+        <Animated.View
+          key="normal-header"
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(180)}
+          style={styles.header}
+        >
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="chevron-back" size={28} color={colors.text} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
+            <Text
+              style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
+            >
+              {uniqueCards > 0
+                ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
+                : '\u00A0'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
+          </TouchableOpacity>
+        </Animated.View>
+      )}
 
-      {/* ── Toolbar (collapses on scroll) ── */}
-      <Animated.View style={toolbarStyle}>
-        <CollectionToolbar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          viewMode={viewMode}
-          onToggleView={() => setViewMode(nextViewMode(viewMode))}
-          onSortPress={() => setShowSort(true)}
-          onFilterPress={() => setShowFilter(true)}
-          activeFilters={countActiveFilters(filters)}
-        />
-      </Animated.View>
+      {/* ── Toolbar (collapses on scroll) or Bulk actions bar ── */}
+      {bulk.isActive ? (
+        <Animated.View
+          key="bulk-bar"
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(180)}
+        >
+          <BulkActionsBar count={bulk.size} onDelete={handleBulkDelete} />
+        </Animated.View>
+      ) : (
+        <Animated.View
+          key="normal-bar"
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(180)}
+          style={toolbarStyle}
+        >
+          <CollectionToolbar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            viewMode={viewMode}
+            onToggleView={() => setViewMode(nextViewMode(viewMode))}
+            onSortPress={() => setShowSort(true)}
+            onFilterPress={() => setShowFilter(true)}
+            activeFilters={countActiveFilters(filters)}
+          />
+        </Animated.View>
+      )}
 
       {/* ── Content ──
           On first open we wait for enrichment before painting the grid
@@ -548,8 +629,13 @@ export default function CollectionDetailScreen() {
         inFolder={!!collectionFolderId}
         isQuickAddTarget={id === quickAddTargetId}
         hideReorder
+        canSelectCards={viewMode !== 'list'}
         onAction={(key) => {
           setShowActions(false);
+          if (key === 'select-cards') {
+            bulk.enter();
+            return;
+          }
           if (key === 'edit') setShowEditInfo(true);
           else if (key === 'merge') setShowMerge(true);
           else if (key === 'import') setShowImport(true);
@@ -686,73 +772,7 @@ const styles = StyleSheet.create({
     marginBottom: GRID_GAP,
   },
 
-  /* ── Grid compact (image only) ── */
-  gridCompactCard: {
-    aspectRatio: 1 / CARD_IMAGE_RATIO,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  gridCompactImage: {
-    width: '100%',
-    height: '100%',
-  },
-
-  /* ── Grid with meta ── */
-  gridCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    ...shadows.sm,
-  },
-  gridImageWrap: {
-    width: '100%',
-    aspectRatio: 1 / CARD_IMAGE_RATIO,
-    backgroundColor: colors.surfaceSecondary,
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-  },
-  qtyBadge: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 999,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  qtyBadgeText: {
-    color: '#FFF',
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
-  gridMeta: {
-    padding: spacing.sm,
-  },
-  gridName: {
-    color: colors.text,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  gridBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-  gridSet: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    flex: 1,
-  },
-  gridPrice: {
-    color: colors.text,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
+  /* Grid card styles moved to CollectionGridCards component. */
 
   /* ── List view ── */
   listList: {
