@@ -1,6 +1,7 @@
 import { PowerSyncDatabase } from '@powersync/react-native';
 import { AppSchema } from './schema';
 import { SupabaseConnector } from './SupabaseConnector';
+import { wipeLocalUserData } from './wipeLocal';
 
 export const db = new PowerSyncDatabase({
   schema: AppSchema,
@@ -28,8 +29,7 @@ const DEFAULT_STREAMS: string[] = [
 
 const STREAM_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
-export async function setupPowerSync() {
-  await db.init();
+async function connectAndSubscribe() {
   // Drop the CRUD upload throttle from the 1 s default to 100 ms so user-
   // created folders / binders reach Supabase almost immediately after the
   // local insert. Batching still kicks in when many rows are queued.
@@ -41,6 +41,34 @@ export async function setupPowerSync() {
       console.warn(`[powersync] subscribe ${name} failed`, err);
     }
   }
+}
+
+export async function setupPowerSync() {
+  await db.init();
+  await connectAndSubscribe();
+}
+
+/**
+ * Called by the auth layer when the signed-in user changes (logout+
+ * login, anon → real account, account A → account B). Disconnects the
+ * active sync, wipes every user-scoped local table, then reconnects
+ * against the new user's token. The catalog tables are global and
+ * intentionally survive.
+ *
+ * Note: we do NOT use `disconnectAndClear` here because it mutates
+ * PowerSync's internal oplog/bucket state in a way that, in our app,
+ * prevented the next `connect()` from draining the downloaded sync
+ * into user tables — leaving the account empty even after minutes.
+ * Manual DELETE + disconnect/connect keeps the sync engine intact.
+ */
+export async function resetForUserChange(): Promise<void> {
+  try {
+    await db.disconnect();
+  } catch (err) {
+    console.warn('[powersync] disconnect failed', err);
+  }
+  await wipeLocalUserData();
+  await connectAndSubscribe();
 }
 
 /**

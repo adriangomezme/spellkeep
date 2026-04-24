@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, View, StyleSheet } from 'react-native';
 import { colors } from '../constants';
+import {
+  clearSyncReset,
+  useSyncResetAt,
+} from '../lib/auth/syncResetAt';
+import { SyncSplash } from './SyncSplash';
 
 type Props = {
   children: React.ReactNode;
@@ -80,9 +85,42 @@ export function PowerSyncProvider({ children }: Props) {
 
   return (
     <PowerSyncContext.Provider value={db}>
-      {children}
+      <FirstSyncGate>{children}</FirstSyncGate>
     </PowerSyncContext.Provider>
   );
+}
+
+// Blocking splash while the current user's local DB is catching up
+// to the server after a session switch (logout+login, anon → real,
+// account A → B). Gated by a timestamp comparison (not a boolean)
+// because PowerSync does not reset `hasSynced` on disconnect — we
+// need to know "has a sync pass happened AFTER our wipe", which is
+// `status.lastSyncedAt > resetAt`.
+function FirstSyncGate({ children }: { children: React.ReactNode }) {
+  const resetAt = useSyncResetAt();
+  const { useStatus } = require('@powersync/react');
+  const status = useStatus();
+
+  const lastSyncedMs = status?.lastSyncedAt
+    ? (status.lastSyncedAt instanceof Date
+        ? status.lastSyncedAt.getTime()
+        : new Date(status.lastSyncedAt).getTime())
+    : null;
+
+  const syncedSinceReset =
+    resetAt != null && lastSyncedMs != null && lastSyncedMs >= resetAt;
+
+  useEffect(() => {
+    if (resetAt != null && syncedSinceReset) {
+      clearSyncReset().catch(() => {});
+    }
+  }, [resetAt, syncedSinceReset]);
+
+  if (resetAt != null && !syncedSinceReset) {
+    return <SyncSplash />;
+  }
+
+  return <>{children}</>;
 }
 
 const styles = StyleSheet.create({
