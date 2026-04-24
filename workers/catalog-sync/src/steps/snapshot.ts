@@ -45,7 +45,12 @@ async function withRetry<T>(
   }
   throw lastErr;
 }
-const SNAPSHOT_REFRESH_DAYS = 7;
+// Regenerate the snapshot every run. Scryfall publishes bulk data
+// daily and prices shift every day, so a 7-day gate made the daily
+// cron effectively a no-op from the client's POV — the index.json
+// never changed until a force sync. Keeping the constant as a knob
+// in case bandwidth ever becomes a concern.
+const SNAPSHOT_REFRESH_DAYS = 1;
 
 // Keep in lockstep with the client-side catalog schema.
 // Intentionally excluded — fetched on-demand from Supabase when the card
