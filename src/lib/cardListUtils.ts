@@ -345,3 +345,379 @@ export function filterAndSort<T extends CardEntry>(
 
   return sorted;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Group By — partitions a (filtered + sorted) entry list into Group[].
+// Each group carries enough context (label, icon, accent color, subtotal)
+// for the UI to render a header without re-deriving facts from raw rows.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type GroupKind = 'rarity' | 'set' | 'color' | 'type' | 'tags';
+
+export type GroupIcon =
+  | { kind: 'rarity'; rarity: 'common' | 'uncommon' | 'rare' | 'mythic' | 'bonus' }
+  | {
+      kind: 'type';
+      type:
+        | 'creature'
+        | 'instant'
+        | 'sorcery'
+        | 'artifact'
+        | 'enchantment'
+        | 'land'
+        | 'planeswalker'
+        | 'battle'
+        | 'multicolor';
+    }
+  | { kind: 'set'; setCode: string; svgUri?: string | null }
+  | { kind: 'color'; color: 'W' | 'U' | 'B' | 'R' | 'G' | 'multi' | 'colorless' }
+  | { kind: 'tag'; color: string | null }
+  | { kind: 'none' };
+
+export type Group<T> = {
+  key: string;
+  label: string;
+  /** Optional secondary line (set release year, color identity hint, etc). */
+  sublabel?: string;
+  icon: GroupIcon;
+  /** Optional brand tint the header can use as background or stripe. */
+  accent?: string;
+  entries: T[];
+  cardCount: number;
+  uniqueCount: number;
+  /** USD subtotal for the group, or null when it doesn't apply
+   *  (Color groupings hide the $ on purpose). */
+  subtotal: number | null;
+};
+
+/** Optional metadata the grouping needs to render rich headers. */
+export type GroupContext = {
+  tagsByEntryId?: Map<string, string[]>;
+  tagsCatalog?: Array<{ id: string; name: string; color: string | null }>;
+  /** From the local `sets` table: name + released_at + icon_svg_uri. */
+  setsMeta?: Map<
+    string,
+    { name: string; released_at: string | null; icon_svg_uri: string | null }
+  >;
+};
+
+const RARITY_LABEL: Record<string, string> = {
+  common: 'Common',
+  uncommon: 'Uncommon',
+  rare: 'Rare',
+  mythic: 'Mythic Rare',
+  special: 'Special',
+  bonus: 'Bonus',
+};
+
+const RARITY_ACCENT: Record<string, string> = {
+  common: '#1A1718',
+  uncommon: '#707883',
+  rare: '#A58E4A',
+  mythic: '#BF4427',
+  special: '#7B5BA8',
+  bonus: '#7B5BA8',
+};
+
+const COLOR_LABEL: Record<string, string> = {
+  W: 'White',
+  U: 'Blue',
+  B: 'Black',
+  R: 'Red',
+  G: 'Green',
+  multi: 'Multicolor',
+  colorless: 'Colorless',
+};
+
+const COLOR_ACCENT: Record<string, string> = {
+  W: '#F9FAF4',
+  U: '#0E68AB',
+  B: '#150B00',
+  R: '#D3202A',
+  G: '#00733E',
+  multi: '#E0C540',
+  colorless: '#CCC2C0',
+};
+
+const COLOR_DISPLAY_ORDER: Record<string, number> = {
+  W: 0,
+  U: 1,
+  B: 2,
+  R: 3,
+  G: 4,
+  multi: 5,
+  colorless: 6,
+};
+
+// Type buckets — ordered the way MTG players actually talk about them.
+const TYPE_ORDER: Array<{ key: string; needle: string; label: string }> = [
+  { key: 'creature', needle: 'creature', label: 'Creature' },
+  { key: 'planeswalker', needle: 'planeswalker', label: 'Planeswalker' },
+  { key: 'battle', needle: 'battle', label: 'Battle' },
+  { key: 'artifact', needle: 'artifact', label: 'Artifact' },
+  { key: 'enchantment', needle: 'enchantment', label: 'Enchantment' },
+  { key: 'instant', needle: 'instant', label: 'Instant' },
+  { key: 'sorcery', needle: 'sorcery', label: 'Sorcery' },
+  { key: 'land', needle: 'land', label: 'Land' },
+];
+
+function entryColorBucket<T extends CardEntry>(e: T): string {
+  const ci = parseColorIdentity(e.cards.color_identity);
+  if (ci.length === 0) return 'colorless';
+  if (ci.length > 1) return 'multi';
+  return ci[0];
+}
+
+function entryTypeBucket<T extends CardEntry>(e: T): { key: string; label: string } {
+  const tl = (e.cards.type_line ?? '').toLowerCase();
+  for (const t of TYPE_ORDER) {
+    if (tl.includes(t.needle)) return { key: t.key, label: t.label };
+  }
+  return { key: 'other', label: 'Other' };
+}
+
+function entrySubtotalUSD<T extends CardEntry>(e: T): number {
+  const v = displayPriceForRow(
+    e.quantity_normal,
+    e.quantity_foil,
+    e.quantity_etched,
+    e.cards.price_usd,
+    e.cards.price_usd_foil,
+    e.cards.price_usd_etched,
+  );
+  if (v == null) return 0;
+  const totalCopies =
+    (e.quantity_normal ?? 0) +
+    (e.quantity_foil ?? 0) +
+    (e.quantity_etched ?? 0);
+  return v * Math.max(1, totalCopies);
+}
+
+function entryTotalCopies<T extends CardEntry>(e: T): number {
+  return (
+    (e.quantity_normal ?? 0) +
+    (e.quantity_foil ?? 0) +
+    (e.quantity_etched ?? 0)
+  );
+}
+
+function entryUniqueVariants<T extends CardEntry>(e: T): number {
+  let n = 0;
+  if ((e.quantity_normal ?? 0) > 0) n++;
+  if ((e.quantity_foil ?? 0) > 0) n++;
+  if ((e.quantity_etched ?? 0) > 0) n++;
+  return n || 1;
+}
+
+/**
+ * Partition `entries` into groups according to `kind`. Order of the
+ * returned groups follows the canonical MTG mental model for each
+ * key (rarity power, set release date DESC, WUBRG, type theme, tag
+ * popularity). Inside each group the entries keep the order they had
+ * coming in — callers should run `filterAndSort` first.
+ */
+export function groupEntries<T extends CardEntry>(
+  entries: T[],
+  kind: GroupKind,
+  ctx: GroupContext = {},
+): Group<T>[] {
+  if (entries.length === 0) return [];
+
+  switch (kind) {
+    case 'rarity':
+      return groupByRarity(entries);
+    case 'set':
+      return groupBySet(entries, ctx.setsMeta);
+    case 'color':
+      return groupByColor(entries);
+    case 'type':
+      return groupByType(entries);
+    case 'tags':
+      return groupByTags(entries, ctx.tagsByEntryId, ctx.tagsCatalog);
+  }
+}
+
+function groupByRarity<T extends CardEntry>(entries: T[]): Group<T>[] {
+  const buckets = new Map<string, T[]>();
+  for (const e of entries) {
+    const r = (e.cards.rarity ?? '').toLowerCase() || 'common';
+    const arr = buckets.get(r) ?? [];
+    arr.push(e);
+    buckets.set(r, arr);
+  }
+  const out: Group<T>[] = [];
+  const order = ['mythic', 'rare', 'uncommon', 'common', 'special', 'bonus'];
+  for (const r of order) {
+    const arr = buckets.get(r);
+    if (!arr || arr.length === 0) continue;
+    const rarityKey =
+      r === 'special' ? 'bonus' : (r as 'common' | 'uncommon' | 'rare' | 'mythic' | 'bonus');
+    out.push({
+      key: `rarity:${r}`,
+      label: RARITY_LABEL[r] ?? r,
+      icon: { kind: 'rarity', rarity: rarityKey },
+      accent: RARITY_ACCENT[r],
+      entries: arr,
+      cardCount: arr.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: arr.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      subtotal: arr.reduce((s, e) => s + entrySubtotalUSD(e), 0),
+    });
+  }
+  return out;
+}
+
+function groupBySet<T extends CardEntry>(
+  entries: T[],
+  setsMeta?: GroupContext['setsMeta'],
+): Group<T>[] {
+  const buckets = new Map<string, T[]>();
+  for (const e of entries) {
+    const code = (e.cards.set_code ?? '').toLowerCase();
+    const arr = buckets.get(code) ?? [];
+    arr.push(e);
+    buckets.set(code, arr);
+  }
+  const out: Group<T>[] = [];
+  for (const [code, arr] of buckets) {
+    const meta = setsMeta?.get(code);
+    out.push({
+      key: `set:${code}`,
+      label: meta?.name ?? arr[0].cards.set_name ?? code.toUpperCase(),
+      sublabel: meta?.released_at?.slice(0, 4),
+      icon: { kind: 'set', setCode: code, svgUri: meta?.icon_svg_uri ?? null },
+      entries: arr,
+      cardCount: arr.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: arr.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      subtotal: arr.reduce((s, e) => s + entrySubtotalUSD(e), 0),
+    });
+  }
+  // Most recent release first; missing dates sink to the bottom.
+  out.sort((a, b) => {
+    const ay = a.sublabel ?? '';
+    const by = b.sublabel ?? '';
+    if (ay && by) return by.localeCompare(ay);
+    if (ay) return -1;
+    if (by) return 1;
+    return a.label.localeCompare(b.label);
+  });
+  return out;
+}
+
+function groupByColor<T extends CardEntry>(entries: T[]): Group<T>[] {
+  const buckets = new Map<string, T[]>();
+  for (const e of entries) {
+    const k = entryColorBucket(e);
+    const arr = buckets.get(k) ?? [];
+    arr.push(e);
+    buckets.set(k, arr);
+  }
+  const out: Group<T>[] = [];
+  const keys = Array.from(buckets.keys()).sort(
+    (a, b) => (COLOR_DISPLAY_ORDER[a] ?? 99) - (COLOR_DISPLAY_ORDER[b] ?? 99),
+  );
+  for (const k of keys) {
+    const arr = buckets.get(k)!;
+    out.push({
+      key: `color:${k}`,
+      label: COLOR_LABEL[k] ?? k,
+      icon: { kind: 'color', color: k as 'W' | 'U' | 'B' | 'R' | 'G' | 'multi' | 'colorless' },
+      accent: COLOR_ACCENT[k],
+      entries: arr,
+      cardCount: arr.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: arr.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      // Color subtotal omitted on purpose — price is uncorrelated.
+      subtotal: null,
+    });
+  }
+  return out;
+}
+
+function groupByType<T extends CardEntry>(entries: T[]): Group<T>[] {
+  const buckets = new Map<string, { label: string; arr: T[] }>();
+  for (const e of entries) {
+    const t = entryTypeBucket(e);
+    const slot = buckets.get(t.key) ?? { label: t.label, arr: [] };
+    slot.arr.push(e);
+    buckets.set(t.key, slot);
+  }
+  const out: Group<T>[] = [];
+  const order = TYPE_ORDER.map((t) => t.key);
+  // Anything we couldn't classify lands in "Other" at the end.
+  if (buckets.has('other')) order.push('other');
+  for (const k of order) {
+    const slot = buckets.get(k);
+    if (!slot || slot.arr.length === 0) continue;
+    out.push({
+      key: `type:${k}`,
+      label: slot.label,
+      icon: k === 'other'
+        ? { kind: 'none' }
+        : { kind: 'type', type: k as Exclude<GroupIcon & { kind: 'type' }, never>['type'] },
+      entries: slot.arr,
+      cardCount: slot.arr.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: slot.arr.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      subtotal: slot.arr.reduce((s, e) => s + entrySubtotalUSD(e), 0),
+    });
+  }
+  return out;
+}
+
+function groupByTags<T extends CardEntry>(
+  entries: T[],
+  tagsByEntryId?: Map<string, string[]>,
+  tagsCatalog?: GroupContext['tagsCatalog'],
+): Group<T>[] {
+  const tagBuckets = new Map<string, T[]>();
+  const untagged: T[] = [];
+  if (!tagsByEntryId || tagsByEntryId.size === 0) {
+    for (const e of entries) untagged.push(e);
+  } else {
+    for (const e of entries) {
+      const ids = tagsByEntryId.get(e.id);
+      if (!ids || ids.length === 0) {
+        untagged.push(e);
+        continue;
+      }
+      // A card with N tags appears in N groups — natural for browse.
+      for (const id of ids) {
+        const arr = tagBuckets.get(id) ?? [];
+        arr.push(e);
+        tagBuckets.set(id, arr);
+      }
+    }
+  }
+
+  const meta = new Map(
+    (tagsCatalog ?? []).map((t) => [t.id, t]),
+  );
+
+  const out: Group<T>[] = [];
+  for (const [id, arr] of tagBuckets) {
+    const m = meta.get(id);
+    out.push({
+      key: `tag:${id}`,
+      label: m?.name ?? 'Tag',
+      icon: { kind: 'tag', color: m?.color ?? null },
+      accent: m?.color ?? undefined,
+      entries: arr,
+      cardCount: arr.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: arr.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      subtotal: arr.reduce((s, e) => s + entrySubtotalUSD(e), 0),
+    });
+  }
+  // Most-used tag first inside the tagged section.
+  out.sort((a, b) => b.cardCount - a.cardCount);
+
+  if (untagged.length > 0) {
+    out.push({
+      key: 'tag:__untagged__',
+      label: 'Untagged',
+      icon: { kind: 'none' },
+      entries: untagged,
+      cardCount: untagged.reduce((s, e) => s + entryTotalCopies(e), 0),
+      uniqueCount: untagged.reduce((s, e) => s + entryUniqueVariants(e), 0),
+      subtotal: untagged.reduce((s, e) => s + entrySubtotalUSD(e), 0),
+    });
+  }
+  return out;
+}
