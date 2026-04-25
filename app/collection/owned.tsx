@@ -561,6 +561,7 @@ export default function OwnedCardsScreen() {
         filters={filters}
         availableSets={availableSets}
         availableLanguages={availableLanguages}
+        availableTags={[]}
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}

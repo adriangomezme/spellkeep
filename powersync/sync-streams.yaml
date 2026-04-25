@@ -17,6 +17,13 @@ streams:
             # 00024) so we avoid the INNER JOIN → parameter-subquery path
             # that hits PowerSync edition-3's 1000-row cap (PSYNC_S2305).
             - "SELECT * FROM collection_cards WHERE user_id = auth.user_id()"
+    # Tag catalog + per-row tag assignments. `collection_card_tags`
+    # carries user_id for the same reason as collection_cards — direct
+    # WHERE avoids the parameter-subquery cap.
+    user_tags:
+        queries:
+            - "SELECT * FROM tags WHERE user_id = auth.user_id()"
+            - "SELECT * FROM collection_card_tags WHERE user_id = auth.user_id()"
     # Deck folders + decks + deck cards.
     user_decks:
         queries:

@@ -396,6 +396,27 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Tags */}
+
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.6}
+          onPress={() => router.push('/profile/tags')}
+        >
+          <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
+            <Ionicons name="pricetag" size={20} color={colors.primary} />
+          </View>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Tags</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>
+              Rename, recolor or delete your tags
+            </Text>
+          </View>
+          <View style={styles.rowTrailing}>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </View>
+        </TouchableOpacity>
+
         <Text style={styles.sectionLabel}>Activity</Text>
 
         {/* Import History */}

@@ -1,5 +1,5 @@
 import type { SortOption } from '../components/collection/SortSheet';
-import type { FilterState, SetInfo } from '../components/collection/FilterSheet';
+import type { FilterState, SetInfo, TagFilterInfo } from '../components/collection/FilterSheet';
 
 /**
  * Shared card entry shape used by binder detail and owned cards screens.
@@ -158,12 +158,47 @@ export function deriveAvailableLanguages<T extends CardEntry>(entries: T[]): Lan
     });
 }
 
+/**
+ * List of tags that appear on at least one of the given entries,
+ * with per-tag entry counts. Returns empty when the catalog is empty
+ * OR no entry carries any tag — callers should hide the Tags filter
+ * tab in that case.
+ */
+export function deriveAvailableTags<T extends CardEntry>(
+  entries: T[],
+  tagsByEntryId: Map<string, string[]>,
+  tagsCatalog: Array<{ id: string; name: string; color: string | null }>,
+): TagFilterInfo[] {
+  if (entries.length === 0 || tagsByEntryId.size === 0) return [];
+  const counts = new Map<string, number>();
+  for (const e of entries) {
+    const ids = tagsByEntryId.get(e.id);
+    if (!ids) continue;
+    for (const id of ids) {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  if (counts.size === 0) return [];
+  const byId = new Map(tagsCatalog.map((t) => [t.id, t]));
+  const out: TagFilterInfo[] = [];
+  for (const [id, count] of counts) {
+    const meta = byId.get(id);
+    if (!meta) continue;
+    out.push({ id, name: meta.name, color: meta.color, count });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
 export function filterAndSort<T extends CardEntry>(
   entries: T[],
   searchQuery: string,
   sortBy: SortOption,
   ascending: boolean,
   filters: FilterState,
+  /** Optional id → tagIds map for the entries. Required when
+   *  filters.tags is non-empty; otherwise the tag filter is a no-op. */
+  tagsByEntryId?: Map<string, string[]>,
 ): T[] {
   let result = entries;
 
@@ -239,6 +274,18 @@ export function filterAndSort<T extends CardEntry>(
     result = result.filter((e) =>
       filters.languages.includes((e.language ?? 'en').toLowerCase())
     );
+  }
+
+  if (filters.tags.length > 0 && tagsByEntryId) {
+    // Multi-select on tags is AND: an entry must carry every selected
+    // tag to pass. Single-tag filter is the common case and falls
+    // through quickly.
+    const wanted = filters.tags;
+    result = result.filter((e) => {
+      const ids = tagsByEntryId.get(e.id);
+      if (!ids || ids.length === 0) return false;
+      return wanted.every((t) => ids.includes(t));
+    });
   }
 
   // Sort

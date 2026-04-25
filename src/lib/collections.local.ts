@@ -951,6 +951,38 @@ async function fetchRowsByIds(ids: string[]): Promise<RowForMove[]> {
   return out;
 }
 
+/**
+ * Load the global (scope_collection_id IS NULL) tag ids attached to
+ * each of the given rows. Scoped tags are deliberately excluded —
+ * callers doing cross-collection moves or duplicates only want the
+ * portable ones.
+ */
+async function fetchGlobalTagIdsByRow(
+  rowIds: string[]
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (rowIds.length === 0) return out;
+  const BATCH = 400;
+  for (let i = 0; i < rowIds.length; i += BATCH) {
+    const slice = rowIds.slice(i, i + BATCH);
+    const ph = slice.map(() => '?').join(', ');
+    const rows = await db.getAll<{ collection_card_id: string; tag_id: string }>(
+      `SELECT cct.collection_card_id, cct.tag_id
+         FROM collection_card_tags cct
+         JOIN tags t ON t.id = cct.tag_id
+        WHERE cct.collection_card_id IN (${ph})
+          AND t.scope_collection_id IS NULL`,
+      slice
+    );
+    for (const r of rows) {
+      const arr = out.get(r.collection_card_id) ?? [];
+      arr.push(r.tag_id);
+      out.set(r.collection_card_id, arr);
+    }
+  }
+  return out;
+}
+
 async function fetchDestMap(destCollectionId: string): Promise<Map<string, RowForMove>> {
   const rows = await db.getAll<RowForMove>(
     `SELECT id, card_id, condition, language,
@@ -993,7 +1025,13 @@ export async function moveCollectionCardsLocal(
 
   const sourceRows = await fetchRowsByIds(entryIds);
   const destMap = await fetchDestMap(destCollectionId);
+  // Global tags attached to each source row. Used to carry those
+  // tags through the move/merge — scoped tags are left behind
+  // (or pruned for in-place moves) since they belong to the source
+  // collection, not the destination.
+  const globalTagsBySrc = await fetchGlobalTagIdsByRow(entryIds);
 
+  const userId = await getUserId();
   const now = new Date().toISOString();
   const toUpdateInPlace: string[] = [];
   const toDelete: string[] = [];
@@ -1002,6 +1040,9 @@ export async function moveCollectionCardsLocal(
     string,
     { quantity_normal: number; quantity_foil: number; quantity_etched: number }
   >();
+  // Which src rows merged into which dest row — used to union their
+  // global tags into the dest before the source is deleted.
+  const mergePairs: Array<{ srcId: string; destId: string }> = [];
 
   for (const src of sourceRows) {
     const key = `${src.card_id}|${src.condition}|${src.language}`;
@@ -1017,6 +1058,7 @@ export async function moveCollectionCardsLocal(
       cur.quantity_etched += src.quantity_etched ?? 0;
       mergeUpdates.set(hit.id, cur);
       toDelete.push(src.id);
+      mergePairs.push({ srcId: src.id, destId: hit.id });
     } else {
       // First source row with this key — move in place; register in
       // the dest map so any later source rows with the same key
@@ -1057,6 +1099,50 @@ export async function moveCollectionCardsLocal(
       );
     }
 
+    // Tag propagation — in-place rows: drop any scoped tag that
+    // doesn't match the destination (otherwise the server-side
+    // scope-validation trigger would reject the next upload and the
+    // CRUD queue would stall).
+    for (let i = 0; i < toUpdateInPlace.length; i += BATCH) {
+      const slice = toUpdateInPlace.slice(i, i + BATCH);
+      const ph = slice.map(() => '?').join(', ');
+      await tx.execute(
+        `DELETE FROM collection_card_tags
+          WHERE collection_card_id IN (${ph})
+            AND tag_id IN (
+              SELECT id FROM tags
+               WHERE scope_collection_id IS NOT NULL
+                 AND scope_collection_id != ?
+            )`,
+        [...slice, destCollectionId]
+      );
+    }
+
+    // Tag propagation — merge pairs: union the source's global tags
+    // into the destination row, skipping any the destination already
+    // has. Scoped tags on the source vanish with its CASCADE delete
+    // below (which is the intended behavior for cross-collection
+    // merges).
+    for (const pair of mergePairs) {
+      const globals = globalTagsBySrc.get(pair.srcId) ?? [];
+      if (globals.length === 0) continue;
+      const existing = await tx.getAll<{ tag_id: string }>(
+        `SELECT tag_id FROM collection_card_tags WHERE collection_card_id = ?`,
+        [pair.destId]
+      );
+      const have = new Set(existing.map((r) => r.tag_id));
+      for (const tagId of globals) {
+        if (have.has(tagId)) continue;
+        await tx.execute(
+          `INSERT INTO collection_card_tags
+             (id, user_id, collection_card_id, tag_id, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [newId(), userId, pair.destId, tagId, now]
+        );
+        have.add(tagId);
+      }
+    }
+
     for (let i = 0; i < toDelete.length; i += BATCH) {
       const slice = toDelete.slice(i, i + BATCH);
       const ph = slice.map(() => '?').join(', ');
@@ -1082,6 +1168,9 @@ export async function duplicateCollectionCardsLocal(
 
   const sourceRows = await fetchRowsByIds(entryIds);
   const destMap = await fetchDestMap(destCollectionId);
+  // Only global tags propagate on duplicate; scoped tags stay with
+  // the source row's own collection.
+  const globalTagsBySrc = await fetchGlobalTagIdsByRow(entryIds);
 
   const userId = await getUserId();
   const now = new Date().toISOString();
@@ -1098,6 +1187,9 @@ export async function duplicateCollectionCardsLocal(
     quantity_foil: number;
     quantity_etched: number;
   }> = [];
+  // Which src rows produced which dest row (merge target or new
+  // insert) — used to copy global tags into every target.
+  const tagTargets: Array<{ srcId: string; destRowId: string }> = [];
 
   for (const src of sourceRows) {
     const key = `${src.card_id}|${src.condition}|${src.language}`;
@@ -1112,6 +1204,7 @@ export async function duplicateCollectionCardsLocal(
       cur.quantity_foil += src.quantity_foil ?? 0;
       cur.quantity_etched += src.quantity_etched ?? 0;
       mergeUpdates.set(hit.id, cur);
+      tagTargets.push({ srcId: src.id, destRowId: hit.id });
     } else {
       const row = {
         id: newId(),
@@ -1124,6 +1217,7 @@ export async function duplicateCollectionCardsLocal(
       };
       inserts.push(row);
       destMap.set(key, { ...row });
+      tagTargets.push({ srcId: src.id, destRowId: row.id });
     }
   }
 
@@ -1166,6 +1260,29 @@ export async function duplicateCollectionCardsLocal(
          VALUES ${placeholders}`,
         params
       );
+    }
+
+    // Tag propagation — union the source's global tags into every
+    // destination row (merged or newly inserted). Skip tags the dest
+    // already has to keep the CRUD queue quiet on re-runs.
+    for (const target of tagTargets) {
+      const globals = globalTagsBySrc.get(target.srcId) ?? [];
+      if (globals.length === 0) continue;
+      const existing = await tx.getAll<{ tag_id: string }>(
+        `SELECT tag_id FROM collection_card_tags WHERE collection_card_id = ?`,
+        [target.destRowId]
+      );
+      const have = new Set(existing.map((r) => r.tag_id));
+      for (const tagId of globals) {
+        if (have.has(tagId)) continue;
+        await tx.execute(
+          `INSERT INTO collection_card_tags
+             (id, user_id, collection_card_id, tag_id, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [newId(), userId, target.destRowId, tagId, now]
+        );
+        have.add(tagId);
+      }
     }
   });
 }
@@ -1345,5 +1462,247 @@ export async function adjustOwnershipQuantityLocal(
         WHERE id = ?`,
       [next, now, entryId]
     );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tags — user-scoped labels attached to collection_cards rows. The same
+// Scryfall card sitting in two binders can carry different tags per copy.
+// All writes go through PowerSync SQLite; the CRUD queue drains them to
+// Supabase in the background.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a tag if it doesn't already exist at the same scope.
+ * `scopeCollectionId=null` creates a global tag; non-null creates a
+ * tag that only shows up inside that collection's picker.
+ * Case-insensitive name match within the same scope.
+ */
+export async function createOrGetTagLocal(
+  name: string,
+  color: string | null = null,
+  scopeCollectionId: string | null = null
+): Promise<string> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) throw new Error('Tag name is empty');
+
+  const userId = await getUserId();
+
+  const existing = await db.getAll<{ id: string }>(
+    scopeCollectionId === null
+      ? `SELECT id FROM tags
+           WHERE user_id = ?
+             AND scope_collection_id IS NULL
+             AND LOWER(name) = LOWER(?)
+           LIMIT 1`
+      : `SELECT id FROM tags
+           WHERE user_id = ?
+             AND scope_collection_id = ?
+             AND LOWER(name) = LOWER(?)
+           LIMIT 1`,
+    scopeCollectionId === null
+      ? [userId, trimmed]
+      : [userId, scopeCollectionId, trimmed]
+  );
+  if (existing.length > 0) return existing[0].id;
+
+  const id = newId();
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO tags
+       (id, user_id, name, color, scope_collection_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, userId, trimmed, color, scopeCollectionId, now, now]
+  );
+  return id;
+}
+
+export async function renameTagLocal(tagId: string, newName: string): Promise<void> {
+  const trimmed = newName.trim();
+  if (trimmed.length === 0) throw new Error('Tag name is empty');
+  const now = new Date().toISOString();
+  await db.execute(
+    `UPDATE tags SET name = ?, updated_at = ? WHERE id = ?`,
+    [trimmed, now, tagId]
+  );
+}
+
+export async function updateTagColorLocal(
+  tagId: string,
+  color: string | null
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.execute(
+    `UPDATE tags SET color = ?, updated_at = ? WHERE id = ?`,
+    [color, now, tagId]
+  );
+}
+
+/** Count how many collection_cards rows currently carry this tag. */
+export async function getTagCardCountLocal(tagId: string): Promise<number> {
+  const rows = await db.getAll<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM collection_card_tags WHERE tag_id = ?`,
+    [tagId]
+  );
+  return Number(rows?.[0]?.c ?? 0);
+}
+
+/**
+ * Delete a tag. Cascades via FK (server) AND manually locally so the
+ * UI doesn't keep showing the tag on cards after it's gone. PowerSync
+ * uploads the two DELETEs; the server's ON DELETE CASCADE reconciles
+ * any we missed.
+ */
+export async function deleteTagLocal(tagId: string): Promise<void> {
+  await db.writeTransaction(async (tx) => {
+    await tx.execute(
+      `DELETE FROM collection_card_tags WHERE tag_id = ?`,
+      [tagId]
+    );
+    await tx.execute(`DELETE FROM tags WHERE id = ?`, [tagId]);
+  });
+}
+
+/**
+ * Union the given tag ids into every collection_cards row in
+ * `collectionCardIds`. Existing tags on those rows are preserved —
+ * tags not in the incoming list aren't touched. Duplicates are
+ * skipped thanks to the unique(collection_card_id, tag_id) index.
+ *
+ * Used by the bulk-select UI when the user picks "Tag N cards".
+ */
+export async function bulkAddTagsToCardsLocal(
+  collectionCardIds: string[],
+  tagIds: string[]
+): Promise<void> {
+  if (collectionCardIds.length === 0 || tagIds.length === 0) return;
+
+  const userId = await getUserId();
+  const now = new Date().toISOString();
+
+  // Pull every existing (card_id, tag_id) pair for the target rows
+  // so we can skip already-applied combos instead of relying on
+  // INSERT OR IGNORE — PowerSync's CRUD queue uploads each attempted
+  // insert, and ignored rows still generate noise on the wire.
+  const existing = new Set<string>();
+  const BATCH_SELECT = 500;
+  for (let i = 0; i < collectionCardIds.length; i += BATCH_SELECT) {
+    const slice = collectionCardIds.slice(i, i + BATCH_SELECT);
+    const ph = slice.map(() => '?').join(', ');
+    const rows = await db.getAll<{ collection_card_id: string; tag_id: string }>(
+      `SELECT collection_card_id, tag_id
+         FROM collection_card_tags
+        WHERE collection_card_id IN (${ph})`,
+      slice
+    );
+    for (const r of rows) existing.add(`${r.collection_card_id}|${r.tag_id}`);
+  }
+
+  const inserts: Array<{ id: string; collectionCardId: string; tagId: string }> = [];
+  for (const ccId of collectionCardIds) {
+    for (const tagId of tagIds) {
+      if (!existing.has(`${ccId}|${tagId}`)) {
+        inserts.push({ id: newId(), collectionCardId: ccId, tagId });
+      }
+    }
+  }
+
+  if (inserts.length === 0) return;
+
+  const INS_BATCH = 100;
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < inserts.length; i += INS_BATCH) {
+      const slice = inserts.slice(i, i + INS_BATCH);
+      const placeholders = slice.map(() => '(?, ?, ?, ?, ?)').join(', ');
+      const params: any[] = [];
+      for (const r of slice) {
+        params.push(r.id, userId, r.collectionCardId, r.tagId, now);
+      }
+      await tx.execute(
+        `INSERT INTO collection_card_tags
+           (id, user_id, collection_card_id, tag_id, created_at)
+         VALUES ${placeholders}`,
+        params
+      );
+    }
+  });
+}
+
+/**
+ * Remove the given tag ids from every row in `collectionCardIds`.
+ * Rows without those tags are unaffected. Used by the bulk "Untag"
+ * action. Batched in chunks of 500 to stay under SQLite's variable
+ * limit.
+ */
+export async function bulkRemoveTagsFromCardsLocal(
+  collectionCardIds: string[],
+  tagIds: string[]
+): Promise<void> {
+  if (collectionCardIds.length === 0 || tagIds.length === 0) return;
+  const BATCH = 500;
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < collectionCardIds.length; i += BATCH) {
+      const cardSlice = collectionCardIds.slice(i, i + BATCH);
+      for (let j = 0; j < tagIds.length; j += BATCH) {
+        const tagSlice = tagIds.slice(j, j + BATCH);
+        const cardPh = cardSlice.map(() => '?').join(', ');
+        const tagPh = tagSlice.map(() => '?').join(', ');
+        await tx.execute(
+          `DELETE FROM collection_card_tags
+            WHERE collection_card_id IN (${cardPh})
+              AND tag_id IN (${tagPh})`,
+          [...cardSlice, ...tagSlice]
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Replace the full tag set on a single collection_cards row. Diffs
+ * against what's already there so we only INSERT / DELETE what
+ * actually changed — keeps the CRUD queue tidy and avoids needless
+ * uploads when the user opens the picker and closes it without
+ * changes.
+ */
+export async function setCardTagsLocal(
+  collectionCardId: string,
+  tagIds: string[]
+): Promise<void> {
+  const userId = await getUserId();
+  const now = new Date().toISOString();
+
+  const existingRows = await db.getAll<{ id: string; tag_id: string }>(
+    `SELECT id, tag_id FROM collection_card_tags WHERE collection_card_id = ?`,
+    [collectionCardId]
+  );
+  const existingByTag = new Map<string, string>(); // tag_id → join row id
+  for (const r of existingRows) existingByTag.set(r.tag_id, r.id);
+
+  const wanted = new Set(tagIds);
+  const toInsert = tagIds.filter((t) => !existingByTag.has(t));
+  const toDelete: string[] = [];
+  for (const [tagId, joinId] of existingByTag) {
+    if (!wanted.has(tagId)) toDelete.push(joinId);
+  }
+
+  if (toInsert.length === 0 && toDelete.length === 0) return;
+
+  await db.writeTransaction(async (tx) => {
+    for (const tagId of toInsert) {
+      await tx.execute(
+        `INSERT INTO collection_card_tags
+           (id, user_id, collection_card_id, tag_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [newId(), userId, collectionCardId, tagId, now]
+      );
+    }
+    if (toDelete.length > 0) {
+      const ph = toDelete.map(() => '?').join(', ');
+      await tx.execute(
+        `DELETE FROM collection_card_tags WHERE id IN (${ph})`,
+        toDelete
+      );
+    }
   });
 }

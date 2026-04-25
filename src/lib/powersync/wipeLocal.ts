@@ -10,6 +10,8 @@ const USER_SCOPED_TABLES = [
   'collection_folders',
   'collections',
   'collection_cards',
+  'tags',
+  'collection_card_tags',
   'deck_folders',
   'decks',
   'deck_cards',

@@ -52,7 +52,10 @@ import {
   deleteCollectionCardsLocal,
   moveCollectionCardsLocal,
   duplicateCollectionCardsLocal,
+  bulkAddTagsToCardsLocal,
+  bulkRemoveTagsFromCardsLocal,
 } from '../../src/lib/collections.local';
+import { TagPicker } from '../../src/components/collection/TagPicker';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
 import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
@@ -62,7 +65,10 @@ import { BulkActionsBar } from '../../src/components/collection/BulkActionsBar';
 import { DestinationPickerModal } from '../../src/components/DestinationPickerModal';
 import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
 import { type CollectionSummary } from '../../src/lib/collections';
-import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
+import { useCardTagIds, useUserTags, type TagWithCount } from '../../src/lib/hooks/useUserTags';
+import { COLLECTION_COLORS } from '../../src/components/collection/ColorPicker';
+import { db } from '../../src/lib/powersync/system';
+import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, deriveAvailableTags, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -114,6 +120,18 @@ export default function CollectionDetailScreen() {
     useCollectionViewPrefs();
   const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
   const bulk = useBulkSelection();
+  // Tag lookup for the list view. Every row inside this collection
+  // only ever sees globals + tags scoped to `id`, so we load them
+  // once here and pass a Map down to each list row.
+  const { tags: availableTags } = useUserTags(id);
+  const tagsById = useMemo(() => {
+    const m = new Map<string, TagWithCount>();
+    for (const t of availableTags) m.set(t.id, t);
+    return m;
+  }, [availableTags]);
+  // Card ids in the bulk selection — passed to the TagPicker so it
+  // can compute applied counts for the Remove tab.
+  const selectedIdsList = useMemo(() => Array.from(bulk.selectedIds), [bulk.selectedIds]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
@@ -129,6 +147,8 @@ export default function CollectionDetailScreen() {
   // Bulk picker mode: 'move' re-parents selected rows, 'add' duplicates
   // them. Null means the picker is closed.
   const [bulkPickerMode, setBulkPickerMode] = useState<'move' | 'add' | null>(null);
+  // Separate state for the Tag action — TagPicker is its own modal.
+  const [bulkTagSheetOpen, setBulkTagSheetOpen] = useState(false);
 
   // Destinations for the picker — same shape Add-to-collection uses.
   // Move excludes the current collection; Add includes everything
@@ -279,6 +299,51 @@ export default function CollectionDetailScreen() {
     setBulkPickerMode('add');
   }
 
+  function handleBulkTag() {
+    if (bulk.size === 0) return;
+    setBulkTagSheetOpen(true);
+  }
+
+  function handleTagPickerAdd(tagIds: string[]) {
+    const ids = selectedIdsList;
+    setBulkTagSheetOpen(false);
+    if (ids.length === 0 || tagIds.length === 0) {
+      bulk.exit();
+      return;
+    }
+    bulkAddTagsToCardsLocal(ids, tagIds)
+      .then(() => {
+        showToast(
+          `Tagged ${ids.length} ${ids.length === 1 ? 'card' : 'cards'}`
+        );
+      })
+      .catch((err) => {
+        console.warn('[bulk-tag] add failed', err);
+        Alert.alert('Error', 'Failed to apply tags.');
+      });
+    bulk.exit();
+  }
+
+  function handleTagPickerRemove(tagIds: string[]) {
+    const ids = selectedIdsList;
+    setBulkTagSheetOpen(false);
+    if (ids.length === 0 || tagIds.length === 0) {
+      bulk.exit();
+      return;
+    }
+    bulkRemoveTagsFromCardsLocal(ids, tagIds)
+      .then(() => {
+        showToast(
+          `Untagged ${ids.length} ${ids.length === 1 ? 'card' : 'cards'}`
+        );
+      })
+      .catch((err) => {
+        console.warn('[bulk-tag] remove failed', err);
+        Alert.alert('Error', 'Failed to remove tags.');
+      });
+    bulk.exit();
+  }
+
   function handleBulkPickerSelect(destId: string) {
     const ids = Array.from(bulk.selectedIds);
     const mode = bulkPickerMode;
@@ -303,9 +368,29 @@ export default function CollectionDetailScreen() {
     bulk.exit();
   }
 
+  // Tag join lookup for the filter pipeline + the Tags filter tab.
+  // JOIN over collection_cards so we only stream the joins that belong
+  // to this binder/list, never the user's full corpus.
+  const tagJoinRows = useQuery<{ collection_card_id: string; tag_id: string }>(
+    `SELECT cct.collection_card_id, cct.tag_id
+       FROM collection_card_tags cct
+       JOIN collection_cards cc ON cc.id = cct.collection_card_id
+      WHERE cc.collection_id = ?`,
+    [id]
+  );
+  const tagsByEntryId = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of tagJoinRows.data ?? []) {
+      const arr = m.get(r.collection_card_id) ?? [];
+      arr.push(r.tag_id);
+      m.set(r.collection_card_id, arr);
+    }
+    return m;
+  }, [tagJoinRows.data]);
+
   const displayEntries = useMemo(
-    () => filterAndSort(entries, searchQuery, sortBy, sortAsc, filters),
-    [entries, searchQuery, sortBy, sortAsc, filters],
+    () => filterAndSort(entries, searchQuery, sortBy, sortAsc, filters, tagsByEntryId),
+    [entries, searchQuery, sortBy, sortAsc, filters, tagsByEntryId],
   );
 
   // Non-blocking image prefetch for the first viewport. Fire-and-forget
@@ -323,6 +408,10 @@ export default function CollectionDetailScreen() {
 
   const availableSets = useMemo(() => deriveAvailableSets(entries), [entries]);
   const availableLanguages = useMemo(() => deriveAvailableLanguages(entries), [entries]);
+  const availableFilterTags = useMemo(
+    () => deriveAvailableTags(entries, tagsByEntryId, availableTags),
+    [entries, tagsByEntryId, availableTags],
+  );
 
   const isFiltered =
     searchQuery.trim().length > 0 || countActiveFilters(filters) > 0;
@@ -447,46 +536,13 @@ export default function CollectionDetailScreen() {
 
   /* ── List view ── */
   function renderListItem({ item }: { item: CollectionEntry }) {
-    const card = item.cards;
-    if (!card) return null;
-
-    const finishParts: string[] = [];
-    if (item.quantity_normal > 0) finishParts.push('Normal');
-    if (item.quantity_foil > 0) finishParts.push('Foil');
-    if (item.quantity_etched > 0) finishParts.push('Etched Foil');
-
-    const rowPrice = displayPriceForRow(
-      item.quantity_normal,
-      item.quantity_foil,
-      item.quantity_etched,
-      card.price_usd,
-      card.price_usd_foil,
-      card.price_usd_etched
-    );
-
     return (
-      <TouchableOpacity
-        style={styles.listCard}
-        onPress={() => handleCardPress(item)}
-        onLongPress={() => handleEditPress(item)}
-        activeOpacity={0.6}
-      >
-        <CardImage uri={card.image_uri_small} style={styles.listImage} />
-        <View style={styles.listInfo}>
-          <Text style={styles.listName} numberOfLines={1}>{card.name}</Text>
-          <Text style={styles.listSet} numberOfLines={1}>
-            {card.set_name} #{card.collector_number}
-          </Text>
-          <Text style={styles.listLang}>{(item.language ?? 'en').toUpperCase()}</Text>
-          <Text style={styles.listFinish}>{finishParts.join(', ')}</Text>
-        </View>
-        <View style={styles.listRight}>
-          <Text style={styles.listPrice}>
-            {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
-          </Text>
-          <Text style={styles.listQty}>x{getTotalQuantity(item)}</Text>
-        </View>
-      </TouchableOpacity>
+      <ListRow
+        item={item}
+        tagsById={tagsById}
+        onPress={handleCardPress}
+        onLongPress={handleEditPress}
+      />
     );
   }
 
@@ -581,6 +637,7 @@ export default function CollectionDetailScreen() {
         >
           <BulkActionsBar
             count={bulk.size}
+            onTag={handleBulkTag}
             onMove={handleBulkMove}
             onAdd={handleBulkAdd}
             onDelete={handleBulkDelete}
@@ -666,6 +723,7 @@ export default function CollectionDetailScreen() {
         filters={filters}
         availableSets={availableSets}
         availableLanguages={availableLanguages}
+        availableTags={availableFilterTags}
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}
@@ -792,7 +850,99 @@ export default function CollectionDetailScreen() {
         onSelect={handleBulkPickerSelect}
         onClose={() => setBulkPickerMode(null)}
       />
+
+      <TagPicker
+        visible={bulkTagSheetOpen}
+        collectionId={id}
+        selectedCardIds={selectedIdsList}
+        onAddTags={handleTagPickerAdd}
+        onRemoveTags={handleTagPickerRemove}
+        onClose={() => setBulkTagSheetOpen(false)}
+      />
     </View>
+  );
+}
+
+// List-view row — extracted so we can call useCardTagIds (hooks in a
+// render callback aren't allowed). Tag lookups resolve via the
+// tagsById map built once in the parent; each row only triggers one
+// extra reactive query (its own tag ids).
+function ListRow({
+  item,
+  tagsById,
+  onPress,
+  onLongPress,
+}: {
+  item: CollectionEntry;
+  tagsById: Map<string, TagWithCount>;
+  onPress: (entry: CollectionEntry) => void;
+  onLongPress: (entry: CollectionEntry) => void;
+}) {
+  const card = item.cards;
+  const tagIds = useCardTagIds(item.id);
+  if (!card) return null;
+
+  const finishParts: string[] = [];
+  if (item.quantity_normal > 0) finishParts.push('Normal');
+  if (item.quantity_foil > 0) finishParts.push('Foil');
+  if (item.quantity_etched > 0) finishParts.push('Etched Foil');
+
+  const rowPrice = displayPriceForRow(
+    item.quantity_normal,
+    item.quantity_foil,
+    item.quantity_etched,
+    card.price_usd,
+    card.price_usd_foil,
+    card.price_usd_etched
+  );
+
+  const qty =
+    item.quantity_normal + item.quantity_foil + item.quantity_etched;
+
+  const visibleTags = tagIds
+    .map((id) => tagsById.get(id))
+    .filter((t): t is TagWithCount => !!t);
+
+  return (
+    <TouchableOpacity
+      style={styles.listCard}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+      activeOpacity={0.6}
+    >
+      <CardImage uri={card.image_uri_small} style={styles.listImage} />
+      <View style={styles.listInfo}>
+        <Text style={styles.listName} numberOfLines={1}>{card.name}</Text>
+        <Text style={styles.listSet} numberOfLines={1}>
+          {card.set_name} #{card.collector_number}
+        </Text>
+        <Text style={styles.listLang}>{(item.language ?? 'en').toUpperCase()}</Text>
+        <Text style={styles.listFinish}>{finishParts.join(', ')}</Text>
+        {visibleTags.length > 0 && (
+          <View style={styles.listTagsRow}>
+            {visibleTags.map((tag) => (
+              <View key={tag.id} style={styles.listTagChip}>
+                <View
+                  style={[
+                    styles.listTagDot,
+                    { backgroundColor: tag.color ?? COLLECTION_COLORS[5] },
+                  ]}
+                />
+                <Text style={styles.listTagLabel} numberOfLines={1}>
+                  {tag.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+      <View style={styles.listRight}>
+        <Text style={styles.listPrice}>
+          {formatPrice(rowPrice != null ? rowPrice.toString() : undefined)}
+        </Text>
+        <Text style={styles.listQty}>x{qty}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -883,6 +1033,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: 2,
+  },
+  listTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  listTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  listTagDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  listTagLabel: {
+    color: colors.text,
+    fontSize: 10,
+    fontWeight: '600',
+    maxWidth: 80,
   },
   listRight: {
     alignItems: 'flex-end',

@@ -9,10 +9,17 @@ type Props = {
   count: number;
   onMove: () => void;
   onAdd: () => void;
+  onTag: () => void;
   onDelete: () => void;
 };
 
-export function BulkActionsBar({ count, onMove, onAdd, onDelete }: Props) {
+export function BulkActionsBar({
+  count,
+  onMove,
+  onAdd,
+  onTag,
+  onDelete,
+}: Props) {
   const disabled = count === 0;
 
   return (
@@ -23,6 +30,13 @@ export function BulkActionsBar({ count, onMove, onAdd, onDelete }: Props) {
         </Text>
 
         <View style={styles.actions}>
+          <ActionButton
+            icon="pricetag-outline"
+            label="Tag"
+            disabled={disabled}
+            color={colors.text}
+            onPress={onTag}
+          />
           <ActionButton
             icon="arrow-redo-outline"
             label="Move"

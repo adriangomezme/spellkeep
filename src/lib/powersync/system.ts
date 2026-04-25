@@ -21,6 +21,7 @@ const DEFAULT_STREAMS: string[] = [
   'user_profile',
   'user_collection_folders',
   'user_collections',
+  'user_tags',
   'user_decks',
   'user_scans',
   'user_price_alerts',

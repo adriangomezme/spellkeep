@@ -67,6 +67,7 @@ export type FilterState = {
   priceValue: string;
   sets: string[];
   languages: string[];
+  tags: string[];
 };
 
 export const EMPTY_FILTERS: FilterState = {
@@ -79,6 +80,7 @@ export const EMPTY_FILTERS: FilterState = {
   priceValue: '',
   sets: [],
   languages: [],
+  tags: [],
 };
 
 export function countActiveFilters(f: FilterState): number {
@@ -91,6 +93,7 @@ export function countActiveFilters(f: FilterState): number {
   if (f.priceValue.trim()) count++;
   if (f.sets.length) count++;
   if (f.languages.length) count++;
+  if (f.tags.length) count++;
   return count;
 }
 
@@ -106,23 +109,34 @@ export type LanguageInfo = {
   count: number;
 };
 
-type Tab = 'general' | 'set' | 'language';
+export type TagFilterInfo = {
+  id: string;
+  name: string;
+  color: string | null;
+  count: number;
+};
+
+type Tab = 'general' | 'set' | 'language' | 'tag';
 
 type Props = {
   visible: boolean;
   filters: FilterState;
   availableSets: SetInfo[];
   availableLanguages: LanguageInfo[];
+  /** Tags applied to at least one of the entries this picker is
+   *  filtering. Empty list hides the Tags tab entirely. */
+  availableTags: TagFilterInfo[];
   onApply: (filters: FilterState) => void;
   onReset: () => void;
   onClose: () => void;
 };
 
-export function FilterSheet({ visible, filters, availableSets, availableLanguages, onApply, onReset, onClose }: Props) {
+export function FilterSheet({ visible, filters, availableSets, availableLanguages, availableTags, onApply, onReset, onClose }: Props) {
   const [local, setLocal] = useState<FilterState>(filters);
   const [tab, setTab] = useState<Tab>('general');
   const [setSearch, setSetSearch] = useState('');
   const [languageSearch, setLanguageSearch] = useState('');
+  const [tagSearch, setTagSearch] = useState('');
   const [snapFraction, setSnapFraction] = useState(0.65);
 
   const SNAP_FRACTIONS = [0.65, 0.95];
@@ -133,6 +147,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       setTab('general');
       setSetSearch('');
       setLanguageSearch('');
+      setTagSearch('');
       setSnapFraction(0.65);
     }
   }, [visible]);
@@ -169,6 +184,12 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
           l.code.toLowerCase().includes(languageSearch.trim().toLowerCase()),
       )
     : availableLanguages;
+
+  const filteredTags = tagSearch.trim()
+    ? availableTags.filter((t) =>
+        t.name.toLowerCase().includes(tagSearch.trim().toLowerCase()),
+      )
+    : availableTags;
 
   return (
     <BottomSheet
@@ -218,6 +239,17 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
           >
             <Text style={[styles.tabLabel, tab === 'language' && styles.tabLabelActive]}>
               Language{local.languages.length > 0 ? ` (${local.languages.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {availableTags.length > 0 && (
+          <TouchableOpacity
+            style={[styles.tab, tab === 'tag' && styles.tabActive]}
+            onPress={() => setTab('tag')}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.tabLabel, tab === 'tag' && styles.tabLabelActive]}>
+              Tags{local.tags.length > 0 ? ` (${local.tags.length})` : ''}
             </Text>
           </TouchableOpacity>
         )}
@@ -431,7 +463,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
             )}
           </ScrollView>
         </View>
-      ) : (
+      ) : tab === 'language' ? (
         /* ── Language tab ── */
         <View style={{ flex: 1 }}>
           {local.languages.length > 0 && (
@@ -490,6 +522,73 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
             })}
             {filteredLanguages.length === 0 && languageSearch.trim() !== '' && (
               <Text style={styles.setEmpty}>No languages match "{languageSearch}"</Text>
+            )}
+          </ScrollView>
+        </View>
+      ) : (
+        /* ── Tags tab ── */
+        <View style={{ flex: 1 }}>
+          {local.tags.length > 0 && (
+            <View style={styles.selectedSetsBar}>
+              <Text style={styles.selectedSetsText}>
+                {local.tags.length === 1
+                  ? availableTags.find((t) => t.id === local.tags[0])?.name ?? '1 tag selected'
+                  : `${local.tags.length} tags selected`}
+              </Text>
+              <TouchableOpacity onPress={() => setLocal({ ...local, tags: [] })} activeOpacity={0.6}>
+                <Text style={styles.selectedSetsClear}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.setSearchField}>
+            <Ionicons name="search" size={14} color={colors.textMuted} />
+            <TextInput
+              style={styles.setSearchInput}
+              placeholder="Search tags..."
+              placeholderTextColor={colors.textMuted}
+              value={tagSearch}
+              onChangeText={setTagSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {tagSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setTagSearch('')}>
+                <Ionicons name="close-circle" size={14} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <ScrollView style={{ maxHeight: getSetListMax(snapFraction, local.tags.length > 0) }} nestedScrollEnabled showsVerticalScrollIndicator>
+            {filteredTags.map((t) => {
+              const active = local.tags.includes(t.id);
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={styles.setRow}
+                  onPress={() => setLocal({ ...local, tags: toggleArray(local.tags, t.id) })}
+                  activeOpacity={0.5}
+                >
+                  <View style={[styles.setCheck, active && styles.setCheckActive]}>
+                    {active && <Ionicons name="checkmark" size={12} color="#FFF" />}
+                  </View>
+                  <View
+                    style={[
+                      styles.tagFilterDot,
+                      { backgroundColor: t.color ?? colors.textMuted },
+                    ]}
+                  />
+                  <View style={styles.setInfo}>
+                    <Text style={[styles.setName, active && { color: colors.primary }]} numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                  </View>
+                  <Text style={styles.setCount}>{t.count}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {filteredTags.length === 0 && tagSearch.trim() !== '' && (
+              <Text style={styles.setEmpty}>No tags match "{tagSearch}"</Text>
             )}
           </ScrollView>
         </View>
@@ -730,7 +829,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md - 1,
     paddingHorizontal: spacing.xs,
     borderBottomWidth: 0.5,
     borderBottomColor: colors.divider,
@@ -748,6 +847,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
+  tagFilterDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
   setInfo: {
     flex: 1,
     flexDirection: 'row',
@@ -756,19 +860,19 @@ const styles = StyleSheet.create({
   },
   setName: {
     color: colors.text,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     fontWeight: '500',
     flex: 1,
   },
   setCode: {
     color: colors.textMuted,
-    fontSize: fontSize.xs,
+    fontSize: fontSize.md,
     fontWeight: '600',
   },
   setCount: {
     color: colors.textMuted,
-    fontSize: fontSize.xs,
-    minWidth: 24,
+    fontSize: fontSize.md,
+    minWidth: 32,
     textAlign: 'right',
   },
   setEmpty: {

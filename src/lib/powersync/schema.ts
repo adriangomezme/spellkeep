@@ -111,7 +111,6 @@ const collection_cards = new Table({
   quantity_foil: column.integer,
   quantity_etched: column.integer,
   purchase_price: column.real,
-  tags: column.text,             // JSON array stored as text
   notes: column.text,
   added_at: column.text,
   updated_at: column.text,
@@ -120,6 +119,39 @@ const collection_cards = new Table({
     user_id: ['user_id'],
     collection_id: ['collection_id'],
     card_id: ['card_id'],
+  }
+});
+
+// Tag catalog — one row per tag per user. `scope_collection_id` is
+// null for global tags (visible in every binder/list/deck picker) or
+// a collection id when the tag only exists inside that one scope.
+const tags = new Table({
+  user_id: column.text,
+  name: column.text,
+  color: column.text,  // optional hex like '#0A2385'
+  scope_collection_id: column.text,  // null = global
+  created_at: column.text,
+  updated_at: column.text,
+}, {
+  indexes: {
+    user_id: ['user_id'],
+    scope_collection_id: ['scope_collection_id'],
+  }
+});
+
+// Join: which tags are applied to which collection_cards rows. A tag
+// here lives with the copy, not with the card itself — the same
+// Scryfall card in two binders can have different tags.
+const collection_card_tags = new Table({
+  user_id: column.text,
+  collection_card_id: column.text,
+  tag_id: column.text,
+  created_at: column.text,
+}, {
+  indexes: {
+    user_id: ['user_id'],
+    collection_card_id: ['collection_card_id'],
+    tag_id: ['tag_id'],
   }
 });
 
@@ -292,6 +324,8 @@ export const AppSchema = new Schema({
   collection_folders,
   collections,
   collection_cards,
+  tags,
+  collection_card_tags,
   deck_folders,
   decks,
   deck_cards,
@@ -309,6 +343,8 @@ export type SetRecord = Database['sets'];
 export type CollectionFolderRecord = Database['collection_folders'];
 export type CollectionRecord = Database['collections'];
 export type CollectionCardRecord = Database['collection_cards'];
+export type TagRecord = Database['tags'];
+export type CollectionCardTagRecord = Database['collection_card_tags'];
 export type DeckRecord = Database['decks'];
 export type DeckCardRecord = Database['deck_cards'];
 export type CatalogMetaRecord = Database['catalog_meta'];
