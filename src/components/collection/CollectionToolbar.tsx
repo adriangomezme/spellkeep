@@ -25,6 +25,10 @@ type Props = {
   onSortPress: () => void;
   onFilterPress: () => void;
   activeFilters: number;
+  /** When provided, renders the Group By button. Active state is
+   *  signalled by `groupActive` (mirrors the Filter badge dot). */
+  onGroupPress?: () => void;
+  groupActive?: boolean;
 };
 
 export function CollectionToolbar({
@@ -35,6 +39,8 @@ export function CollectionToolbar({
   onSortPress,
   onFilterPress,
   activeFilters,
+  onGroupPress,
+  groupActive,
 }: Props) {
   return (
     <View style={styles.container}>
@@ -66,6 +72,13 @@ export function CollectionToolbar({
           <Ionicons name="options-outline" size={18} color={activeFilters > 0 ? colors.primary : colors.text} />
           {activeFilters > 0 && <View style={styles.filterBadge} />}
         </TouchableOpacity>
+
+        {onGroupPress && (
+          <TouchableOpacity style={styles.iconButton} onPress={onGroupPress} activeOpacity={0.6}>
+            <Ionicons name="layers-outline" size={18} color={groupActive ? colors.primary : colors.text} />
+            {groupActive && <View style={styles.filterBadge} />}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.iconButton} onPress={onToggleView} activeOpacity={0.6}>
           <Ionicons name={VIEW_ICONS[viewMode]} size={18} color={colors.text} />

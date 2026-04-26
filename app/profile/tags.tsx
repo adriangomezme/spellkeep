@@ -3,6 +3,7 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
 import { useAllUserTags, type TagWithMeta } from '../../src/lib/hooks/useUserTags';
+import { useTagsInAddPref } from '../../src/lib/hooks/useTagsInAddPref';
 import { TagEditModal } from '../../src/components/collection/TagEditModal';
 import { ColorPicker, COLLECTION_COLORS } from '../../src/components/collection/ColorPicker';
 import {
@@ -31,6 +33,7 @@ export default function TagsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { tags } = useAllUserTags();
+  const { enabled: tagsInAddEnabled, setEnabled: setTagsInAddEnabled } = useTagsInAddPref();
   const [editing, setEditing] = useState<TagWithMeta | null>(null);
 
   // Create form state — this screen only creates globals; scoped
@@ -111,6 +114,24 @@ export default function TagsScreen() {
           Global tags show up everywhere; collection-specific tags are
           created from inside their own collection.
         </Text>
+
+        {/* ── Master toggle: tags in Add-to-Collection flow ── */}
+        <View style={styles.toggleCard}>
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleTitle}>Pick tags when adding cards</Text>
+            <Text style={styles.toggleSubtitle}>
+              When on, the Add-to-Collection picker also lets you choose
+              tags. Each destination remembers the last tags you used.
+            </Text>
+          </View>
+          <Switch
+            value={tagsInAddEnabled}
+            onValueChange={setTagsInAddEnabled}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={colors.border}
+          />
+        </View>
 
         {/* ── Create new global ── */}
         <Text style={styles.sectionLabel}>Create new global tag</Text>
@@ -272,6 +293,32 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     marginBottom: spacing.md,
+  },
+
+  /* Master toggle */
+  toggleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+  },
+  toggleText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  toggleTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+  },
+  toggleSubtitle: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 2,
   },
 
   /* Create */

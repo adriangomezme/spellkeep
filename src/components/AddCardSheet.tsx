@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { BottomSheet } from './BottomSheet';
 import { DestinationPickerModal } from './DestinationPickerModal';
+import { DestinationWithTagsPickerModal } from './DestinationWithTagsPickerModal';
 import { PrintPickerModal } from './PrintPickerModal';
 import { ScryfallCard, getCardImageUri, formatUSD } from '../lib/scryfall';
 import {
@@ -19,13 +20,19 @@ import {
   Finish,
   CONDITIONS,
 } from '../lib/collection';
-import { addCardToCollectionLocal } from '../lib/collections.local';
 import {
+  addCardToCollectionLocal,
+  bulkAddTagsToCardsLocal,
+} from '../lib/collections.local';
+import {
+  getDefaultTagsForDestination,
   getLastUsedDestination,
+  setDefaultTagsForDestination,
   setLastUsedDestination,
   type CollectionSummary,
 } from '../lib/collections';
 import { useCollectionsHub } from '../lib/hooks/useCollectionsHub';
+import { useTagsInAddPref } from '../lib/hooks/useTagsInAddPref';
 import { colors, spacing, fontSize, borderRadius } from '../constants';
 import { PrimaryCTA } from './PrimaryCTA';
 
@@ -104,6 +111,12 @@ export function AddCardSheet({
   const [destinationId, setDestinationId] = useState<string | null>(null);
   const [showDestPicker, setShowDestPicker] = useState(false);
   const [showPrintPicker, setShowPrintPicker] = useState(false);
+  // Tags pending application — only relevant when the
+  // tags-in-add toggle is ON. Hydrated from per-destination defaults
+  // whenever the picker confirms or the destination first resolves.
+  const [pendingTagIds, setPendingTagIds] = useState<string[]>([]);
+
+  const { enabled: tagsInAddEnabled } = useTagsInAddPref();
 
   // Destinations come from the local hub — instant on open, reactive
   // to renames / creates, and fully offline. Previously this hit
@@ -127,7 +140,26 @@ export function AddCardSheet({
     setPriceText('');
     setShowDestPicker(false);
     setShowPrintPicker(false);
+    setPendingTagIds([]);
   }, [visible, card]);
+
+  // Pre-load default tags for the resolved destination so the user
+  // sees the right pre-selection if they open the destination picker.
+  // Only runs when the toggle is on — pure no-op otherwise.
+  useEffect(() => {
+    if (!visible || !tagsInAddEnabled || !destinationId) return;
+    let cancelled = false;
+    getDefaultTagsForDestination(destinationId)
+      .then((ids) => {
+        if (!cancelled) setPendingTagIds(ids);
+      })
+      .catch(() => {
+        if (!cancelled) setPendingTagIds([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, tagsInAddEnabled, destinationId]);
 
   // Pick an initial destination once the hub list is populated.
   //   1. `preferredDestinationId` — set when opened from a specific
@@ -178,7 +210,7 @@ export function AddCardSheet({
     try {
       const parsed = parseFloat(priceText.replace(/[^0-9.]/g, ''));
       const purchasePrice = isFinite(parsed) && parsed > 0 ? parsed : null;
-      await addCardToCollectionLocal({
+      const entryId = await addCardToCollectionLocal({
         card: selectedCard,
         collectionId: destinationId,
         condition,
@@ -187,6 +219,21 @@ export function AddCardSheet({
         purchasePrice,
       });
       await setLastUsedDestination(destinationId);
+      // Apply pending tags + persist them as the new default for this
+      // destination. Tag application is best-effort: a failure shouldn't
+      // block the success-callback that closes the sheet.
+      if (tagsInAddEnabled && entryId && pendingTagIds.length > 0) {
+        try {
+          await bulkAddTagsToCardsLocal([entryId], pendingTagIds);
+        } catch (tagErr) {
+          console.warn('[AddCardSheet] tag apply failed', tagErr);
+        }
+      }
+      if (tagsInAddEnabled) {
+        setDefaultTagsForDestination(destinationId, pendingTagIds).catch((err) =>
+          console.warn('[AddCardSheet] default tags persist failed', err),
+        );
+      }
       onSuccess();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to add card');
@@ -235,8 +282,12 @@ export function AddCardSheet({
           <View style={styles.divider} />
 
           <View style={styles.bodyContent}>
-            {/* Destination */}
-            <Text style={styles.label}>Destination</Text>
+            {/* Destination — also surfaces the tags count when the
+                toggle is on, so the user sees what will be applied
+                without re-opening the picker. */}
+            <Text style={styles.label}>
+              {tagsInAddEnabled ? 'Destination & tags' : 'Destination'}
+            </Text>
             <TouchableOpacity
               style={styles.selector}
               onPress={() => setShowDestPicker(true)}
@@ -249,9 +300,18 @@ export function AddCardSheet({
                 // binders render neutral, not accent-blue.
                 color={selectedDest?.color ?? colors.textSecondary}
               />
-              <Text style={styles.selectorText} numberOfLines={1}>
-                {selectedDest?.name ?? 'Select destination…'}
-              </Text>
+              <View style={styles.selectorTextWrap}>
+                <Text style={styles.selectorText} numberOfLines={1}>
+                  {selectedDest?.name ?? 'Select destination…'}
+                </Text>
+                {tagsInAddEnabled && (
+                  <Text style={styles.selectorSubtext} numberOfLines={1}>
+                    {pendingTagIds.length === 0
+                      ? 'No tags'
+                      : `${pendingTagIds.length} ${pendingTagIds.length === 1 ? 'tag' : 'tags'}`}
+                  </Text>
+                )}
+              </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
             </TouchableOpacity>
 
@@ -364,16 +424,31 @@ export function AddCardSheet({
         </View>
       </BottomSheet>
 
-      <DestinationPickerModal
-        visible={showDestPicker}
-        destinations={destinations}
-        selectedId={destinationId}
-        onSelect={(id) => {
-          setDestinationId(id);
-          setShowDestPicker(false);
-        }}
-        onClose={() => setShowDestPicker(false)}
-      />
+      {tagsInAddEnabled ? (
+        <DestinationWithTagsPickerModal
+          visible={showDestPicker}
+          destinations={destinations}
+          initialDestinationId={destinationId}
+          initialTagIds={pendingTagIds}
+          onConfirm={({ destinationId: newDest, tagIds }) => {
+            setDestinationId(newDest);
+            setPendingTagIds(tagIds);
+            setShowDestPicker(false);
+          }}
+          onClose={() => setShowDestPicker(false)}
+        />
+      ) : (
+        <DestinationPickerModal
+          visible={showDestPicker}
+          destinations={destinations}
+          selectedId={destinationId}
+          onSelect={(id) => {
+            setDestinationId(id);
+            setShowDestPicker(false);
+          }}
+          onClose={() => setShowDestPicker(false)}
+        />
+      )}
 
       <PrintPickerModal
         visible={showPrintPicker}
@@ -496,11 +571,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  selectorText: {
+  selectorTextWrap: {
     flex: 1,
+    minWidth: 0,
+  },
+  selectorText: {
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '600',
+  },
+  selectorSubtext: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 2,
   },
 
   // Segmented

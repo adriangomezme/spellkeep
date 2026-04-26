@@ -56,6 +56,49 @@ export async function setLastUsedDestination(collectionId: string): Promise<void
 }
 
 // ============================================================
+// Default tags per destination (AsyncStorage)
+// ============================================================
+// Persisted last set of tag ids the user picked when adding a card to
+// a given binder/list. Surfaces in the destination-with-tags picker
+// as a pre-selection so a typical "always tag this binder with X"
+// workflow is one tap, not three.
+//
+// Storage key: @spellkeep/default_tags.{collectionId}.v1
+// Value: JSON-stringified array of tag ids.
+
+function defaultTagsKey(collectionId: string): string {
+  return `@spellkeep/default_tags.${collectionId}.v1`;
+}
+
+export async function getDefaultTagsForDestination(
+  collectionId: string,
+): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(defaultTagsKey(collectionId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((t): t is string => typeof t === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export async function setDefaultTagsForDestination(
+  collectionId: string,
+  tagIds: string[],
+): Promise<void> {
+  if (tagIds.length === 0) {
+    await AsyncStorage.removeItem(defaultTagsKey(collectionId));
+    return;
+  }
+  await AsyncStorage.setItem(
+    defaultTagsKey(collectionId),
+    JSON.stringify(tagIds),
+  );
+}
+
+// ============================================================
 // Overlay-wrapped mutations
 // ============================================================
 

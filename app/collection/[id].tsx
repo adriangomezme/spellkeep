@@ -39,6 +39,8 @@ import { FolderPickerModal } from '../../src/components/collection/FolderPickerM
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
 import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet } from '../../src/components/collection/SortSheet';
+import { GroupBySheet } from '../../src/components/collection/GroupBySheet';
+import { GroupedCollectionList } from '../../src/components/collection/GroupedCollectionList';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
 import { AddCardFAB } from '../../src/components/collection/AddCardFAB';
 import {
@@ -59,6 +61,8 @@ import { TagPicker } from '../../src/components/collection/TagPicker';
 import { useLocalCardEntries, type EnrichedEntry } from '../../src/lib/hooks/useLocalCardEntries';
 import { useCachedCollectionStats, useWriteCollectionStatsCache } from '../../src/lib/hooks/useCollectionStatsCache';
 import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
+import { useGroupByPref } from '../../src/lib/hooks/useGroupByPref';
+import { useGroupCollapsePref } from '../../src/lib/hooks/useGroupCollapsePref';
 import { useBulkSelection } from '../../src/lib/hooks/useBulkSelection';
 import { GridCard, GridCompactCard } from '../../src/components/collection/CollectionGridCards';
 import { BulkActionsBar } from '../../src/components/collection/BulkActionsBar';
@@ -68,7 +72,7 @@ import { type CollectionSummary } from '../../src/lib/collections';
 import { useCardTagIds, useUserTags, type TagWithCount } from '../../src/lib/hooks/useUserTags';
 import { COLLECTION_COLORS } from '../../src/components/collection/ColorPicker';
 import { db } from '../../src/lib/powersync/system';
-import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, deriveAvailableTags, displayPriceForRow } from '../../src/lib/cardListUtils';
+import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, deriveAvailableTags, displayPriceForRow, groupEntries } from '../../src/lib/cardListUtils';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -136,6 +140,17 @@ export default function CollectionDetailScreen() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [showGroupBy, setShowGroupBy] = useState(false);
+
+  // Per-binder Group By selection (AsyncStorage). Default 'none'.
+  const { groupBy, setGroupBy } = useGroupByPref(id ?? null);
+
+  // Collapse state for grouped view, persisted per-binder per-mode so
+  // re-opening a vault lands on the same view you left. The hook
+  // re-hydrates whenever (binder, mode) changes — old keys are
+  // discarded automatically.
+  const { collapsedKeys, setCollapsedKeys, toggleKey: handleToggleGroupKey } =
+    useGroupCollapsePref(id ?? null, groupBy);
 
   // Action modals
   const [showActions, setShowActions] = useState(false);
@@ -393,6 +408,59 @@ export default function CollectionDetailScreen() {
     [entries, searchQuery, sortBy, sortAsc, filters, tagsByEntryId],
   );
 
+  // Set metadata for the Group-by-Set header — name, year, and the
+  // SVG icon URL. Only queried when grouping by set so we don't pay
+  // the cost on every binder open.
+  const setsRows = useQuery<{ code: string; name: string; released_at: string | null; icon_svg_uri: string | null }>(
+    groupBy === 'set'
+      ? `SELECT code, name, released_at, icon_svg_uri FROM sets`
+      : `SELECT code, name, released_at, icon_svg_uri FROM sets WHERE 1 = 0`,
+    [],
+  );
+  const setsMeta = useMemo(() => {
+    const m = new Map<string, { name: string; released_at: string | null; icon_svg_uri: string | null }>();
+    for (const r of setsRows.data ?? []) {
+      m.set(r.code.toLowerCase(), {
+        name: r.name,
+        released_at: r.released_at,
+        icon_svg_uri: r.icon_svg_uri,
+      });
+    }
+    return m;
+  }, [setsRows.data]);
+
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return [];
+    return groupEntries(displayEntries, groupBy, {
+      tagsByEntryId,
+      tagsCatalog: availableTags,
+      setsMeta,
+    });
+  }, [displayEntries, groupBy, tagsByEntryId, availableTags, setsMeta]);
+
+  // True iff every visible (non-empty) group is currently collapsed —
+  // drives the chip's label between "Collapse All" and "Expand All".
+  const allGroupsCollapsed = useMemo(() => {
+    if (groups.length === 0) return false;
+    for (const g of groups) {
+      if (g.entries.length === 0) continue;
+      if (!collapsedKeys.has(g.key)) return false;
+    }
+    return true;
+  }, [groups, collapsedKeys]);
+
+  const handleToggleAllCollapsed = useCallback(() => {
+    if (allGroupsCollapsed) {
+      setCollapsedKeys(new Set());
+      return;
+    }
+    const all = new Set<string>();
+    for (const g of groups) {
+      if (g.entries.length > 0) all.add(g.key);
+    }
+    setCollapsedKeys(all);
+  }, [allGroupsCollapsed, groups]);
+
   // Non-blocking image prefetch for the first viewport. Fire-and-forget
   // so the paint isn't gated by CDN latency — with transition=0 on the
   // grid cards, disk-cached images pop in instantly and uncached ones
@@ -546,6 +614,45 @@ export default function CollectionDetailScreen() {
     );
   }
 
+  // Single render path used by GroupedCollectionList. Routes to the
+  // same memoized card components the ungrouped path uses; width is
+  // injected from the grouped list (which knows its own row layout).
+  const renderCardForGrouped = useCallback(
+    (item: CollectionEntry, width: number) => {
+      if (viewMode === 'list') {
+        return (
+          <ListRow
+            item={item}
+            tagsById={tagsById}
+            onPress={handleCardPress}
+            onLongPress={handleEditPress}
+          />
+        );
+      }
+      if (viewMode === 'grid-compact') {
+        return (
+          <GridCompactCard
+            item={item}
+            width={width}
+            isSelected={bulk.isSelected(item.id)}
+            onPress={handleCardPress}
+            onLongPress={handleEditPress}
+          />
+        );
+      }
+      return (
+        <GridCard
+          item={item}
+          width={width}
+          isSelected={bulk.isSelected(item.id)}
+          onPress={handleCardPress}
+          onLongPress={handleEditPress}
+        />
+      );
+    },
+    [viewMode, tagsById, bulk.isSelected, handleCardPress, handleEditPress],
+  );
+
   // Direction-driven toolbar collapse.
   // `hidden` is a 0..1 flag: scroll down past 40 px flips it to 1, any
   // reverse drag flips it back to 0 — even mid-scroll, matching Safari
@@ -658,6 +765,8 @@ export default function CollectionDetailScreen() {
             onSortPress={() => setShowSort(true)}
             onFilterPress={() => setShowFilter(true)}
             activeFilters={countActiveFilters(filters)}
+            onGroupPress={() => setShowGroupBy(true)}
+            groupActive={groupBy !== 'none'}
           />
         </Animated.View>
       )}
@@ -673,6 +782,21 @@ export default function CollectionDetailScreen() {
             <ActivityIndicator color={colors.primary} size="large" />
           )}
         </View>
+      ) : groupBy !== 'none' ? (
+        <GroupedCollectionList
+          groups={groups}
+          cardsPerRow={isGrid ? cardsPerRow : 1}
+          cardWidth={isGrid ? gridItemWidth : SCREEN_WIDTH - GRID_PADDING * 2}
+          gridGap={GRID_GAP}
+          renderCard={renderCardForGrouped}
+          cardKey={(item) => item.id}
+          collapsedKeys={collapsedKeys}
+          onToggleKey={handleToggleGroupKey}
+          contentContainerStyle={styles.groupedList}
+          refreshControl={refreshControl}
+          onScroll={scrollHandler}
+          ListEmptyComponent={isReady ? emptyComponent : null}
+        />
       ) : isGrid ? (
         <Animated.FlatList
           key={`${viewMode}-${cardsPerRow}`}
@@ -727,6 +851,16 @@ export default function CollectionDetailScreen() {
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}
+      />
+
+      <GroupBySheet
+        visible={showGroupBy}
+        current={groupBy}
+        onSelect={(g) => { setGroupBy(g); setShowGroupBy(false); }}
+        onClose={() => setShowGroupBy(false)}
+        allCollapsed={allGroupsCollapsed}
+        onToggleAllCollapsed={handleToggleAllCollapsed}
+        collapseDisabled={groups.length === 0}
       />
 
       {/* ── Existing modals ── */}
@@ -985,6 +1119,12 @@ const styles = StyleSheet.create({
   gridRow: {
     gap: GRID_GAP,
     marginBottom: GRID_GAP,
+  },
+
+  /* ── Grouped list (sticky headers + chunked rows) ── */
+  groupedList: {
+    paddingTop: spacing.sm,
+    paddingBottom: 100,
   },
 
   /* Grid card styles moved to CollectionGridCards component. */

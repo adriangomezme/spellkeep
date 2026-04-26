@@ -32,8 +32,16 @@ export function DestinationPickerModal({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const binders = destinations.filter((d) => d.type === 'binder');
-  const lists = destinations.filter((d) => d.type === 'list');
+  // Always alphabetical inside each section so the user can scan
+  // by name regardless of underlying sort/order.
+  const binders = destinations
+    .filter((d) => d.type === 'binder')
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const lists = destinations
+    .filter((d) => d.type === 'list')
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <Modal

@@ -1315,7 +1315,7 @@ export type AddCardParams = {
  *   3. Run SELECT + UPDATE-or-INSERT inside a write transaction so double-
  *      taps don't race each other into two rows for the same variant.
  */
-export async function addCardToCollectionLocal(params: AddCardParams): Promise<void> {
+export async function addCardToCollectionLocal(params: AddCardParams): Promise<string | null> {
   const {
     card,
     collectionId,
@@ -1325,7 +1325,7 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
     purchasePrice = null,
   } = params;
 
-  if (quantity <= 0) return;
+  if (quantity <= 0) return null;
 
   // ensureCardExists hits catalog.db first; only falls back to network when
   // the card is truly new. This is the one potentially-networked step in
@@ -1354,6 +1354,9 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
   const userId = await getUserId();
   const now = new Date().toISOString();
 
+  // Returned to the caller so post-add hooks (e.g. applying tags) can
+  // target the row that was upserted without an extra round-trip.
+  let resultId: string | null = null;
   await db.writeTransaction(async (tx) => {
     const existing = await tx.getAll<{
       id: string;
@@ -1382,7 +1385,9 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
           WHERE id = ?`,
         [nextNormal, nextFoil, nextEtched, nextPrice, now, row.id]
       );
+      resultId = row.id;
     } else {
+      const insertedId = newId();
       await tx.execute(
         `INSERT INTO collection_cards
            (id, user_id, collection_id, card_id, condition, language,
@@ -1390,7 +1395,7 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
             purchase_price, added_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          newId(),
+          insertedId,
           userId,
           collectionId,
           cardId,
@@ -1404,8 +1409,10 @@ export async function addCardToCollectionLocal(params: AddCardParams): Promise<v
           now,
         ]
       );
+      resultId = insertedId;
     }
   });
+  return resultId;
 }
 
 /**
