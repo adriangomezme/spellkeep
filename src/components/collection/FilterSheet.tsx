@@ -17,6 +17,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from '../BottomSheet';
+import { MTGGlyph, type ManaGlyph } from '../MTGGlyph';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -27,15 +28,17 @@ function getSetListMax(snapFraction: number, hasSelected: boolean): number {
   return SCREEN_HEIGHT * snapFraction - CHROME_HEIGHT - (hasSelected ? SELECTED_BAR_HEIGHT : 0);
 }
 
-/* ── MTG color definitions ── */
-const MTG_COLORS = [
-  { key: 'W', label: 'White', color: '#F9FAF4', border: '#D5D0C8' },
-  { key: 'U', label: 'Blue', color: '#0E68AB', border: '#0E68AB' },
-  { key: 'B', label: 'Black', color: '#150B00', border: '#150B00' },
-  { key: 'R', label: 'Red', color: '#D3202A', border: '#D3202A' },
-  { key: 'G', label: 'Green', color: '#00733E', border: '#00733E' },
-  { key: 'C', label: 'Colorless', color: '#CCC2C0', border: '#B0A8A6' },
-] as const;
+/* ── MTG color definitions — pastel "gem" backgrounds matching the
+ *  canonical Wizards palette (the same ones printed on real cards),
+ *  with a near-black glyph rendered on top via the mana font. ── */
+const MTG_COLORS: { key: ManaGlyph; label: string; bg: string; fg: string }[] = [
+  { key: 'W', label: 'White',     bg: '#FFFBD5', fg: '#1A1718' },
+  { key: 'U', label: 'Blue',      bg: '#AAE0FA', fg: '#1A1718' },
+  { key: 'B', label: 'Black',     bg: '#CBC2BF', fg: '#1A1718' },
+  { key: 'R', label: 'Red',       bg: '#F9AA8F', fg: '#1A1718' },
+  { key: 'G', label: 'Green',     bg: '#9BD3AE', fg: '#1A1718' },
+  { key: 'C', label: 'Colorless', bg: '#E8E4E0', fg: '#1A1718' },
+];
 
 const RARITIES = [
   { key: 'common', label: 'Common', color: '#1A1A1A' },
@@ -57,8 +60,21 @@ const MANA_RANGES = [
 
 export type PriceMode = 'gte' | 'lte';
 
+/** Color comparison modes — mirror Scryfall's `c:` / `id:` operators.
+ *  - `gte` ≥ : card has at least the selected colors (mana-cost default).
+ *  - `eq`  = : card's set equals the selection exactly.
+ *  - `lte` ≤ : card's set is within the selection (color-identity default
+ *               — commander deck-building semantics). */
+export type ColorMatchMode = 'gte' | 'eq' | 'lte';
+
 export type FilterState = {
+  /** Mana-cost colors selection (rule 903.4: cost + color indicator). */
   colors: string[];
+  colorsMode: ColorMatchMode;
+  /** Color identity selection (cost + rules-text symbols + indicator
+   *  + characteristic-defining abilities). */
+  colorIdentity: string[];
+  colorIdentityMode: ColorMatchMode;
   rarity: string[];
   types: string[];
   manaValue: string[];
@@ -72,6 +88,9 @@ export type FilterState = {
 
 export const EMPTY_FILTERS: FilterState = {
   colors: [],
+  colorsMode: 'gte',
+  colorIdentity: [],
+  colorIdentityMode: 'lte',
   rarity: [],
   types: [],
   manaValue: [],
@@ -86,6 +105,7 @@ export const EMPTY_FILTERS: FilterState = {
 export function countActiveFilters(f: FilterState): number {
   let count = 0;
   if (f.colors.length) count++;
+  if (f.colorIdentity.length) count++;
   if (f.rarity.length) count++;
   if (f.types.length) count++;
   if (f.manaValue.length) count++;
@@ -118,6 +138,57 @@ export type TagFilterInfo = {
 
 type Tab = 'general' | 'set' | 'language' | 'tag';
 
+const COLOR_MODE_LABELS: Record<ColorMatchMode, string> = {
+  gte: 'Has all',
+  eq: 'Exact',
+  lte: 'Within',
+};
+
+const COLOR_MODE_HELP: Record<ColorMatchMode, string> = {
+  gte: 'Card has at least the chosen colors.',
+  eq: 'Card matches exactly the chosen colors.',
+  lte: 'Card fits within the chosen colors.',
+};
+
+// Order chosen so each filter's most natural default sits first.
+// Colors (mana cost) defaults to "Has all" (>= — Scryfall's `c:`).
+// Color Identity defaults to "Within" (<= — Scryfall's `id:`).
+const COLOR_MODE_ORDER: Record<'colors' | 'identity', ColorMatchMode[]> = {
+  colors: ['gte', 'eq', 'lte'],
+  identity: ['lte', 'eq', 'gte'],
+};
+
+function ColorModeSegmented({
+  variant,
+  value,
+  onChange,
+}: {
+  variant: 'colors' | 'identity';
+  value: ColorMatchMode;
+  onChange: (next: ColorMatchMode) => void;
+}) {
+  const order = COLOR_MODE_ORDER[variant];
+  return (
+    <View style={styles.modeSegmented}>
+      {order.map((m) => {
+        const active = value === m;
+        return (
+          <TouchableOpacity
+            key={m}
+            style={[styles.modeSegment, active && styles.modeSegmentActive]}
+            onPress={() => onChange(m)}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.modeSegmentLabel, active && styles.modeSegmentLabelActive]}>
+              {COLOR_MODE_LABELS[m]}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 type Props = {
   visible: boolean;
   filters: FilterState;
@@ -137,9 +208,9 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
   const [setSearch, setSetSearch] = useState('');
   const [languageSearch, setLanguageSearch] = useState('');
   const [tagSearch, setTagSearch] = useState('');
-  const [snapFraction, setSnapFraction] = useState(0.65);
+  const [snapFraction, setSnapFraction] = useState(0.80);
 
-  const SNAP_FRACTIONS = [0.65, 0.95];
+  const SNAP_FRACTIONS = [0.80, 0.95];
 
   useEffect(() => {
     if (visible) {
@@ -148,7 +219,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       setSetSearch('');
       setLanguageSearch('');
       setTagSearch('');
-      setSnapFraction(0.65);
+      setSnapFraction(0.80);
     }
   }, [visible]);
 
@@ -195,11 +266,11 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      snapPoints={['65%', '95%']}
+      snapPoints={['80%', '95%']}
       onSnapChange={(index) => {
         if (index >= 0) {
           LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
-          setSnapFraction(SNAP_FRACTIONS[index] ?? 0.65);
+          setSnapFraction(SNAP_FRACTIONS[index] ?? 0.80);
         }
       }}
     >
@@ -258,8 +329,18 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       {/* ── Tab content ── */}
       {tab === 'general' ? (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-          {/* Colors */}
-          <Text style={styles.sectionLabel}>Color Identity</Text>
+          {/* ── Colors (mana cost) ── */}
+          <View style={styles.colorHeaderRow}>
+            <Text style={styles.sectionLabel}>Colors</Text>
+            <ColorModeSegmented
+              variant="colors"
+              value={local.colorsMode}
+              onChange={(m) => setLocal({ ...local, colorsMode: m })}
+            />
+          </View>
+          <Text style={styles.colorHelp}>
+            Mana cost only. {COLOR_MODE_HELP[local.colorsMode]}
+          </Text>
           <View style={styles.chipRow}>
             {MTG_COLORS.map((c) => {
               const active = local.colors.includes(c.key);
@@ -268,27 +349,59 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
                   key={c.key}
                   style={[
                     styles.colorChip,
-                    { backgroundColor: c.color, borderColor: c.border },
+                    { backgroundColor: c.bg },
                     active && styles.colorChipActive,
                   ]}
                   onPress={() => setLocal({ ...local, colors: toggleArray(local.colors, c.key) })}
-                  activeOpacity={0.6}
+                  activeOpacity={0.7}
+                  accessibilityLabel={c.label}
+                  accessibilityState={{ selected: active }}
                 >
+                  <MTGGlyph kind="mana" code={c.key} size={20} color={c.fg} />
                   {active && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={14}
-                      color={c.key === 'W' || c.key === 'C' ? '#333' : '#FFF'}
-                    />
+                    <View style={styles.colorChipCheck} pointerEvents="none">
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
                   )}
-                  <Text
-                    style={[
-                      styles.colorChipLabel,
-                      { color: c.key === 'W' || c.key === 'C' ? '#333' : '#FFF' },
-                    ]}
-                  >
-                    {c.label}
-                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* ── Color Identity (commander) ── */}
+          <View style={styles.colorHeaderRow}>
+            <Text style={styles.sectionLabel}>Color Identity</Text>
+            <ColorModeSegmented
+              variant="identity"
+              value={local.colorIdentityMode}
+              onChange={(m) => setLocal({ ...local, colorIdentityMode: m })}
+            />
+          </View>
+          <Text style={styles.colorHelp}>
+            Cost + rules text. {COLOR_MODE_HELP[local.colorIdentityMode]}
+          </Text>
+          <View style={styles.chipRow}>
+            {MTG_COLORS.map((c) => {
+              const active = local.colorIdentity.includes(c.key);
+              return (
+                <TouchableOpacity
+                  key={c.key}
+                  style={[
+                    styles.colorChip,
+                    { backgroundColor: c.bg },
+                    active && styles.colorChipActive,
+                  ]}
+                  onPress={() => setLocal({ ...local, colorIdentity: toggleArray(local.colorIdentity, c.key) })}
+                  activeOpacity={0.7}
+                  accessibilityLabel={c.label}
+                  accessibilityState={{ selected: active }}
+                >
+                  <MTGGlyph kind="mana" code={c.key} size={20} color={c.fg} />
+                  {active && (
+                    <View style={styles.colorChipCheck} pointerEvents="none">
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -662,22 +775,72 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  /* Color chips */
-  colorChip: {
+  /* Color section header (label + mode segmented control on one row) */
+  colorHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 999,
-    borderWidth: 1.5,
+    justifyContent: 'space-between',
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  colorHelp: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginBottom: spacing.sm,
+  },
+  modeSegmented: {
+    flexDirection: 'row',
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+    padding: 2,
+    gap: 2,
+  },
+  modeSegment: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm - 2,
+  },
+  modeSegmentActive: {
+    backgroundColor: colors.surface,
+  },
+  modeSegmentLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  modeSegmentLabelActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  /* Color chips — canonical Wizards "gem" look: pastel background
+   *  matching the mana color, with the dark mana-font glyph centered
+   *  on top. Geometry is constant active/inactive so the row never
+   *  reflows; selection state is a navy ring + corner check badge. */
+  colorChip: {
+    position: 'relative',
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 15,
+    overflow: 'visible',
   },
   colorChipActive: {
     borderWidth: 2,
+    borderColor: colors.primary,
   },
-  colorChipLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '600',
+  colorChipCheck: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.surface,
   },
   /* Rarity dot */
   rarityDot: {

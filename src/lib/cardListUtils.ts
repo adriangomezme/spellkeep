@@ -25,6 +25,10 @@ export type CardEntry = {
     price_usd_foil: number | null;
     price_usd_etched: number | null;
     color_identity: string[];
+    /** Mana-cost colors only (no rules-text symbols / hybrid). Distinct
+     *  from color_identity per MTG rules — Commander/EDH cares about
+     *  identity, in-game color effects care about this one. */
+    colors: string[];
   };
 };
 
@@ -82,6 +86,53 @@ function parseColorIdentity(ci: string[] | string | null): string[] {
     try { return JSON.parse(ci); } catch { return []; }
   }
   return ci;
+}
+
+// Same JSON-or-array shape as parseColorIdentity. Kept named separately
+// so the call sites read intent (mana-cost colors vs identity).
+function parseColors(c: string[] | string | null | undefined): string[] {
+  if (!c) return [];
+  if (typeof c === 'string') {
+    try { return JSON.parse(c); } catch { return []; }
+  }
+  return c;
+}
+
+/**
+ * Match a card's color set against the user's selection in one of three
+ * modes — direct port of Scryfall's `c:` / `id:` operators.
+ *   - gte (≥): card has at least all selected colors.
+ *   - eq  (=): card matches the selection exactly.
+ *   - lte (≤): card's set is a subset of the selection (commander).
+ *
+ * The `'C'` chip is a sentinel meaning "include colorless". When it's
+ * the only thing picked it filters down to colorless cards; combined
+ * with real colors it's a no-op (a card can't be colorless AND coloured).
+ */
+function matchColorSet(
+  cardColors: string[],
+  selected: string[],
+  mode: 'gte' | 'eq' | 'lte',
+): boolean {
+  const wantsColorless = selected.includes('C');
+  const sel = selected.filter((c) => c !== 'C');
+  const isColorless = cardColors.length === 0;
+
+  if (sel.length === 0) {
+    // Only the 'C' chip — surface colorless cards exclusively.
+    return wantsColorless ? isColorless : true;
+  }
+
+  switch (mode) {
+    case 'eq':
+      if (cardColors.length !== sel.length) return false;
+      return sel.every((c) => cardColors.includes(c));
+    case 'gte':
+      return sel.every((c) => cardColors.includes(c));
+    case 'lte':
+      // Empty cardColors (colorless) is always a subset of anything.
+      return cardColors.every((c) => sel.includes(c));
+  }
 }
 
 /**
@@ -217,15 +268,20 @@ export function filterAndSort<T extends CardEntry>(
     });
   }
 
-  // Filters
+  // Filters — Color and Color Identity are independent dimensions.
   if (filters.colors.length > 0) {
-    result = result.filter((e) => {
-      const ci = parseColorIdentity(e.cards.color_identity);
-      if (filters.colors.includes('C')) {
-        if (ci.length === 0) return true;
-      }
-      return filters.colors.some((c) => c !== 'C' && ci.includes(c));
-    });
+    result = result.filter((e) =>
+      matchColorSet(parseColors(e.cards.colors), filters.colors, filters.colorsMode),
+    );
+  }
+  if (filters.colorIdentity.length > 0) {
+    result = result.filter((e) =>
+      matchColorSet(
+        parseColorIdentity(e.cards.color_identity),
+        filters.colorIdentity,
+        filters.colorIdentityMode,
+      ),
+    );
   }
 
   if (filters.rarity.length > 0) {
