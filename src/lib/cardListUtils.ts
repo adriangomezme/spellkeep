@@ -105,9 +105,10 @@ function parseColors(c: string[] | string | null | undefined): string[] {
  *   - eq  (=): card matches the selection exactly.
  *   - lte (≤): card's set is a subset of the selection (commander).
  *
- * The `'C'` chip is a sentinel meaning "include colorless". When it's
- * the only thing picked it filters down to colorless cards; combined
- * with real colors it's a no-op (a card can't be colorless AND coloured).
+ * The `'C'` chip is a sentinel meaning "also include colorless". In
+ * `gte` and `eq` it ORs colorless onto the colored constraint
+ * ({W, C} → mono-W cards plus colorless cards). In `lte` it is
+ * naturally included since the empty set is a subset of anything.
  */
 function matchColorSet(
   cardColors: string[],
@@ -124,13 +125,19 @@ function matchColorSet(
   }
 
   switch (mode) {
-    case 'eq':
-      if (cardColors.length !== sel.length) return false;
-      return sel.every((c) => cardColors.includes(c));
-    case 'gte':
-      return sel.every((c) => cardColors.includes(c));
+    case 'eq': {
+      const exact =
+        cardColors.length === sel.length &&
+        sel.every((c) => cardColors.includes(c));
+      return exact || (wantsColorless && isColorless);
+    }
+    case 'gte': {
+      const hasAll = sel.every((c) => cardColors.includes(c));
+      return hasAll || (wantsColorless && isColorless);
+    }
     case 'lte':
-      // Empty cardColors (colorless) is always a subset of anything.
+      // Empty cardColors (colorless) is always a subset of anything,
+      // so 'C' here is implicit; no extra OR needed.
       return cardColors.every((c) => sel.includes(c));
   }
 }
@@ -316,7 +323,21 @@ export function filterAndSort<T extends CardEntry>(
     const threshold = parseFloat(filters.priceValue);
     if (!isNaN(threshold)) {
       result = result.filter((e) => {
-        const price = e.cards.price_usd ?? 0;
+        // Use the same display-price the row renders so the filter
+        // matches what the user actually sees (covers foil + etched
+        // when the row has no normal-finish copies).
+        const price = displayPriceForRow(
+          e.quantity_normal,
+          e.quantity_foil,
+          e.quantity_etched,
+          e.cards.price_usd,
+          e.cards.price_usd_foil,
+          e.cards.price_usd_etched,
+        );
+        // Cards with no known price ("—" in the UI) are excluded from
+        // both ≥ and ≤ — treating them as $0 made every "≤ $X" filter
+        // surface every priceless row, which is misleading.
+        if (price == null) return false;
         return filters.priceMode === 'gte' ? price >= threshold : price <= threshold;
       });
     }
