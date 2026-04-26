@@ -621,7 +621,7 @@ function AlertRow({
               color={deltaUp ? DIR_UP : DIR_DOWN}
             />
             <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-              {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+              {deltaUp ? '+' : ''}{deltaPct.toFixed(2)}%
             </Text>
           </View>
         ) : (
@@ -749,7 +749,7 @@ function EventRow({
           <Text style={styles.eventMetaLine}>
             from {formatUSD(event.snapshot_price)}
             {event.event_mode === 'percent' &&
-              ` (${deltaVsSnapshot >= 0 ? '+' : ''}${deltaVsSnapshot.toFixed(1)}%)`}
+              ` (${deltaVsSnapshot >= 0 ? '+' : ''}${deltaVsSnapshot.toFixed(2)}%)`}
             {' · '}
             target {formatUSD(event.target_price)}
           </Text>
@@ -904,7 +904,7 @@ function GroupedAlertLine({
         </Text>
         {hasCurrent ? (
           <Text style={[styles.groupLineDelta, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-            {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+            {deltaUp ? '+' : ''}{deltaPct.toFixed(2)}%
           </Text>
         ) : (
           <Text style={styles.groupLineDelta}>no data</Text>

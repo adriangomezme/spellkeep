@@ -5,14 +5,26 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   useCollectionViewPrefs,
   CARDS_PER_ROW_OPTIONS,
+  TOOLBAR_SIZE_OPTIONS,
   type CardsPerRow,
 } from '../../src/lib/hooks/useCollectionViewPrefs';
+import {
+  toolbarMetricsFor,
+  type ToolbarSize,
+} from '../../src/components/collection/CollectionToolbar';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
+
+const TOOLBAR_SIZE_LABELS: Record<ToolbarSize, { label: string; description: string }> = {
+  small: { label: 'Small', description: 'Compact — more room for cards' },
+  medium: { label: 'Medium', description: 'Balanced tap targets' },
+  large: { label: 'Large', description: 'Easier to hit, less card area' },
+};
 
 export default function GridPreferencesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { cardsPerRow, setCardsPerRow } = useCollectionViewPrefs();
+  const { cardsPerRow, setCardsPerRow, toolbarSize, setToolbarSize } = useCollectionViewPrefs();
+  const m = toolbarMetricsFor(toolbarSize);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -29,9 +41,44 @@ export default function GridPreferencesScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.intro}>
-          How many cards per row in Owned, binders and lists. Saved on this device only.
+          How Owned, binders and lists are laid out. Saved on this device only.
         </Text>
 
+        {/* ── Toolbar size ── */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionLabel}>Toolbar size</Text>
+          <Text style={styles.sectionDescription}>
+            Search field and action buttons.
+          </Text>
+          <View style={styles.options}>
+            {TOOLBAR_SIZE_OPTIONS.map((option) => {
+              const selected = toolbarSize === option;
+              const meta = TOOLBAR_SIZE_LABELS[option];
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.option, selected && styles.optionSelected]}
+                  onPress={() => setToolbarSize(option)}
+                  activeOpacity={0.6}
+                >
+                  <View style={styles.optionTextWrap}>
+                    <Text
+                      style={[styles.optionLabel, selected && styles.optionLabelSelected]}
+                    >
+                      {meta.label}
+                    </Text>
+                    <Text style={styles.optionSubLabel}>{meta.description}</Text>
+                  </View>
+                  {selected && (
+                    <Ionicons name="checkmark" size={18} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── Cards per row ── */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionLabel}>Cards per row</Text>
           <View style={styles.options}>
@@ -58,8 +105,40 @@ export default function GridPreferencesScreen() {
           </View>
         </View>
 
+        {/* ── Combined preview — toolbar + grid ── */}
         <View style={styles.previewCard}>
           <Text style={styles.previewLabel}>Preview</Text>
+
+          <View style={styles.previewToolbarRow}>
+            <View
+              style={[
+                styles.previewSearch,
+                { height: m.controlHeight, paddingHorizontal: spacing.md },
+              ]}
+            >
+              <Ionicons name="search" size={m.searchIcon} color={colors.textMuted} />
+              <Text
+                style={[
+                  styles.previewSearchPlaceholder,
+                  { fontSize: m.searchFontSize },
+                ]}
+              >
+                Search cards…
+              </Text>
+            </View>
+            {(['swap-vertical', 'options-outline', 'grid-outline'] as const).map((icon) => (
+              <View
+                key={icon}
+                style={[
+                  styles.previewBtn,
+                  { width: m.iconBtn, height: m.iconBtn },
+                ]}
+              >
+                <Ionicons name={icon} size={m.actionIcon} color={colors.text} />
+              </View>
+            ))}
+          </View>
+
           <View style={styles.previewRow}>
             {Array.from({ length: cardsPerRow }).map((_, i) => (
               <View key={i} style={[styles.previewTile, { flex: 1 }]} />
@@ -102,6 +181,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: spacing.md,
   },
+  sectionDescription: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
   options: { gap: spacing.xs },
   option: {
     flexDirection: 'row',
@@ -117,6 +202,14 @@ const styles = StyleSheet.create({
   },
   optionLabel: { color: colors.text, fontSize: fontSize.md, fontWeight: '500' },
   optionLabelSelected: { color: colors.primary, fontWeight: '700' },
+  optionTextWrap: { flex: 1, minWidth: 0 },
+  optionSubLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 2,
+  },
+
+  /* Preview */
   previewCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
@@ -130,6 +223,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: spacing.sm,
+  },
+  previewToolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  previewSearch: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+  },
+  previewSearchPlaceholder: {
+    flex: 1,
+    color: colors.textMuted,
+  },
+  previewBtn: {
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewRow: {
     flexDirection: 'row',

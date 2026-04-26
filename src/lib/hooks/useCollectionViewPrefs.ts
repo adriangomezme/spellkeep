@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { ViewMode } from '../../components/collection/CollectionToolbar';
+import type { ToolbarSize, ViewMode } from '../../components/collection/CollectionToolbar';
 import type { SortOption } from '../../components/collection/SortSheet';
 
 // Per-device preference for how collection screens (binder / list /
@@ -13,10 +13,18 @@ const KEY = '@spellkeep/collection_view_prefs.v1';
 export const CARDS_PER_ROW_OPTIONS = [1, 2, 3, 4] as const;
 export type CardsPerRow = (typeof CARDS_PER_ROW_OPTIONS)[number];
 
+export const TOOLBAR_SIZE_OPTIONS = ['small', 'medium', 'large'] as const;
+
 function coerceCardsPerRow(v: unknown): CardsPerRow {
   return (CARDS_PER_ROW_OPTIONS as readonly number[]).includes(v as number)
     ? (v as CardsPerRow)
     : 2;
+}
+
+function coerceToolbarSize(v: unknown): ToolbarSize {
+  return (TOOLBAR_SIZE_OPTIONS as readonly string[]).includes(v as string)
+    ? (v as ToolbarSize)
+    : 'small';
 }
 
 type Prefs = {
@@ -24,6 +32,7 @@ type Prefs = {
   sortBy: SortOption;
   sortAsc: boolean;
   cardsPerRow: CardsPerRow;
+  toolbarSize: ToolbarSize;
 };
 
 const DEFAULTS: Prefs = {
@@ -31,6 +40,7 @@ const DEFAULTS: Prefs = {
   sortBy: 'added',
   sortAsc: false,
   cardsPerRow: 2,
+  toolbarSize: 'small',
 };
 
 let inFlightLoad: Promise<Prefs> | null = null;
@@ -47,6 +57,7 @@ async function loadPrefs(): Promise<Prefs> {
         sortBy: parsed.sortBy ?? DEFAULTS.sortBy,
         sortAsc: typeof parsed.sortAsc === 'boolean' ? parsed.sortAsc : DEFAULTS.sortAsc,
         cardsPerRow: coerceCardsPerRow(parsed.cardsPerRow),
+        toolbarSize: coerceToolbarSize(parsed.toolbarSize),
       };
     } catch {
       return DEFAULTS;
@@ -122,15 +133,25 @@ export function useCollectionViewPrefs() {
     });
   }, []);
 
+  const setToolbarSize = useCallback((s: ToolbarSize) => {
+    setPrefs((p) => {
+      const next = { ...p, toolbarSize: s };
+      savePrefs(next);
+      return next;
+    });
+  }, []);
+
   return {
     viewMode: prefs.viewMode,
     sortBy: prefs.sortBy,
     sortAsc: prefs.sortAsc,
     cardsPerRow: prefs.cardsPerRow,
+    toolbarSize: prefs.toolbarSize,
     isHydrated,
     setViewMode,
     setSortBy,
     setSortAsc,
     setCardsPerRow,
+    setToolbarSize,
   };
 }

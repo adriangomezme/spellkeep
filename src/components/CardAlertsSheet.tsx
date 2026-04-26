@@ -197,7 +197,7 @@ function AlertRow({
         </Text>
         {hasCurrent ? (
           <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-            {deltaUp ? '+' : ''}{deltaPct.toFixed(1)}%
+            {deltaUp ? '+' : ''}{deltaPct.toFixed(2)}%
           </Text>
         ) : (
           <Text style={[styles.deltaText, { color: colors.textMuted }]}>

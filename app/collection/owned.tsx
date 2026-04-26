@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  RefreshControl,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -33,7 +32,7 @@ import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPre
 const OWNED_CACHE_ID = '00000000-0000-0000-0000-000000006177';
 import { filterAndSort, deriveAvailableSets, deriveAvailableLanguages, displayPriceForRow } from '../../src/lib/cardListUtils';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
-import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
+import { CollectionToolbar, nextViewMode, toolbarHeightFor } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet } from '../../src/components/collection/SortSheet';
 import { FilterSheet, type FilterState, EMPTY_FILTERS, countActiveFilters } from '../../src/components/collection/FilterSheet';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
@@ -49,7 +48,8 @@ function computeGridItemWidth(cardsPerRow: number): number {
 
 const SEARCH_DEBOUNCE_MS = 200;
 
-const TOOLBAR_HEIGHT = 44;
+// Toolbar collapse height is derived from the user's preferred size
+// (small / medium / large) — see `toolbarHeightFor`.
 // How many rows to render up-front. Grows by the same amount on end-reached
 // — pagination is free locally (just slicing in-memory) so we only do it to
 // keep the initial FlatList mount cheap for 100k-row collections.
@@ -81,14 +81,14 @@ export default function OwnedCardsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
 
   // UI state — view + sort persist per device via AsyncStorage so
   // toggling them here also carries to binder/list detail next open.
   // Filters stay session-only.
-  const { viewMode, sortBy, sortAsc, cardsPerRow, setViewMode, setSortBy, setSortAsc } =
+  const { viewMode, sortBy, sortAsc, cardsPerRow, toolbarSize, setViewMode, setSortBy, setSortAsc } =
     useCollectionViewPrefs();
+  const toolbarHeight = toolbarHeightFor(toolbarSize);
   const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -221,11 +221,6 @@ export default function OwnedCardsScreen() {
     setVisibleCount((c) => c + PAGE_STEP);
   }, [hasMore]);
 
-  const onPullRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    requestAnimationFrame(() => setIsRefreshing(false));
-  }, []);
-
   function handleCardPress(row: OwnedRow) {
     const card = row.cards;
     if (!card.scryfall_id) return;
@@ -302,14 +297,6 @@ export default function OwnedCardsScreen() {
     : (!isFilterActive && cachedStats ? cachedStats.total_value : 0);
 
   const isGrid = viewMode !== 'list';
-
-  const refreshControl = (
-    <RefreshControl
-      refreshing={isRefreshing}
-      onRefresh={onPullRefresh}
-      tintColor={colors.primary}
-    />
-  );
 
   const emptyComponent = (
     <View style={styles.centered}>
@@ -466,7 +453,7 @@ export default function OwnedCardsScreen() {
 
   const toolbarStyle = useAnimatedStyle(() => ({
     opacity: 1 - hidden.value,
-    height: interpolate(hidden.value, [0, 1], [TOOLBAR_HEIGHT, 0], Extrapolation.CLAMP),
+    height: interpolate(hidden.value, [0, 1], [toolbarHeight, 0], Extrapolation.CLAMP),
     overflow: 'hidden',
   }));
 
@@ -500,6 +487,7 @@ export default function OwnedCardsScreen() {
           onSortPress={() => setShowSort(true)}
           onFilterPress={() => setShowFilter(true)}
           activeFilters={countActiveFilters(filters)}
+          size={toolbarSize}
         />
       </Animated.View>
 
@@ -519,7 +507,6 @@ export default function OwnedCardsScreen() {
           numColumns={cardsPerRow}
           columnWrapperStyle={cardsPerRow > 1 ? styles.gridRow : undefined}
           contentContainerStyle={styles.gridList}
-          refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
           ListFooterComponent={listFooter}
           onEndReached={loadMore}
@@ -535,7 +522,6 @@ export default function OwnedCardsScreen() {
           keyExtractor={rowKey}
           renderItem={renderListItem}
           contentContainerStyle={styles.listList}
-          refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
           ListFooterComponent={listFooter}
           onEndReached={loadMore}

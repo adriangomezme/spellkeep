@@ -299,7 +299,7 @@ export default function AlertDetailScreen() {
           <PriceCell
             label="Current"
             value={hasCurrent ? formatUSD(currentPrice!) : '—'}
-            subtitle={hasCurrent ? `${deltaUp ? '+' : ''}${deltaPct.toFixed(1)}% from snapshot` : 'no market data'}
+            subtitle={hasCurrent ? `${deltaUp ? '+' : ''}${deltaPct.toFixed(2)}% from snapshot` : 'no market data'}
             subtitleColor={hasCurrent ? (deltaUp ? DIR_UP : DIR_DOWN) : colors.textMuted}
             emphasized
           />
@@ -470,7 +470,7 @@ function HistoryEvent({
           <Text style={styles.historyMetaValue}>
             {formatUSD(snapshotAtCreate)}
             <Text style={[styles.historyDelta, { color: delta >= 0 ? DIR_UP : DIR_DOWN }]}>
-              {'  '}{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%
+              {'  '}{delta >= 0 ? '+' : ''}{delta.toFixed(2)}%
             </Text>
           </Text>
         </View>

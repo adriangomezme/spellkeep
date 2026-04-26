@@ -6,10 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  RefreshControl,
   Alert,
   StyleSheet,
 } from 'react-native';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,7 +77,6 @@ export default function CollectionHubScreen() {
     ownedStats,
     revalidate,
   } = useCollectionsHub();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -89,8 +95,57 @@ export default function CollectionHubScreen() {
 
   const fetchAll = useCallback(async () => {
     revalidate();
-    setIsRefreshing(false);
   }, [revalidate]);
+
+  // Pull-to-search: drive a tiny hint banner from the same shared
+  // value that watches scrollY, so the user gets discoverable copy
+  // ("Pull to search" → "Release to search") as they overshoot the
+  // top. Crossing the 60 px threshold opens the search bar.
+  const PULL_THRESHOLD = 60;
+  const pullY = useSharedValue(0);
+
+  const openSearch = useCallback(() => {
+    setShowSearch(true);
+  }, []);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      pullY.value = e.contentOffset.y;
+      if (!showSearch && e.contentOffset.y <= -PULL_THRESHOLD) {
+        runOnJS(openSearch)();
+      }
+    },
+  });
+
+  const hintStyle = useAnimatedStyle(() => {
+    const overscroll = Math.max(0, -pullY.value);
+    const progress = Math.min(1, overscroll / PULL_THRESHOLD);
+    return {
+      opacity: progress,
+      transform: [
+        {
+          translateY: interpolate(
+            progress,
+            [0, 1],
+            [-8, 0],
+            Extrapolation.CLAMP,
+          ),
+        },
+      ],
+    };
+  });
+  const hintTextStyle = useAnimatedStyle(() => {
+    const overscroll = Math.max(0, -pullY.value);
+    return {
+      opacity: overscroll >= PULL_THRESHOLD ? 0 : 1,
+    };
+  });
+  const hintActiveStyle = useAnimatedStyle(() => {
+    const overscroll = Math.max(0, -pullY.value);
+    return {
+      opacity: overscroll >= PULL_THRESHOLD ? 1 : 0,
+    };
+  });
 
   useFocusEffect(
     useCallback(() => { revalidate(); }, [revalidate])
@@ -235,10 +290,19 @@ export default function CollectionHubScreen() {
   const mergeSource = actionTarget?.kind === 'collection' ? actionTarget.item as CollectionSummary : null;
 
   const query = search.toLowerCase().trim();
-  const allItems = (activeTab === 'binder' ? binders : lists).filter((c) => !c.folder_id);
+  const allItemsForTab = activeTab === 'binder' ? binders : lists;
   const allFolders = activeTab === 'binder' ? binderFolders : listFolders;
-  const items = query ? allItems.filter((i) => i.name.toLowerCase().includes(query)) : allItems;
-  const folders = query ? allFolders.filter((f) => f.name.toLowerCase().includes(query)) : allFolders;
+  // Default view = root only (folders own their nested items). Search
+  // mode flattens the tree: every binder/list whose name matches,
+  // regardless of folder, plus folders that match by name. The user
+  // can find a binder buried two folders deep with a single typed
+  // term.
+  const items = query
+    ? allItemsForTab.filter((i) => i.name.toLowerCase().includes(query))
+    : allItemsForTab.filter((c) => !c.folder_id);
+  const folders = query
+    ? allFolders.filter((f) => f.name.toLowerCase().includes(query))
+    : allFolders;
 
   // Wait for PowerSync's `useQuery` to re-emit after a write.
   // Without this pause the reorder screen unmounts before the Hub's
@@ -304,12 +368,6 @@ export default function CollectionHubScreen() {
             <Text style={styles.headerTitle}>Collection</Text>
             <View style={styles.headerActions}>
               <CatalogBadge />
-              <TouchableOpacity
-                onPress={() => setShowSearch(true)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="search" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setShowCreate(true)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -378,7 +436,7 @@ export default function CollectionHubScreen() {
       ) : reorderSection === 'items' ? (
         <ReorderableListView
           title={`Reorder ${activeTab === 'binder' ? 'Binders' : 'Lists'}`}
-          items={allItems}
+          items={allItemsForTab.filter((c) => !c.folder_id)}
           onCommit={commitItemReorder}
           onCancel={() => setReorderSection(null)}
           renderRow={(item) => (
@@ -394,16 +452,12 @@ export default function CollectionHubScreen() {
           )}
         />
       ) : (
-      <ScrollView
+      <View style={styles.scrollWrap}>
+      <Animated.ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => { setIsRefreshing(true); fetchAll(); }}
-            tintColor={colors.primary}
-          />
-        }
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         {activeTab === 'binder' && (
           <TouchableOpacity
@@ -489,7 +543,20 @@ export default function CollectionHubScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      {!showSearch && (
+        <Animated.View style={[styles.pullHint, hintStyle]} pointerEvents="none">
+          <Animated.Text style={[styles.pullHintText, hintTextStyle]}>
+            ↓ Pull to search
+          </Animated.Text>
+          <Animated.Text
+            style={[styles.pullHintText, styles.pullHintTextActive, hintActiveStyle]}
+          >
+            Release to search
+          </Animated.Text>
+        </Animated.View>
+      )}
+      </View>
       )}
 
       {/* Modals */}
@@ -598,6 +665,28 @@ const styles = StyleSheet.create({
   segmentText: { color: colors.textMuted, fontSize: fontSize.md, fontWeight: '600' },
   segmentTextActive: { color: colors.text },
   content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  scrollWrap: { flex: 1 },
+  pullHint: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 5,
+    elevation: 5,
+  },
+  pullHintText: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  pullHintTextActive: {
+    position: 'absolute',
+    top: 0,
+    color: colors.primary,
+  },
   sectionLabel: {
     color: colors.textMuted, fontSize: fontSize.xs, fontWeight: '700',
     textTransform: 'uppercase', letterSpacing: 0.5,

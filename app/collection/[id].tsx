@@ -15,7 +15,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
   Alert,
   StyleSheet,
@@ -37,7 +36,7 @@ import { ExportModal } from '../../src/components/collection/ExportModal';
 import { ImportModal } from '../../src/components/collection/ImportModal';
 import { FolderPickerModal } from '../../src/components/collection/FolderPickerModal';
 import { LanguageBadge } from '../../src/components/collection/LanguageBadge';
-import { CollectionToolbar, nextViewMode } from '../../src/components/collection/CollectionToolbar';
+import { CollectionToolbar, nextViewMode, toolbarHeightFor } from '../../src/components/collection/CollectionToolbar';
 import { SortSheet } from '../../src/components/collection/SortSheet';
 import { GroupBySheet } from '../../src/components/collection/GroupBySheet';
 import { GroupedCollectionList } from '../../src/components/collection/GroupedCollectionList';
@@ -84,8 +83,8 @@ function computeGridItemWidth(cardsPerRow: number): number {
   return (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * (cardsPerRow - 1)) / cardsPerRow;
 }
 
-// Toolbar (search + filter + view toggle) animated-height collapse.
-const TOOLBAR_HEIGHT = 44;
+// Toolbar collapse height is derived from the user's preferred size
+// (small / medium / large). See `toolbarHeightFor`.
 
 type CollectionEntry = EnrichedEntry;
 
@@ -105,7 +104,6 @@ export default function CollectionDetailScreen() {
   const { id, name: collectionName, type: collectionType } = useLocalSearchParams<{ id: string; name: string; type?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [editEntry, setEditEntry] = useState<{
     id: string;
     condition: string;
@@ -120,8 +118,9 @@ export default function CollectionDetailScreen() {
   // UI state — view mode + sort are persisted per device (AsyncStorage)
   // via the shared hook so flipping them in any binder carries over to
   // the next open. Filters are intentionally NOT persisted.
-  const { viewMode, sortBy, sortAsc, cardsPerRow, setViewMode, setSortBy, setSortAsc } =
+  const { viewMode, sortBy, sortAsc, cardsPerRow, toolbarSize, setViewMode, setSortBy, setSortAsc } =
     useCollectionViewPrefs();
+  const toolbarHeight = toolbarHeightFor(toolbarSize);
   const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
   const bulk = useBulkSelection();
   // Tag lookup for the list view. Every row inside this collection
@@ -531,22 +530,6 @@ export default function CollectionDetailScreen() {
     : (!isFiltered && cachedStats ? cachedStats.total_value : 0);
   const isGrid = viewMode !== 'list';
 
-  // Pull-to-refresh is now a cosmetic gesture — the data is always live
-  // from the local DB. We flash the indicator for a frame so the
-  // interaction still feels responsive, then release.
-  const handlePullRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    requestAnimationFrame(() => setIsRefreshing(false));
-  }, []);
-
-  const refreshControl = (
-    <RefreshControl
-      refreshing={isRefreshing}
-      onRefresh={handlePullRefresh}
-      tintColor={colors.primary}
-    />
-  );
-
   const emptyComponent = (
     <View style={styles.centered}>
       <View style={styles.emptyIcon}>
@@ -678,7 +661,7 @@ export default function CollectionDetailScreen() {
 
   const toolbarStyle = useAnimatedStyle(() => ({
     opacity: 1 - hidden.value,
-    height: interpolate(hidden.value, [0, 1], [TOOLBAR_HEIGHT, 0], Extrapolation.CLAMP),
+    height: interpolate(hidden.value, [0, 1], [toolbarHeight, 0], Extrapolation.CLAMP),
     overflow: 'hidden',
   }));
 
@@ -767,6 +750,7 @@ export default function CollectionDetailScreen() {
             activeFilters={countActiveFilters(filters)}
             onGroupPress={() => setShowGroupBy(true)}
             groupActive={groupBy !== 'none'}
+            size={toolbarSize}
           />
         </Animated.View>
       )}
@@ -793,7 +777,6 @@ export default function CollectionDetailScreen() {
           collapsedKeys={collapsedKeys}
           onToggleKey={handleToggleGroupKey}
           contentContainerStyle={styles.groupedList}
-          refreshControl={refreshControl}
           onScroll={scrollHandler}
           ListEmptyComponent={isReady ? emptyComponent : null}
         />
@@ -806,7 +789,6 @@ export default function CollectionDetailScreen() {
           numColumns={cardsPerRow}
           columnWrapperStyle={cardsPerRow > 1 ? styles.gridRow : undefined}
           contentContainerStyle={styles.gridList}
-          refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
@@ -818,7 +800,6 @@ export default function CollectionDetailScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderListItem}
           contentContainerStyle={styles.listList}
-          refreshControl={refreshControl}
           ListEmptyComponent={isReady ? emptyComponent : null}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
