@@ -100,8 +100,10 @@ export default function CollectionHubScreen() {
   // Pull-to-search: drive a tiny hint banner from the same shared
   // value that watches scrollY, so the user gets discoverable copy
   // ("Pull to search" → "Release to search") as they overshoot the
-  // top. Crossing the 60 px threshold opens the search bar.
-  const PULL_THRESHOLD = 60;
+  // top. Threshold sits well past iOS's rubber-band so a quick flick
+  // doesn't accidentally arm the search — the user has to commit to
+  // the gesture.
+  const PULL_THRESHOLD = 110;
   const pullY = useSharedValue(0);
 
   const openSearch = useCallback(() => {
