@@ -45,6 +45,16 @@ export function mapScryfallCard(card: any, now: string): Record<string, unknown>
     edhrec_rank: card.edhrec_rank ?? null,
     illustration_id: card.illustration_id ?? faces?.[0]?.illustration_id ?? null,
     flavor_text: card.flavor_text ?? faces?.[0]?.flavor_text ?? null,
+    // Set-grouping fields. Stored as JSON-encoded arrays (Scryfall's
+    // shape) so set detail pages can reproduce the Draft / Borderless /
+    // Showcase / Extended Art / Promo categorization without an
+    // extra round-trip.
+    frame_effects: card.frame_effects ? JSON.stringify(card.frame_effects) : null,
+    border_color: card.border_color ?? null,
+    promo_types: card.promo_types ? JSON.stringify(card.promo_types) : null,
+    finishes: card.finishes ? JSON.stringify(card.finishes) : null,
+    full_art: card.full_art ?? false,
+    promo: card.promo ?? false,
     updated_at: now,
   };
 }
@@ -58,6 +68,9 @@ export function mapScryfallSet(set: any, now: string): Record<string, unknown> {
     released_at: set.released_at ?? null,
     card_count: set.card_count ?? 0,
     icon_svg_uri: set.icon_svg_uri ?? null,
+    // Scryfall reports a child set's parent here (tokens, promos,
+    // commander decks, alchemy variants, etc). Roots have no parent.
+    parent_set_code: set.parent_set_code ?? null,
     updated_at: now,
   };
 }

@@ -86,6 +86,12 @@ const CARD_COLUMNS = [
   'card_faces',
   'edhrec_rank',
   'artist',
+  'frame_effects',
+  'border_color',
+  'promo_types',
+  'finishes',
+  'full_art',
+  'promo',
   'updated_at',
 ] as const;
 
@@ -96,6 +102,7 @@ const SET_COLUMNS = [
   'released_at',
   'card_count',
   'icon_svg_uri',
+  'parent_set_code',
 ] as const;
 
 /**
@@ -217,6 +224,12 @@ function createSchema(db: Database.Database) {
       card_faces TEXT,
       edhrec_rank INTEGER,
       artist TEXT,
+      frame_effects TEXT,
+      border_color TEXT,
+      promo_types TEXT,
+      finishes TEXT,
+      full_art INTEGER,
+      promo INTEGER,
       updated_at TEXT
     );
     CREATE INDEX idx_cards_scryfall_id ON cards(scryfall_id);
@@ -234,9 +247,11 @@ function createSchema(db: Database.Database) {
       set_type TEXT,
       released_at TEXT,
       card_count INTEGER,
-      icon_svg_uri TEXT
+      icon_svg_uri TEXT,
+      parent_set_code TEXT
     );
     CREATE INDEX idx_sets_name ON sets(name);
+    CREATE INDEX idx_sets_parent_set_code ON sets(parent_set_code) WHERE parent_set_code IS NOT NULL;
   `);
 }
 
