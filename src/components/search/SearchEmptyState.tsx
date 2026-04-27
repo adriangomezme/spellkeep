@@ -23,7 +23,7 @@ type Props = {
   latestSetName: string | null;
   latestSetCards: ScryfallCard[];
   aiChips: AiSuggestionChip[];
-  onTapSearch: (query: string) => void;
+  onTapSearch: (rs: RecentSearch) => void;
   onRemoveSearch: (query: string) => void;
   onClearSearches: () => void;
   onTapCard: (card: RecentCard) => void;

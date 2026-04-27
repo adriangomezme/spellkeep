@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { SearchFilterState } from '../search/searchFilters';
 
 const KEY = '@spellkeep/recent_searches.v1';
 const MAX_ITEMS = 10;
 const MIN_LENGTH = 2;
 
 export type RecentSearch = {
+  /** Display label shown in the dropdown / landing card. For text
+   *  searches this is the typed query; for structured intents (artist
+   *  pill, "browse this set", …) it's a friendly summary like
+   *  "Artist: Greg Staples". */
   query: string;
   searched_at: number;
   /** Up to 4 small image URLs of result cards, persisted alongside the
@@ -17,6 +22,14 @@ export type RecentSearch = {
    *  last executed. Stored only to display "1,234 results" in the
    *  landing card; not used for cache invalidation. */
   total?: number;
+  /** Free-text portion of the search (without the structured filters).
+   *  Stored separately from `query` so re-tapping a structured recent
+   *  re-applies the filters AND restores the typed text correctly. */
+  text?: string;
+  /** Snapshot of the filter state when the recent was created. Lets
+   *  re-tap restore the full search context — colors, types, artist,
+   *  oracleTexts, etc. — instead of just the text. */
+  filters?: Partial<SearchFilterState>;
 };
 
 let cache: RecentSearch[] | null = null;
@@ -55,7 +68,10 @@ async function persist(items: RecentSearch[]): Promise<void> {
   }
 }
 
-export async function addRecentSearch(query: string): Promise<void> {
+export async function addRecentSearch(
+  query: string,
+  options?: { text?: string; filters?: Partial<SearchFilterState> }
+): Promise<void> {
   const trimmed = query.trim();
   if (trimmed.length < MIN_LENGTH) return;
   const current = await loadFromStorage();
@@ -71,6 +87,8 @@ export async function addRecentSearch(query: string): Promise<void> {
       searched_at: Date.now(),
       previews: existing?.previews,
       total: existing?.total,
+      text: options?.text,
+      filters: options?.filters,
     },
     ...filtered,
   ].slice(0, MAX_ITEMS);

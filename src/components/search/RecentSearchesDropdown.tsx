@@ -7,7 +7,7 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../../constant
 
 type Props = {
   items: RecentSearch[];
-  onSelect: (query: string) => void;
+  onSelect: (rs: RecentSearch) => void;
   onRemove: (query: string) => void;
   /** Tap target that takes the user to the Scryfall syntax reference
    *  page. Rendered as the dropdown's footer so it's always within
@@ -28,9 +28,13 @@ function RecentSearchesDropdownInner({
   onRemove,
   onOpenSyntaxGuide,
 }: Props) {
+  // Cap the visible recents so the syntax-guide row never gets pushed
+  // off-screen below the keyboard. 7 is the sweet spot — enough to
+  // resurface yesterday's intent, short enough to scan in one glance.
+  const visibleItems = items.slice(0, 7);
   // Even with no recents, surface the syntax guide so brand-new users
   // discover the operator catalog immediately.
-  const hasRecents = items.length > 0;
+  const hasRecents = visibleItems.length > 0;
   if (!hasRecents && !onOpenSyntaxGuide) return null;
 
   return (
@@ -41,11 +45,11 @@ function RecentSearchesDropdownInner({
       style={styles.container}
     >
       <View style={styles.tint}>
-        {items.map((rs, idx) => (
+        {visibleItems.map((rs, idx) => (
           <View key={rs.query}>
             <TouchableOpacity
               style={styles.row}
-              onPress={() => onSelect(rs.query)}
+              onPress={() => onSelect(rs)}
               activeOpacity={0.6}
             >
               <Ionicons name="time-outline" size={16} color={colors.textMuted} />
@@ -57,7 +61,7 @@ function RecentSearchesDropdownInner({
                 <Ionicons name="close" size={16} color={colors.textMuted} />
               </TouchableOpacity>
             </TouchableOpacity>
-            {idx < items.length - 1 && <View style={styles.separator} />}
+            {idx < visibleItems.length - 1 && <View style={styles.separator} />}
           </View>
         ))}
 

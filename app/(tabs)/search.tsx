@@ -29,6 +29,7 @@ import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPre
 import {
   useRecentSearches,
   addRecentSearch,
+  type RecentSearch,
   updateRecentSearchMeta,
 } from '../../src/lib/hooks/useRecentSearches';
 import { useRecentlyViewedCards, type RecentCard } from '../../src/lib/hooks/useRecentlyViewedCards';
@@ -38,13 +39,16 @@ import { AI_SUGGESTION_CHIPS, type AiSuggestionChip } from '../../src/lib/search
 import { useSearchFilters } from '../../src/lib/hooks/useSearchFilters';
 import type { SearchFilterState } from '../../src/lib/search/searchFilters';
 import { buildSearchQueryFragment } from '../../src/lib/search/buildSearchQuery';
-import { countActiveSearchFilters } from '../../src/lib/search/searchFilters';
+import {
+  EMPTY_SEARCH_FILTERS,
+  countActiveSearchFilters,
+} from '../../src/lib/search/searchFilters';
 import {
   parseScryfallSyntax,
   removeClauseFromQuery,
   type ParsedClause,
 } from '../../src/lib/search/queryParser';
-import { consumePendingSyntaxQuery } from '../../src/lib/search/pendingSyntaxQuery';
+import { consumePendingSearch } from '../../src/lib/search/pendingSyntaxQuery';
 import { getCardImageUri, type ScryfallCard } from '../../src/lib/scryfall';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants';
 
@@ -85,6 +89,15 @@ export default function SearchScreen() {
   const filterFragment = useMemo(() => buildSearchQueryFragment(filters), [filters]);
   const activeFilterCount = useMemo(() => countActiveSearchFilters(filters), [filters]);
   const uniqueMode = filters.uniqueMode;
+
+  // Friendly label keyed against `recent_searches` for the most-recent
+  // search the user kicked off. For text searches it equals the typed
+  // query; for structured hand-offs (artist tap, AI search) it's the
+  // synthesized label like "Artist: Greg Staples". Used to link the
+  // result-thumbnail meta back to the correct recent entry — without
+  // this, structured searches saved with a label but submitted with an
+  // empty query would never get their previews populated.
+  const [activeRecentLabel, setActiveRecentLabel] = useState<string | null>(null);
 
   const {
     query,
@@ -225,16 +238,37 @@ export default function SearchScreen() {
   );
 
   const tapRecentSearch = useCallback(
-    (q: string) => {
-      setQuery(q);
-      // Re-tapping a recent search re-runs the search immediately —
-      // the user has already expressed intent in a prior session.
-      submit(q);
-      void addRecentSearch(q);
+    (rs: RecentSearch) => {
+      // Re-tapping a recent restores its FULL context. For structured
+      // entries (artist tap, AI search) that means re-applying the
+      // saved filters, sort and free-text portion together — without
+      // this the user would re-run only the label as plain text and
+      // get nothing back. Plain text recents flow through the same
+      // path with `text === query`.
+      const text = rs.text ?? rs.query;
+      if (rs.filters && Object.keys(rs.filters).length > 0) {
+        setFilters({ ...EMPTY_SEARCH_FILTERS, ...rs.filters });
+        setSortBy('edhrec_rank');
+        setSortAsc(true);
+      }
+      setQuery(text);
+      setActiveRecentLabel(rs.query);
+      submit(text);
+      void addRecentSearch(rs.query, { text: rs.text, filters: rs.filters });
       inputRef.current?.blur();
     },
-    [setQuery, submit]
+    [setFilters, setQuery, setSortBy, setSortAsc, submit]
   );
+
+  // Clearing or editing the input invalidates any active structured
+  // recent label — we don't want a fresh text submit to re-overwrite
+  // the meta of "Artist: …" with thumbnails from the new query.
+  useEffect(() => {
+    if (activeRecentLabel && query.trim() !== activeRecentLabel) {
+      setActiveRecentLabel(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const onSubmit = useCallback(() => {
     const trimmed = query.trim();
@@ -257,18 +291,42 @@ export default function SearchScreen() {
   // benefit most from discovering the operator catalog).
   const showRecentsDropdown = isFocused && trimmedQuery.length === 0;
 
-  // When the user returns from the syntax-help page after tapping
-  // "Try this query", load + run that query in the input. Module-level
-  // stash since this is a tabs root and we can't pass params back.
+  // Consume hand-offs from sibling routes: a syntax string (from the
+  // syntax-help page) or a structured filter intent (artist tap from
+  // card detail, future "browse this set" pills, etc).
   useFocusEffect(
     useCallback(() => {
-      const pending = consumePendingSyntaxQuery();
-      if (pending) {
-        setQuery(pending);
-        submit(pending);
+      const intent = consumePendingSearch();
+      if (!intent) return;
+
+      if (intent.kind === 'syntax') {
+        setQuery(intent.query);
+        submit(intent.query);
+        void addRecentSearch(intent.query);
         inputRef.current?.blur();
+        return;
       }
-    }, [setQuery, submit])
+
+      // kind === 'filtered' — the source already decided what filters
+      // it wants. Wipe the current filter state, apply the new one,
+      // reset sort to EDHREC ASC (so "popular results first" matches
+      // what AI search and similar discovery flows do), and save the
+      // friendly label to recents.
+      const mergedFilters = { ...EMPTY_SEARCH_FILTERS, ...intent.filters };
+      setFilters(mergedFilters);
+      setQuery(intent.query);
+      setSortBy('edhrec_rank');
+      setSortAsc(true);
+      submit(intent.query);
+      const label = (intent.recentLabel ?? intent.query).trim();
+      if (label.length >= 2) {
+        void addRecentSearch(label, {
+          text: intent.query,
+          filters: intent.filters,
+        });
+      }
+      inputRef.current?.blur();
+    }, [setFilters, setQuery, setSortBy, setSortAsc, submit])
   );
 
   // Persist preview thumbnails + total count for the active recent
@@ -277,13 +335,18 @@ export default function SearchScreen() {
   // those entries (Pinterest-style cards with no thumbnails are ugly
   // and serve little purpose).
   useEffect(() => {
-    if (submittedQuery.length < 2 || isLoading) return;
+    // Use the active recent label if there is one (artist tap, AI
+    // search, etc.) so structured searches with an empty `submitted
+    // Query` still get their preview thumbnails recorded under the
+    // friendly label they were saved under.
+    const key = (activeRecentLabel ?? submittedQuery).trim();
+    if (key.length < 2 || isLoading) return;
     const previews = results
       .slice(0, 4)
       .map((c) => getCardImageUri(c, 'small'))
       .filter((u): u is string => !!u);
-    void updateRecentSearchMeta(submittedQuery, previews, totalCards);
-  }, [submittedQuery, results, isLoading, totalCards]);
+    void updateRecentSearchMeta(key, previews, totalCards);
+  }, [activeRecentLabel, submittedQuery, results, isLoading, totalCards]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

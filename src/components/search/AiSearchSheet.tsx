@@ -5,9 +5,10 @@ import {
   TextInput,
   TouchableOpacity,
   Pressable,
-  ActivityIndicator,
   StyleSheet,
   ScrollView,
+  Animated,
+  Easing,
   type TextInput as RNTextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,13 +28,20 @@ import { useAiModel } from '../../lib/hooks/useAiModel';
 import { AI_MODEL_PRESETS } from '../../lib/ai/aiModelPresets';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../constants';
 
+// Curated examples — three simple to surface the easy wins, three a
+// shade more advanced to show the AI can handle exclusions, oracle-
+// text strings, and numeric thresholds. All have been QA'd against
+// claude-haiku-4.5 + gemini-3-flash and translate cleanly.
 const PROMPT_SUGGESTIONS = [
-  'Cards that look like Cultivate',
-  'Red removal under $2',
-  'Mythic creatures with flying',
-  'Counterspells legal in Modern',
-  'Game changers for Commander',
-  'Lands that produce two colors',
+  // Simple
+  'Cards similar to Farseek',
+  'Cheap mono-red burn spells',
+  'Equipment that grants flying',
+  // Mid
+  'Mono-green creatures with 7+ power and trample',
+  'Blue counterspells with the word \u201cinstead\u201d',
+  'Bant commanders with 4+ power that draw cards',
+  'Fetchlands, shocklands, and triomes in Temur colors',
 ];
 
 type Props = {
@@ -57,21 +65,25 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
     : 'Server default';
 
   // Reset state every time the sheet (re)opens so each session starts
-  // clean. Refocusing the input is also nice — users land straight in
-  // the prompt field.
+  // clean. We deliberately DO NOT auto-focus the input — the keyboard
+  // popping up immediately fights the sheet's snap animation and ends
+  // up hiding the suggestions before the user has even seen them. The
+  // user taps into the field when they're ready.
   useEffect(() => {
     if (visible) {
       setPrompt('');
       setResult(null);
       setLoading(false);
-      const t = setTimeout(() => inputRef.current?.focus(), 250);
-      return () => clearTimeout(t);
     }
   }, [visible]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = prompt.trim();
     if (trimmed.length < 2 || loading) return;
+    // Dismiss the keyboard the moment the user fires translate — the
+    // sheet feels much smoother when the result card lands without
+    // the keyboard fighting for vertical space underneath it.
+    inputRef.current?.blur();
     setLoading(true);
     setResult(null);
     const r = await aiSearchFromPrompt(trimmed);
@@ -108,7 +120,18 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
   }, []);
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} snapPoints={['70%', '92%']}>
+    // Two snap points: a roomy default that fits header + input +
+    // button + suggestions on iPhone, and a tall one Gorhom jumps to
+    // when the keyboard opens (keyboardBehavior="extend"). With auto-
+    // focus removed, the user starts at 60%, sees suggestions, and
+    // only triggers the bigger snap once they actually tap into the
+    // field — so the suggestions are always visible at first paint.
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      snapPoints={['60%', '92%']}
+      keyboardBehavior="extend"
+    >
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Ionicons name="sparkles" size={20} color={colors.primary} />
@@ -121,9 +144,8 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
           </View>
         </View>
         <Text style={styles.subtitle}>
-          Describe what you're looking for in plain English. The AI
-          translates it into filters you can review before running the
-          search.
+          Describe what you&rsquo;re looking for. The AI translates it
+          into filters you can review before running the search.
         </Text>
       </View>
 
@@ -132,7 +154,7 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
         <TextInput
           ref={inputRef}
           style={styles.promptInput}
-          placeholder="e.g. cheap red removal in Modern"
+          placeholder="e.g. mono-white angels with 4 power that create tokens"
           placeholderTextColor={colors.textMuted}
           value={prompt}
           onChangeText={setPrompt}
@@ -150,16 +172,19 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
         activeOpacity={0.7}
       >
         {loading ? (
-          <ActivityIndicator color="#FFF" size="small" />
+          <ThinkingIndicator />
         ) : (
           <>
-            <Ionicons name="arrow-up-circle" size={18} color="#FFF" />
+            <Ionicons name="sparkles" size={16} color="#FFF" />
             <Text style={styles.submitLabel}>Translate</Text>
           </>
         )}
       </TouchableOpacity>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {!result && !loading && (
           <View style={styles.suggestionsSection}>
             <Text style={styles.sectionLabel}>Try these</Text>
@@ -299,6 +324,77 @@ function labelFor(mode: 'gte' | 'eq' | 'lte'): string {
 }
 function cmpLabel(c: 'eq' | 'gte' | 'lte'): string {
   return c === 'gte' ? '≥' : c === 'lte' ? '≤' : '=';
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// "Thinking" indicator — staggered three-dot pulse + a gently breathing
+// sparkles glyph. Imitates the Apple-Intelligence / Linear-AI vibe
+// without pulling in Lottie or a SVG animation library.
+// ──────────────────────────────────────────────────────────────────────
+
+function ThinkingIndicator() {
+  // One driver looped 0→1 on a 1.2s cycle. Each dot reads from a
+  // distinct slice of the cycle so they pulse with a 200ms stagger.
+  const driver = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(driver, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [driver]);
+
+  // Sparkles slowly inhales/exhales in scale + opacity.
+  const sparkleScale = driver.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [1, 1.12, 1],
+  });
+  const sparkleOpacity = driver.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.7, 1, 0.7],
+  });
+
+  function dotOpacity(offset: number) {
+    // Each dot's opacity rides a triangular wave centered on `offset`
+    // so dot-1 peaks at t=0.16, dot-2 at t=0.5, dot-3 at t=0.83.
+    return driver.interpolate({
+      inputRange: [
+        Math.max(offset - 0.25, 0),
+        offset,
+        Math.min(offset + 0.25, 1),
+      ],
+      outputRange: [0.25, 1, 0.25],
+      extrapolate: 'clamp',
+    });
+  }
+
+  return (
+    <View style={styles.thinkingRow}>
+      <Animated.View
+        style={{
+          opacity: sparkleOpacity,
+          transform: [{ scale: sparkleScale }],
+        }}
+      >
+        <Ionicons name="sparkles" size={16} color="#FFF" />
+      </Animated.View>
+      <Text style={styles.thinkingLabel}>Thinking</Text>
+      <View style={styles.thinkingDots}>
+        {[0.16, 0.5, 0.83].map((t) => (
+          <Animated.View
+            key={t}
+            style={[styles.thinkingDot, { opacity: dotOpacity(t) }]}
+          />
+        ))}
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -481,5 +577,29 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.error,
     fontSize: fontSize.sm,
+  },
+  /* Thinking indicator — see ThinkingIndicator. */
+  thinkingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  thinkingLabel: {
+    color: '#FFF',
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  thinkingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginLeft: 2,
+  },
+  thinkingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFF',
   },
 });

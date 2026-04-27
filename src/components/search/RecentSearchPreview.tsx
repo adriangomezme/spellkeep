@@ -8,7 +8,7 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../../constant
 type Props = {
   item: RecentSearch;
   width: number;
-  onPress: (query: string) => void;
+  onPress: (rs: RecentSearch) => void;
   onRemove: (query: string) => void;
 };
 
@@ -18,25 +18,21 @@ const CARD_RATIO = 1.395;
  * Pinterest-style preview card for a recent search:
  *   - 2x2 mini grid of result thumbnails (up to 4, padded with empty
  *     slots if the search returned fewer)
- *   - Search keyword
+ *   - Search keyword (or friendly label for structured searches)
  *   - Result count (only when known — older entries that haven't
  *     re-run since the previews feature shipped will lack this)
  *
- * Tap → re-runs the search.
+ * Tap → re-runs the search (text + filters + sort if structured).
  * × → removes the entry from history.
  */
 function RecentSearchPreviewInner({ item, width, onPress, onRemove }: Props) {
   const previews = (item.previews ?? []).slice(0, 4);
-  // Pad to a fixed 4 slots so cards line up regardless of how many
-  // images we actually have.
   const slots: (string | null)[] = [
     previews[0] ?? null,
     previews[1] ?? null,
     previews[2] ?? null,
     previews[3] ?? null,
   ];
-  // Each thumbnail occupies half the inner width minus the gap between
-  // them. Inner padding lives on the wrapper.
   const innerPad = spacing.sm;
   const innerGap = spacing.xs;
   const thumbWidth = (width - innerPad * 2 - innerGap) / 2;
@@ -45,7 +41,7 @@ function RecentSearchPreviewInner({ item, width, onPress, onRemove }: Props) {
   return (
     <Pressable
       style={[styles.card, { width }]}
-      onPress={() => onPress(item.query)}
+      onPress={() => onPress(item)}
     >
       <View style={[styles.grid, { padding: innerPad, gap: innerGap }]}>
         {[0, 2].map((rowStart) => (

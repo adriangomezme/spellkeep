@@ -3,9 +3,13 @@ import { StyleSheet, Keyboard, Platform } from 'react-native';
 import GorhomBottomSheet, {
   BottomSheetBackdrop,
   BottomSheetView,
+  BottomSheetScrollView,
+  BottomSheetTextInput,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { colors, spacing, borderRadius } from '../constants';
+
+type KeyboardBehavior = 'interactive' | 'extend' | 'fillParent';
 
 type Props = {
   visible: boolean;
@@ -15,6 +19,11 @@ type Props = {
   snapPoints?: (string | number)[];
   /** Called when the sheet snaps to a different index */
   onSnapChange?: (index: number) => void;
+  /** Override the default keyboard handling. `extend` makes the sheet
+   *  jump to the next-higher snap point when the keyboard appears
+   *  (good for sheets with TextInputs at the bottom). Defaults to
+   *  iOS=interactive, Android=extend. */
+  keyboardBehavior?: KeyboardBehavior;
 };
 
 // Gorhom's close animation lasts ~250 ms. We keep the sheet mounted for
@@ -22,7 +31,14 @@ type Props = {
 // animates instead of vanishing in a frame.
 const CLOSE_ANIMATION_MS = 300;
 
-export function BottomSheet({ visible, onClose, children, snapPoints, onSnapChange }: Props) {
+export function BottomSheet({
+  visible,
+  onClose,
+  children,
+  snapPoints,
+  onSnapChange,
+  keyboardBehavior,
+}: Props) {
   const sheetRef = useRef<GorhomBottomSheet>(null);
   const memoizedSnapPoints = useMemo(() => snapPoints, [snapPoints?.join(',')]);
 
@@ -77,7 +93,7 @@ export function BottomSheet({ visible, onClose, children, snapPoints, onSnapChan
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.handle}
       backgroundStyle={styles.background}
-      keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
+      keyboardBehavior={keyboardBehavior ?? (Platform.OS === 'ios' ? 'interactive' : 'extend')}
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
     >
@@ -87,6 +103,12 @@ export function BottomSheet({ visible, onClose, children, snapPoints, onSnapChan
     </GorhomBottomSheet>
   );
 }
+
+// Re-exports so callers don't have to import @gorhom directly.
+// `BottomSheetTextInput` integrates with the sheet's keyboard handler
+// so the sheet auto-resizes when the input is focused; `BottomSheetScrollView`
+// likewise plays nicely with sheet panning and keyboard transitions.
+export { BottomSheetScrollView, BottomSheetTextInput };
 
 const styles = StyleSheet.create({
   background: {

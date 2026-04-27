@@ -61,7 +61,7 @@ import {
 } from '../../src/lib/hooks/useOwnershipSummary';
 import { ensureSetIconsLoaded, getSetIconSync } from '../../src/lib/catalog/catalogDb';
 import { addRecentlyViewed } from '../../src/lib/hooks/useRecentlyViewedCards';
-import { stagePendingSyntaxQuery } from '../../src/lib/search/pendingSyntaxQuery';
+import { stagePendingSearch } from '../../src/lib/search/pendingSyntaxQuery';
 import { CONDITIONS, type Condition, type Finish } from '../../src/lib/collection';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -508,10 +508,15 @@ export default function CardDetailScreen() {
               label={`Illus. ${card.artist ?? 'Unknown'}`}
               icon="brush-outline"
               onPress={card.artist ? () => {
-                // Hand off `a:"Name"` to the Search tab — the search
-                // screen consumes the staged query on focus and runs
-                // it automatically.
-                stagePendingSyntaxQuery(`a:"${card.artist!.replace(/"/g, '')}"`);
+                // Hand off the Scryfall artist syntax to the Search
+                // tab. We intentionally use TEXT (a:"Name") rather
+                // than a structured filter because the user prefers
+                // browsing by typed query — that way the recent gets
+                // saved as the syntax string, re-running it is just a
+                // tap on the recent entry, and the toolbar shows zero
+                // active filters.
+                const q = `a:"${card.artist!.replace(/"/g, '')}"`;
+                stagePendingSearch({ kind: 'syntax', query: q });
                 router.push('/(tabs)/search');
               } : undefined}
             />

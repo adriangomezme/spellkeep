@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -117,6 +117,12 @@ export default function FilterScreen() {
   const [local, setLocal] = useState<SearchFilterState>(filters);
   const [tab, setTab] = useState<Tab>('simple');
   const [presetsOpen, setPresetsOpen] = useState(false);
+  // Advanced is the heavier tab (5 catalog hooks: keywords, creature
+  // types, planeswalker types, land types, artists). We defer its
+  // mount until the user actually visits it — initial open of /filters
+  // shouldn't pay for catalogs the user may never see. Once mounted we
+  // keep it alive (display:none toggle) so subsequent flips are free.
+  const [mountedAdvanced, setMountedAdvanced] = useState(false);
 
   // Snapshot the filter state at mount; back without Apply discards
   // local edits.
@@ -125,13 +131,21 @@ export default function FilterScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function update<K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) {
-    setLocal((p) => ({ ...p, [key]: value }));
-  }
+  // Stable callback identities so memoized SimpleSection/Advanced
+  // sections don't re-render on every keystroke just because the
+  // parent re-renders with a new function reference.
+  const update = useCallback(
+    <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => {
+      setLocal((p) => ({ ...p, [key]: value }));
+    },
+    []
+  );
 
-  function toggleArr(arr: string[], v: string): string[] {
-    return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
-  }
+  const toggleArr = useCallback(
+    (arr: string[], v: string): string[] =>
+      arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v],
+    []
+  );
 
   function handleApply() {
     setFilters(local);
@@ -179,25 +193,42 @@ export default function FilterScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.segment, tab === 'advanced' && styles.segmentActive]}
-          onPress={() => setTab('advanced')}
+          onPress={() => {
+            setMountedAdvanced(true);
+            setTab('advanced');
+          }}
           activeOpacity={0.6}
         >
           <Text style={[styles.segmentLabel, tab === 'advanced' && styles.segmentLabelActive]}>Advanced</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Body ── */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {tab === 'simple' ? (
+      {/* ── Body ──
+           Two ScrollViews, one per tab, both kept mounted. Switching
+           via `display` (instead of conditional render) preserves each
+           tab's scroll position independently AND avoids the rebuild
+           cost of every FilterCard on every flip. The cost is a small
+           extra mount on the first paint — worth it. */}
+      <View style={styles.scroll}>
+        <ScrollView
+          style={tab === 'simple' ? styles.tabPaneActive : styles.tabPaneHidden}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <SimpleSection local={local} update={update} toggleArr={toggleArr} />
-        ) : (
-          <AdvancedSection local={local} update={update} toggleArr={toggleArr} />
+        </ScrollView>
+        {mountedAdvanced && (
+          <ScrollView
+            style={tab === 'advanced' ? styles.tabPaneActive : styles.tabPaneHidden}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <AdvancedSection local={local} update={update} toggleArr={toggleArr} />
+          </ScrollView>
         )}
-      </ScrollView>
+      </View>
 
       {/* ── Sticky footer ── */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
@@ -240,7 +271,7 @@ type SectionProps = {
   toggleArr: (arr: string[], v: string) => string[];
 };
 
-function SimpleSection({ local, update, toggleArr }: SectionProps) {
+const SimpleSection = memo(function SimpleSection({ local, update, toggleArr }: SectionProps) {
   const cardTypes = useScryfallCatalog('cardTypes', FALLBACK_CARD_TYPES);
   const supertypes = useScryfallCatalog('supertypes', FALLBACK_SUPERTYPES);
   const sets = useLocalSets();
@@ -480,9 +511,9 @@ function SimpleSection({ local, update, toggleArr }: SectionProps) {
       </FilterCard>
     </View>
   );
-}
+});
 
-function AdvancedSection({ local, update, toggleArr }: SectionProps) {
+const AdvancedSection = memo(function AdvancedSection({ local, update, toggleArr }: SectionProps) {
   const keywords = useScryfallCatalog('keywordAbilities', FALLBACK_KEYWORDS);
   const creatureTypes = useScryfallCatalog('creatureTypes');
   const planeswalkerTypes = useScryfallCatalog('planeswalkerTypes');
@@ -711,7 +742,7 @@ function AdvancedSection({ local, update, toggleArr }: SectionProps) {
       </FilterCard>
     </View>
   );
-}
+});
 
 // ──────────────────────────────────────────────────────────────────────
 // Inline atoms
@@ -979,6 +1010,14 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     marginTop: spacing.md,
+  },
+  tabPaneActive: {
+    flex: 1,
+  },
+  tabPaneHidden: {
+    // `display: none` is React Native's recommended way to hide a
+    // mounted view without unmounting it — keeps scroll state intact.
+    display: 'none',
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,

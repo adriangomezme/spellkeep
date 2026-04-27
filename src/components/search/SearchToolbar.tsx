@@ -120,6 +120,16 @@ export const SearchToolbar = forwardRef<TextInputType, Props>(function SearchToo
         )}
       </Pressable>
 
+      {/* AI sparkles sits immediately after the search field — it's
+          the primary discovery action, not a tertiary toggle. The
+          three view-related buttons (sort / filter / view-mode)
+          follow in a tighter cluster on the right. */}
+      {onAiPress && (
+        <TouchableOpacity style={iconBtnStyle} onPress={onAiPress} activeOpacity={0.6}>
+          <Ionicons name="sparkles" size={m.actionIcon} color={colors.primary} />
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={iconBtnStyle} onPress={onSortPress} activeOpacity={0.6}>
         <Ionicons name="swap-vertical" size={m.actionIcon} color={colors.text} />
       </TouchableOpacity>
@@ -132,12 +142,6 @@ export const SearchToolbar = forwardRef<TextInputType, Props>(function SearchToo
         />
         {activeFilters > 0 && <View style={badgeStyle} />}
       </TouchableOpacity>
-
-      {onAiPress && (
-        <TouchableOpacity style={iconBtnStyle} onPress={onAiPress} activeOpacity={0.6}>
-          <Ionicons name="sparkles" size={m.actionIcon} color={colors.primary} />
-        </TouchableOpacity>
-      )}
 
       <TouchableOpacity style={iconBtnStyle} onPress={onToggleView} activeOpacity={0.6}>
         <Ionicons name={VIEW_ICONS[viewMode]} size={m.actionIcon} color={colors.text} />
