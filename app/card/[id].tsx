@@ -60,6 +60,8 @@ import {
   type OwnershipSummary,
 } from '../../src/lib/hooks/useOwnershipSummary';
 import { ensureSetIconsLoaded, getSetIconSync } from '../../src/lib/catalog/catalogDb';
+import { addRecentlyViewed } from '../../src/lib/hooks/useRecentlyViewedCards';
+import { stagePendingSyntaxQuery } from '../../src/lib/search/pendingSyntaxQuery';
 import { CONDITIONS, type Condition, type Finish } from '../../src/lib/collection';
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 
@@ -185,6 +187,17 @@ export default function CardDetailScreen() {
       })
       .finally(() => setFetching(false));
   }, [id, initialCard]);
+
+  // Record this card view for the Search tab's "Recently viewed" list.
+  // We log once per route entry as soon as we have ANY card data —
+  // either the inline cardJson from the navigator or the fetched
+  // baseCard. The hook dedupes by id so re-merging extras doesn't
+  // double-count.
+  useEffect(() => {
+    if (!card) return;
+    void addRecentlyViewed(card);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card?.id]);
 
   const [showAddSheet, setShowAddSheet] = useState(false);
   // Quick Add: one-tap add to a pre-configured binder/list. Long press
@@ -494,6 +507,13 @@ export default function CardDetailScreen() {
             <MetaPill
               label={`Illus. ${card.artist ?? 'Unknown'}`}
               icon="brush-outline"
+              onPress={card.artist ? () => {
+                // Hand off `a:"Name"` to the Search tab — the search
+                // screen consumes the staged query on focus and runs
+                // it automatically.
+                stagePendingSyntaxQuery(`a:"${card.artist!.replace(/"/g, '')}"`);
+                router.push('/(tabs)/search');
+              } : undefined}
             />
           </View>
         </Section>
@@ -935,14 +955,22 @@ function MetaPill({
   color,
   icon,
   dot,
+  onPress,
 }: {
   label: string;
   color?: string;
   icon?: React.ComponentProps<typeof Ionicons>['name'];
   dot?: boolean;
+  /** When provided the pill becomes tappable (touch feedback enabled). */
+  onPress?: () => void;
 }) {
+  // Tappable pills look identical to static ones — the tap is an
+  // easter-egg shortcut, not a primary affordance. Users who tap the
+  // artist pill get the search; everyone else just reads the label.
+  const Container: any = onPress ? TouchableOpacity : View;
+  const containerProps = onPress ? { activeOpacity: 0.6, onPress } : {};
   return (
-    <View style={styles.metaPill}>
+    <Container style={styles.metaPill} {...containerProps}>
       {icon && (
         <Ionicons name={icon} size={12} color={colors.textMuted} style={{ marginRight: 4 }} />
       )}
@@ -963,7 +991,7 @@ function MetaPill({
       >
         {label}
       </Text>
-    </View>
+    </Container>
   );
 }
 

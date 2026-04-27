@@ -150,16 +150,14 @@ const COLOR_MODE_HELP: Record<ColorMatchMode, string> = {
   lte: 'Card fits within the chosen colors.',
 };
 
-// Order chosen so each filter's most natural default sits first.
-// Colors (mana cost) defaults to "Has all" (>= — Scryfall's `c:`).
-// Color Identity defaults to "Within" (<= — Scryfall's `id:`).
-const COLOR_MODE_ORDER: Record<'colors' | 'identity', ColorMatchMode[]> = {
-  colors: ['gte', 'eq', 'lte'],
-  identity: ['lte', 'eq', 'gte'],
-};
+// Same display order in both Colors and Color Identity so the user
+// reads the segmented control at a consistent position regardless of
+// section. The DEFAULT value still differs per variant (gte for
+// colors, lte for identity) — see the ColorRow callers.
+const COLOR_MODE_ORDER: ColorMatchMode[] = ['gte', 'eq', 'lte'];
 
 function ColorModeSegmented({
-  variant,
+  variant: _variant,
   value,
   onChange,
 }: {
@@ -167,7 +165,7 @@ function ColorModeSegmented({
   value: ColorMatchMode;
   onChange: (next: ColorMatchMode) => void;
 }) {
-  const order = COLOR_MODE_ORDER[variant];
+  const order = COLOR_MODE_ORDER;
   return (
     <View style={styles.modeSegmented}>
       {order.map((m) => {

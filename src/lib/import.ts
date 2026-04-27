@@ -375,7 +375,7 @@ async function resolveCardViaApi(parsed: ParsedCard): Promise<ScryfallCard | nul
   if (parsed.set_code && parsed.collector_number) {
     try {
       await throttleScryfall();
-      const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code} cn:${parsed.collector_number}`, 1);
+      const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code} cn:${parsed.collector_number}`, { page: 1 });
       if (result?.data?.[0]) return result.data[0];
     } catch {}
   }
@@ -383,14 +383,14 @@ async function resolveCardViaApi(parsed: ParsedCard): Promise<ScryfallCard | nul
   if (parsed.set_code) {
     try {
       await throttleScryfall();
-      const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code}`, 1);
+      const result = await searchCards(`!"${parsed.name}" set:${parsed.set_code}`, { page: 1 });
       if (result?.data?.[0]) return result.data[0];
     } catch {}
   }
 
   try {
     await throttleScryfall();
-    const result = await searchCards(`!"${parsed.name}"`, 1);
+    const result = await searchCards(`!"${parsed.name}"`, { page: 1 });
     if (result?.data?.[0]) return result.data[0];
   } catch {}
 

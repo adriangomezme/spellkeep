@@ -396,6 +396,27 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* AI Model — dev only, removed before launch. */}
+
+        <TouchableOpacity
+          style={styles.row}
+          activeOpacity={0.6}
+          onPress={() => router.push('/profile/ai-model')}
+        >
+          <View style={[styles.iconCircle, { backgroundColor: colors.warning + '1A' }]}>
+            <Ionicons name="sparkles" size={20} color={colors.warning} />
+          </View>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>AI Model</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={1}>
+              Dev only — pick the model used by AI features
+            </Text>
+          </View>
+          <View style={styles.rowTrailing}>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </View>
+        </TouchableOpacity>
+
         {/* Tags */}
 
         <TouchableOpacity

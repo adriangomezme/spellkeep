@@ -1,20 +1,96 @@
-import { useCallback } from 'react';
-import { View, FlatList, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  type TextInput as TextInputType,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SearchBar } from '../../src/components/SearchBar';
-import { CardListItem } from '../../src/components/CardListItem';
-import { useCardSearch } from '../../src/hooks/useCardSearch';
-import { ScryfallCard } from '../../src/lib/scryfall';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, fontSize } from '../../src/constants';
+import { SearchToolbar } from '../../src/components/search/SearchToolbar';
+import { SearchEmptyState } from '../../src/components/search/SearchEmptyState';
+import { SearchSuggestionsList } from '../../src/components/search/SearchSuggestionsList';
+import { RecentSearchesDropdown } from '../../src/components/search/RecentSearchesDropdown';
+import { SyntaxChips } from '../../src/components/search/SyntaxChips';
+import { AiSearchSheet } from '../../src/components/search/AiSearchSheet';
+import { SetsBrowser } from '../../src/components/search/SetsBrowser';
+import type { LocalSetInfo } from '../../src/lib/hooks/useLocalSets';
+import { SearchResults } from '../../src/components/search/SearchResults';
+import { SortSheet, type SortOptionDef } from '../../src/components/collection/SortSheet';
+import { nextViewMode } from '../../src/components/collection/CollectionToolbar';
+import { useCardSearch } from '../../src/hooks/useCardSearch';
+import { useSearchSuggestions } from '../../src/lib/hooks/useSearchSuggestions';
+import { useSearchViewPrefs } from '../../src/lib/hooks/useSearchViewPrefs';
+import { useCollectionViewPrefs } from '../../src/lib/hooks/useCollectionViewPrefs';
+import {
+  useRecentSearches,
+  addRecentSearch,
+  updateRecentSearchMeta,
+} from '../../src/lib/hooks/useRecentSearches';
+import { useRecentlyViewedCards, type RecentCard } from '../../src/lib/hooks/useRecentlyViewedCards';
+import { useTrendingCards } from '../../src/lib/hooks/useTrendingCards';
+import { useLatestSetCards } from '../../src/lib/hooks/useLatestSetCards';
+import { AI_SUGGESTION_CHIPS, type AiSuggestionChip } from '../../src/lib/search/aiSuggestionChips';
+import { useSearchFilters } from '../../src/lib/hooks/useSearchFilters';
+import type { SearchFilterState } from '../../src/lib/search/searchFilters';
+import { buildSearchQueryFragment } from '../../src/lib/search/buildSearchQuery';
+import { countActiveSearchFilters } from '../../src/lib/search/searchFilters';
+import {
+  parseScryfallSyntax,
+  removeClauseFromQuery,
+  type ParsedClause,
+} from '../../src/lib/search/queryParser';
+import { consumePendingSyntaxQuery } from '../../src/lib/search/pendingSyntaxQuery';
+import { getCardImageUri, type ScryfallCard } from '../../src/lib/scryfall';
+import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants';
+
+// Search uses a different sort palette than Owned/binder/list:
+//  - "Last Added" doesn't exist in the universe of all cards, so we
+//    relabel `added` → "Release Date".
+//  - EDHREC rank only applies when browsing the catalog, not when
+//    sorting your own pile.
+// Persistence is also separate (useSearchViewPrefs), so the user can
+// keep e.g. "EDHREC rank" here and "Last Added" in their binders.
+const SEARCH_SORT_OPTIONS: SortOptionDef[] = [
+  { key: 'added', label: 'Release Date', icon: 'calendar-outline' },
+  { key: 'edhrec_rank', label: 'EDHREC Rank', icon: 'trending-up-outline' },
+  { key: 'name', label: 'Name', icon: 'text-outline' },
+  { key: 'mana_value', label: 'Mana Value', icon: 'flame-outline' },
+  { key: 'price', label: 'Price', icon: 'pricetag-outline' },
+  { key: 'color_identity', label: 'Color Identity', icon: 'color-palette-outline' },
+  { key: 'rarity', label: 'Rarity', icon: 'diamond-outline' },
+  { key: 'set_code', label: 'Set', icon: 'layers-outline' },
+];
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const inputRef = useRef<TextInputType | null>(null);
+
+  // Search-specific layout (viewMode + sort) lives in its own AsyncStorage
+  // key. Toolbar size + cards-per-row are shared with binder/list/owned
+  // because they are device-wide grid preferences set in /profile/grid.
+  const { viewMode, sortBy, sortAsc, setViewMode, setSortBy, setSortAsc } =
+    useSearchViewPrefs();
+  const { toolbarSize, cardsPerRow } = useCollectionViewPrefs();
+
+  // Filters live in a session-scoped store shared with the
+  // /search/filters route. Re-derive the Scryfall syntax fragment
+  // whenever the filter state changes.
+  const { filters, setFilters } = useSearchFilters();
+  const filterFragment = useMemo(() => buildSearchQueryFragment(filters), [filters]);
+  const activeFilterCount = useMemo(() => countActiveSearchFilters(filters), [filters]);
+  const uniqueMode = filters.uniqueMode;
+
   const {
     query,
     setQuery,
+    submittedQuery,
+    submit,
     results,
     totalCards,
     isLoading,
@@ -22,43 +98,264 @@ export default function SearchScreen() {
     hasMore,
     loadMore,
     clear,
-  } = useCardSearch();
+  } = useCardSearch({
+    sortBy,
+    sortAsc,
+    extraQuery: filterFragment,
+    exactName: filters.exactName,
+    uniqueMode,
+  });
 
-  // Stable identity for the memoised CardListItem — recreating this on every
-  // render would defeat the memo and force 175 rows to re-render on keystroke.
-  const handleCardPress = useCallback((card: ScryfallCard) => {
-    router.push({
-      pathname: '/card/[id]',
-      params: { id: card.id, cardJson: JSON.stringify(card) },
-    });
-  }, [router]);
+  // "My cards" / owned-only browsing was removed from Search — that
+  // workflow lives in the Owned cards screen. Keeping the rename here
+  // (`filteredResults`) so any downstream wiring stays stable.
+  const filteredResults = results;
 
-  const renderItem = useCallback(
-    ({ item }: { item: ScryfallCard }) => (
-      <CardListItem card={item} onPress={handleCardPress} />
-    ),
-    [handleCardPress]
+  const { suggestions } = useSearchSuggestions(query);
+
+  // Live Scryfall-syntax detection — typing `c:r cmc>=4` surfaces two
+  // chips ("Color: Red", "Mana value ≥ 4"). The chips are advisory;
+  // the raw query still passes through to Scryfall unchanged.
+  const syntaxClauses = useMemo(() => parseScryfallSyntax(query), [query]);
+  const handleRemoveClause = useCallback(
+    (clause: ParsedClause) => {
+      const next = removeClauseFromQuery(query, clause);
+      setQuery(next);
+      // If the user already submitted, re-submit without the removed
+      // clause so results refresh immediately. Otherwise just update
+      // the input — they'll trigger a search themselves.
+      if (submittedQuery.length > 0) submit(next);
+    },
+    [query, submittedQuery, setQuery, submit]
   );
+  const { items: recentSearches, remove: removeRecentSearch, clear: clearRecentSearches } =
+    useRecentSearches();
+  const { items: recentlyViewed } = useRecentlyViewedCards();
+  const trendingCards = useTrendingCards(12);
+  const latestSet = useLatestSetCards(10);
+
+  const [isFocused, setIsFocused] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  // Two top-level views: 'cards' = the universal search experience,
+  // 'sets' = a browseable list of every set in the catalog. Tapping a
+  // set in 'sets' mode hands a `set:CODE` query back to 'cards'.
+  const [searchView, setSearchView] = useState<'cards' | 'sets'>('cards');
+
+  const handleSelectSet = useCallback(
+    (set: LocalSetInfo) => {
+      // Sets get their own dedicated route (Scryfall-style grouped
+      // listing + header stats + 3-dot menu) rather than a syntax
+      // hand-off to the search input. Recent searches stay focused on
+      // text queries the user typed themselves.
+      router.push({ pathname: '/search/set/[code]', params: { code: set.code } });
+    },
+    [router]
+  );
+
+  const goToCard = useCallback(
+    (card: ScryfallCard) => {
+      // Tapping a result card is an explicit intent to navigate —
+      // record the active query as a recent search before leaving.
+      const trimmed = query.trim();
+      if (trimmed.length >= 2) {
+        void addRecentSearch(trimmed);
+      }
+      router.push({
+        pathname: '/card/[id]',
+        params: { id: card.id, cardJson: JSON.stringify(card) },
+      });
+    },
+    [router, query]
+  );
+
+  const submitFromSuggestion = useCallback(
+    (name: string) => {
+      // Suggestions act like Google's autocomplete: tap to run that
+      // search, NOT to jump to the card. Surfaces the full results
+      // page where the user can browse all matching printings.
+      setQuery(name);
+      submit(name);
+      void addRecentSearch(name);
+      inputRef.current?.blur();
+    },
+    [setQuery, submit]
+  );
+
+  const goToRecentCard = useCallback(
+    (rc: RecentCard) => {
+      router.push({ pathname: '/card/[id]', params: { id: rc.id } });
+    },
+    [router]
+  );
+
+  const tapAiChip = useCallback(
+    (chip: AiSuggestionChip) => {
+      // Today the chip's `query` is a hand-written Scryfall syntax
+      // string. When AI search ships in Phase 6 we'll route this
+      // through the model — UI stays the same.
+      setQuery(chip.query);
+      submit(chip.query);
+      void addRecentSearch(chip.query);
+      inputRef.current?.blur();
+    },
+    [setQuery, submit]
+  );
+
+  const handleAiApply = useCallback(
+    (aiFilters: SearchFilterState, aiQuery: string) => {
+      // Push the AI-translated filter state into the shared store so
+      // the toolbar badge + Filter screen reflect what just got
+      // applied. Then submit the text portion (if any) so results
+      // land instantly.
+      setFilters(aiFilters);
+      setQuery(aiQuery);
+      // AI-driven results default to EDHREC popularity (ASC = most
+      // popular first) — the cards a player is most likely curious
+      // about for a given prompt. Grouping (uniqueMode='cards') is
+      // applied inside the AI sheet's handleApply.
+      setSortBy('edhrec_rank');
+      setSortAsc(true);
+      // The filter fragment alone is enough to trigger the search
+      // even when the text is empty — useCardSearch handles that.
+      submit(aiQuery);
+      inputRef.current?.blur();
+    },
+    [setFilters, setQuery, setSortBy, setSortAsc, submit]
+  );
+
+  const tapRecentSearch = useCallback(
+    (q: string) => {
+      setQuery(q);
+      // Re-tapping a recent search re-runs the search immediately —
+      // the user has already expressed intent in a prior session.
+      submit(q);
+      void addRecentSearch(q);
+      inputRef.current?.blur();
+    },
+    [setQuery, submit]
+  );
+
+  const onSubmit = useCallback(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return;
+    submit(trimmed);
+    void addRecentSearch(trimmed);
+    inputRef.current?.blur();
+  }, [query, submit]);
+
+  const trimmedQuery = query.trim();
+  // Active filters or a submitted text are enough to drive results.
+  // Otherwise the discover-style landing stays put.
+  const hasActiveFilters = filterFragment.length > 0;
+  const showLanding = submittedQuery.length === 0 && !hasActiveFilters;
+  const showSuggestions =
+    isFocused && trimmedQuery.length >= 2 && suggestions.length > 0;
+  // Reddit / Google pattern: focused + empty input → drop down the
+  // recent-searches list. The dropdown ALSO surfaces the syntax-guide
+  // entry, so we open it even when there are no recents yet (new users
+  // benefit most from discovering the operator catalog).
+  const showRecentsDropdown = isFocused && trimmedQuery.length === 0;
+
+  // When the user returns from the syntax-help page after tapping
+  // "Try this query", load + run that query in the input. Module-level
+  // stash since this is a tabs root and we can't pass params back.
+  useFocusEffect(
+    useCallback(() => {
+      const pending = consumePendingSyntaxQuery();
+      if (pending) {
+        setQuery(pending);
+        submit(pending);
+        inputRef.current?.blur();
+      }
+    }, [setQuery, submit])
+  );
+
+  // Persist preview thumbnails + total count for the active recent
+  // search the moment we know the result set. We also write meta when
+  // a query returns ZERO results so the landing UI can decide to hide
+  // those entries (Pinterest-style cards with no thumbnails are ugly
+  // and serve little purpose).
+  useEffect(() => {
+    if (submittedQuery.length < 2 || isLoading) return;
+    const previews = results
+      .slice(0, 4)
+      .map((c) => getCardImageUri(c, 'small'))
+      .filter((u): u is string => !!u);
+    void updateRecentSearchMeta(submittedQuery, previews, totalCards);
+  }, [submittedQuery, results, isLoading, totalCards]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Search</Text>
-        {totalCards > 0 && (
-          <Text style={styles.resultCount}>
-            {totalCards.toLocaleString()} results
-          </Text>
-        )}
+        <View style={styles.headerRight}>
+          {/* Discreet inline spinner — small, color.primary, sits next
+              to the count rather than replacing it. Count stays put
+              once we have any results so the user always sees the
+              cardinality even during pagination loads. */}
+          {searchView === 'cards' && isLoading && (
+            <ActivityIndicator size="small" color={colors.primary} />
+          )}
+          {searchView === 'cards' && totalCards > 0 && (
+            <Text style={styles.resultCount}>
+              {totalCards.toLocaleString()} results
+            </Text>
+          )}
+        </View>
       </View>
 
-      <View style={styles.searchBarContainer}>
-        <SearchBar
-          value={query}
-          onChangeText={setQuery}
-          onClear={clear}
-          placeholder="Search cards..."
-        />
+      {/* Cards | Sets segmented — top-level switch between the search
+          experience and the browseable set catalog. Sticky just below
+          the title so the user always knows which mode they're in. */}
+      <View style={styles.viewSegment}>
+        {(['cards', 'sets'] as const).map((view) => {
+          const active = searchView === view;
+          return (
+            <TouchableOpacity
+              key={view}
+              style={[styles.viewSeg, active && styles.viewSegActive]}
+              onPress={() => setSearchView(view)}
+              activeOpacity={0.6}
+            >
+              <Ionicons
+                name={view === 'cards' ? 'search' : 'albums-outline'}
+                size={14}
+                color={active ? colors.primary : colors.textMuted}
+              />
+              <Text
+                style={[styles.viewSegLabel, active && styles.viewSegLabelActive]}
+              >
+                {view === 'cards' ? 'Cards' : 'Sets'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
+
+      {searchView === 'sets' ? (
+        <SetsBrowser onSelectSet={handleSelectSet} />
+      ) : (
+        <>
+      <SearchToolbar
+        ref={inputRef}
+        query={query}
+        onChangeQuery={setQuery}
+        onClear={clear}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        onSubmit={onSubmit}
+        viewMode={viewMode}
+        onToggleView={() => setViewMode(nextViewMode(viewMode))}
+        onSortPress={() => setShowSort(true)}
+        onFilterPress={() => router.push('/search/filters')}
+        activeFilters={activeFilterCount}
+        onAiPress={() => setShowAi(true)}
+        size={toolbarSize}
+        fieldSquareBottom={showSuggestions}
+      />
+
+      <SyntaxChips clauses={syntaxClauses} onRemove={handleRemoveClause} />
 
       {error && (
         <View style={styles.errorContainer}>
@@ -67,47 +364,78 @@ export default function SearchScreen() {
         </View>
       )}
 
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        onEndReached={hasMore ? loadMore : undefined}
-        onEndReachedThreshold={0.3}
-        initialNumToRender={12}
-        windowSize={7}
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={50}
-        removeClippedSubviews={true}
-        ListEmptyComponent={
-          !isLoading && query.length >= 2 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <Ionicons name="search" size={32} color={colors.textMuted} />
-              </View>
-              <Text style={styles.emptyText}>No cards found</Text>
-            </View>
-          ) : query.length < 2 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <Ionicons name="sparkles-outline" size={32} color={colors.textMuted} />
-              </View>
-              <Text style={styles.emptyText}>Search for any Magic card</Text>
-              <Text style={styles.emptyHint}>
-                Try a card name, type, or set
-              </Text>
-            </View>
-          ) : null
-        }
-        ListFooterComponent={
-          isLoading ? (
-            <ActivityIndicator
-              size="small"
-              color={colors.primary}
-              style={styles.loader}
+      {/* Wrap content + suggestions overlay in a relative container so
+          the dropdown floats ABOVE the landing / results instead of
+          pushing them down. */}
+      <View style={styles.body}>
+        {showLanding ? (
+          <SearchEmptyState
+            recentSearches={recentSearches}
+            recentlyViewed={recentlyViewed}
+            trendingCards={trendingCards}
+            latestSetName={latestSet.setName}
+            latestSetCards={latestSet.cards}
+            aiChips={AI_SUGGESTION_CHIPS}
+            onTapSearch={tapRecentSearch}
+            onRemoveSearch={removeRecentSearch}
+            onClearSearches={clearRecentSearches}
+            onTapCard={goToRecentCard}
+            onTapDiscoverCard={goToCard}
+            onTapAiChip={tapAiChip}
+          />
+        ) : (
+          <SearchResults
+            results={filteredResults}
+            viewMode={viewMode}
+            cardsPerRow={cardsPerRow}
+            isLoading={isLoading}
+            hasMore={hasMore}
+            onLoadMore={loadMore}
+            onPress={goToCard}
+            isEmpty={filteredResults.length === 0}
+          />
+        )}
+
+        {showSuggestions && (
+          <View style={styles.suggestionsOverlay} pointerEvents="box-none">
+            <SearchSuggestionsList
+              suggestions={suggestions}
+              onSelect={submitFromSuggestion}
             />
-          ) : null
-        }
+          </View>
+        )}
+
+        {showRecentsDropdown && !showSuggestions && (
+          <View style={styles.suggestionsOverlay} pointerEvents="box-none">
+            <RecentSearchesDropdown
+              items={recentSearches}
+              onSelect={tapRecentSearch}
+              onRemove={removeRecentSearch}
+              onOpenSyntaxGuide={() => {
+                inputRef.current?.blur();
+                router.push('/search/syntax-help');
+              }}
+            />
+          </View>
+        )}
+      </View>
+        </>
+      )}
+
+      <SortSheet
+        visible={showSort}
+        currentSort={sortBy}
+        ascending={sortAsc}
+        onSelect={(s) => { setSortBy(s); setShowSort(false); }}
+        onToggleDirection={() => setSortAsc(!sortAsc)}
+        onClose={() => setShowSort(false)}
+        options={SEARCH_SORT_OPTIONS}
+      />
+
+      <AiSearchSheet
+        visible={showAi}
+        onClose={() => setShowAi(false)}
+        onApply={handleAiApply}
       />
     </View>
   );
@@ -135,37 +463,56 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.sm,
   },
-  searchBarContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+  body: {
+    flex: 1,
+    position: 'relative',
   },
-  list: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
+  suggestionsOverlay: {
+    position: 'absolute',
+    // The toolbar's bottom padding is `spacing.sm`; pulling the
+    // dropdown up by the same amount makes its top edge touch the
+    // bottom edge of the search field above.
+    top: -spacing.sm,
+    left: spacing.lg,
+    right: spacing.lg,
+    zIndex: 10,
+    elevation: 10,
   },
-  emptyContainer: {
+  headerRight: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 80,
+    gap: spacing.sm,
+    minHeight: 20,
   },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  viewSegment: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
     backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+    padding: 2,
+    marginBottom: spacing.sm,
+  },
+  viewSeg: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm - 2,
   },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.lg,
+  viewSegActive: {
+    backgroundColor: colors.surface,
+    ...shadows.sm,
+  },
+  viewSegLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
-  emptyHint: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
-    marginTop: spacing.xs,
+  viewSegLabelActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   errorContainer: {
     flexDirection: 'row',
@@ -181,8 +528,5 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: fontSize.sm,
     flex: 1,
-  },
-  loader: {
-    paddingVertical: spacing.lg,
   },
 });

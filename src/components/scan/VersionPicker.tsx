@@ -75,7 +75,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     setFilter('');
     setFullscreen(false);
     pageRef.current = 1;
-    searchCards(`!"${cardName}" unique:prints`, 1)
+    searchCards(`!"${cardName}" unique:prints`, { page: 1 })
       .then((result) => {
         const cards = result?.data ?? [];
         setVersions(cards);
@@ -89,7 +89,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
     const nextPage = pageRef.current + 1;
-    searchCards(`!"${cardName}" unique:prints`, nextPage)
+    searchCards(`!"${cardName}" unique:prints`, { page: nextPage })
       .then((result) => {
         const cards = result?.data ?? [];
         pageRef.current = nextPage;
@@ -109,7 +109,7 @@ export function VersionPicker({ visible, cardName, currentId, onSelect, onClose 
       return;
     }
     setIsLoadingSet(true);
-    searchCards(`!"${cardName}" set:${selectedSet} unique:prints`, 1)
+    searchCards(`!"${cardName}" set:${selectedSet} unique:prints`, { page: 1 })
       .then((result) => {
         setSetFilteredVersions(result?.data ?? []);
       })

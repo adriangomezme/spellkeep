@@ -80,7 +80,7 @@ function colorSortKey(colors: string[]): number {
   return COLOR_ORDER[colors[0]] ?? 10;
 }
 
-function parseColorIdentity(ci: string[] | string | null): string[] {
+export function parseColorIdentity(ci: string[] | string | null): string[] {
   if (!ci) return [];
   if (typeof ci === 'string') {
     try { return JSON.parse(ci); } catch { return []; }
@@ -90,7 +90,7 @@ function parseColorIdentity(ci: string[] | string | null): string[] {
 
 // Same JSON-or-array shape as parseColorIdentity. Kept named separately
 // so the call sites read intent (mana-cost colors vs identity).
-function parseColors(c: string[] | string | null | undefined): string[] {
+export function parseColors(c: string[] | string | null | undefined): string[] {
   if (!c) return [];
   if (typeof c === 'string') {
     try { return JSON.parse(c); } catch { return []; }
@@ -110,7 +110,7 @@ function parseColors(c: string[] | string | null | undefined): string[] {
  * ({W, C} → mono-W cards plus colorless cards). In `lte` it is
  * naturally included since the empty set is a subset of anything.
  */
-function matchColorSet(
+export function matchColorSet(
   cardColors: string[],
   selected: string[],
   mode: 'gte' | 'eq' | 'lte',

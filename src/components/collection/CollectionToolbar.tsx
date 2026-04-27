@@ -1,7 +1,9 @@
+import { useRef } from 'react';
 import {
   View,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   type TextStyle,
   type ViewStyle,
@@ -35,9 +37,9 @@ type Metrics = {
 };
 
 const METRICS: Record<ToolbarSize, Metrics> = {
-  small:  { controlHeight: 36, iconBtn: 36, searchIcon: 16, actionIcon: 18, badgeOffset: 6, badgeSize: 6, searchFontSize: fontSize.sm },
-  medium: { controlHeight: 40, iconBtn: 40, searchIcon: 17, actionIcon: 20, badgeOffset: 6, badgeSize: 7, searchFontSize: fontSize.sm },
-  large:  { controlHeight: 44, iconBtn: 44, searchIcon: 18, actionIcon: 22, badgeOffset: 7, badgeSize: 7, searchFontSize: fontSize.md },
+  small:  { controlHeight: 36, iconBtn: 36, searchIcon: 16, actionIcon: 18, badgeOffset: 6, badgeSize: 6, searchFontSize: fontSize.md },
+  medium: { controlHeight: 40, iconBtn: 40, searchIcon: 17, actionIcon: 20, badgeOffset: 6, badgeSize: 7, searchFontSize: fontSize.md },
+  large:  { controlHeight: 44, iconBtn: 44, searchIcon: 18, actionIcon: 22, badgeOffset: 7, badgeSize: 7, searchFontSize: fontSize.lg },
 };
 
 /**
@@ -98,6 +100,7 @@ export function CollectionToolbar({
   size = 'small',
 }: Props) {
   const m = METRICS[size];
+  const inputRef = useRef<TextInput | null>(null);
   const searchFieldStyle: ViewStyle = { ...styles.searchField, height: m.controlHeight };
   const searchInputStyle: TextStyle = { ...styles.searchInput, fontSize: m.searchFontSize };
   const iconButtonStyle: ViewStyle = {
@@ -117,9 +120,14 @@ export function CollectionToolbar({
   return (
     <View style={styles.container}>
       <View style={styles.searchRow}>
-        <View style={searchFieldStyle}>
+        {/* The pill is taller than the TextInput's intrinsic height, so
+            a tap on the gray padding around the text used to do nothing.
+            Wrapping in a Pressable that focuses the input on tap makes
+            the whole pill the active target. */}
+        <Pressable style={searchFieldStyle} onPress={() => inputRef.current?.focus()}>
           <Ionicons name="search" size={m.searchIcon} color={colors.textMuted} />
           <TextInput
+            ref={inputRef}
             style={searchInputStyle}
             placeholder="Search cards..."
             placeholderTextColor={colors.textMuted}
@@ -134,7 +142,7 @@ export function CollectionToolbar({
               <Ionicons name="close-circle" size={m.searchIcon} color={colors.textMuted} />
             </TouchableOpacity>
           )}
-        </View>
+        </Pressable>
 
         <TouchableOpacity style={iconButtonStyle} onPress={onSortPress} activeOpacity={0.6}>
           <Ionicons name="swap-vertical" size={m.actionIcon} color={colors.text} />

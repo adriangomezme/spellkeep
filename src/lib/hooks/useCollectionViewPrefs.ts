@@ -43,23 +43,40 @@ const DEFAULTS: Prefs = {
   toolbarSize: 'small',
 };
 
+// Module-level cache + pub/sub so a write from one screen (e.g.
+// /profile/grid) propagates to every other mounted hook instance
+// (Search tab, Owned, binder detail, ...) in the same render tick.
+// Without this, the per-screen useState only updated on app restart.
+let cache: Prefs | null = null;
 let inFlightLoad: Promise<Prefs> | null = null;
+const subscribers = new Set<(p: Prefs) => void>();
+
+function notify() {
+  if (cache == null) return;
+  for (const cb of subscribers) cb(cache);
+}
 
 async function loadPrefs(): Promise<Prefs> {
+  if (cache) return cache;
   if (inFlightLoad) return inFlightLoad;
   inFlightLoad = (async () => {
     try {
       const raw = await AsyncStorage.getItem(KEY);
-      if (!raw) return DEFAULTS;
+      if (!raw) {
+        cache = DEFAULTS;
+        return DEFAULTS;
+      }
       const parsed = JSON.parse(raw) as Partial<Prefs>;
-      return {
+      cache = {
         viewMode: parsed.viewMode ?? DEFAULTS.viewMode,
         sortBy: parsed.sortBy ?? DEFAULTS.sortBy,
         sortAsc: typeof parsed.sortAsc === 'boolean' ? parsed.sortAsc : DEFAULTS.sortAsc,
         cardsPerRow: coerceCardsPerRow(parsed.cardsPerRow),
         toolbarSize: coerceToolbarSize(parsed.toolbarSize),
       };
+      return cache;
     } catch {
+      cache = DEFAULTS;
       return DEFAULTS;
     } finally {
       inFlightLoad = null;
@@ -69,6 +86,8 @@ async function loadPrefs(): Promise<Prefs> {
 }
 
 async function savePrefs(prefs: Prefs): Promise<void> {
+  cache = prefs;
+  notify();
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(prefs));
   } catch (err) {
@@ -76,21 +95,17 @@ async function savePrefs(prefs: Prefs): Promise<void> {
   }
 }
 
-/**
- * View + sort preferences shared across binder / list / owned detail.
- * Hydrates from AsyncStorage on first use; subsequent setters persist
- * the change back. `isHydrated` lets callers gate "first paint uses
- * saved layout" if they want, but most screens can just use the values
- * — the initial flash (default → saved) happens in a single frame for
- * a warm cache.
- */
 export function useCollectionViewPrefs() {
-  const [prefs, setPrefs] = useState<Prefs>(DEFAULTS);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [prefs, setPrefs] = useState<Prefs>(cache ?? DEFAULTS);
+  const [isHydrated, setIsHydrated] = useState(cache != null);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
+    const cb = (next: Prefs) => {
+      if (mounted.current) setPrefs(next);
+    };
+    subscribers.add(cb);
     loadPrefs().then((loaded) => {
       if (!mounted.current) return;
       setPrefs(loaded);
@@ -98,47 +113,28 @@ export function useCollectionViewPrefs() {
     });
     return () => {
       mounted.current = false;
+      subscribers.delete(cb);
     };
   }, []);
 
   const setViewMode = useCallback((v: ViewMode) => {
-    setPrefs((p) => {
-      const next = { ...p, viewMode: v };
-      savePrefs(next);
-      return next;
-    });
+    void savePrefs({ ...(cache ?? DEFAULTS), viewMode: v });
   }, []);
 
   const setSortBy = useCallback((s: SortOption) => {
-    setPrefs((p) => {
-      const next = { ...p, sortBy: s };
-      savePrefs(next);
-      return next;
-    });
+    void savePrefs({ ...(cache ?? DEFAULTS), sortBy: s });
   }, []);
 
   const setSortAsc = useCallback((asc: boolean) => {
-    setPrefs((p) => {
-      const next = { ...p, sortAsc: asc };
-      savePrefs(next);
-      return next;
-    });
+    void savePrefs({ ...(cache ?? DEFAULTS), sortAsc: asc });
   }, []);
 
   const setCardsPerRow = useCallback((n: CardsPerRow) => {
-    setPrefs((p) => {
-      const next = { ...p, cardsPerRow: n };
-      savePrefs(next);
-      return next;
-    });
+    void savePrefs({ ...(cache ?? DEFAULTS), cardsPerRow: n });
   }, []);
 
   const setToolbarSize = useCallback((s: ToolbarSize) => {
-    setPrefs((p) => {
-      const next = { ...p, toolbarSize: s };
-      savePrefs(next);
-      return next;
-    });
+    void savePrefs({ ...(cache ?? DEFAULTS), toolbarSize: s });
   }, []);
 
   return {

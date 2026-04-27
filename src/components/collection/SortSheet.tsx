@@ -12,9 +12,21 @@ export type SortOption =
   | 'rarity'
   | 'collector_number'
   | 'set_code'
-  | 'set_name';
+  | 'set_name'
+  | 'edhrec_rank';
 
-const SORT_OPTIONS: { key: SortOption; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+export type SortOptionDef = {
+  key: SortOption;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+};
+
+/**
+ * Default options used by Owned / binder / list. The Search tab passes
+ * its own list (relabeled `added` → "Release Date" + extra
+ * `edhrec_rank`) — see SEARCH_SORT_OPTIONS in app/(tabs)/search.tsx.
+ */
+export const COLLECTION_SORT_OPTIONS: SortOptionDef[] = [
   { key: 'added', label: 'Last Added', icon: 'time-outline' },
   { key: 'name', label: 'Name', icon: 'text-outline' },
   { key: 'mana_value', label: 'Mana Value', icon: 'flame-outline' },
@@ -33,9 +45,18 @@ type Props = {
   onSelect: (sort: SortOption) => void;
   onToggleDirection: () => void;
   onClose: () => void;
+  options?: SortOptionDef[];
 };
 
-export function SortSheet({ visible, currentSort, ascending, onSelect, onToggleDirection, onClose }: Props) {
+export function SortSheet({
+  visible,
+  currentSort,
+  ascending,
+  onSelect,
+  onToggleDirection,
+  onClose,
+  options = COLLECTION_SORT_OPTIONS,
+}: Props) {
   return (
     <BottomSheet visible={visible} onClose={onClose} snapPoints={['55%']}>
       <View style={styles.header}>
@@ -50,7 +71,7 @@ export function SortSheet({ visible, currentSort, ascending, onSelect, onToggleD
         </TouchableOpacity>
       </View>
 
-      {SORT_OPTIONS.map((option) => {
+      {options.map((option) => {
         const isActive = currentSort === option.key;
         return (
           <TouchableOpacity

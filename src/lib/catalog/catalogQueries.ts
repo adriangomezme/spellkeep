@@ -126,25 +126,102 @@ export async function autocompleteNames(prefix: string, limit = 20): Promise<str
  * A card like Lightning Bolt has ~15 unique illustrations across 80+
  * printings; this surfaces those 15 variants, most-played first.
  */
-export async function searchByName(query: string, limit = 175): Promise<ScryfallCard[]> {
+// Scryfall hides these layouts from default search results — they're
+// not "real" cards in the gameplay sense (tokens, planar/scheme/etc).
+// Mirroring this exclusion is what brings local result counts in line
+// with scryfall.com. Listed inline rather than in a constant because
+// SQLite IN-clause needs literal placeholders.
+const HIDDEN_LAYOUTS_SQL = `'art_series','token','double_faced_token','emblem','planar','scheme','vanguard'`;
+
+/**
+ * Build a `name LIKE` clause per word so a query like
+ * "wooded foothill" matches cards whose name contains BOTH words —
+ * matching Scryfall's tokenized name search instead of a strict
+ * adjacent-substring match.
+ */
+function tokenizedNameClauses(query: string): { sql: string; params: string[] } {
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  const sql = tokens.map(() => `name LIKE ? COLLATE NOCASE`).join(' AND ');
+  const params = tokens.map((t) => `%${t}%`);
+  return { sql, params };
+}
+
+export async function searchByName(query: string, limit = 5000): Promise<ScryfallCard[]> {
   if (!query || query.length < 2) return [];
+  const tok = tokenizedNameClauses(query);
+  // English-only + no exotic layouts brings counts to parity with
+  // Scryfall's default browse. Inner subquery picks the newest
+  // printing per illustration_id (one row per art).
   return queryMany(
     `SELECT c.* FROM cards c
      INNER JOIN (
        SELECT illustration_id, MAX(released_at) as latest
        FROM cards
-       WHERE name LIKE ? COLLATE NOCASE AND illustration_id IS NOT NULL
+       WHERE ${tok.sql.replace(/name LIKE/g, 'cards.name LIKE')}
+         AND illustration_id IS NOT NULL
+         AND lang = 'en'
+         AND layout NOT IN (${HIDDEN_LAYOUTS_SQL})
        GROUP BY illustration_id
      ) latest_art
        ON c.illustration_id = latest_art.illustration_id
       AND (c.released_at = latest_art.latest OR latest_art.latest IS NULL)
-     WHERE c.name LIKE ? COLLATE NOCASE
+     WHERE ${tok.sql.replace(/name LIKE/g, 'c.name LIKE')}
+       AND c.lang = 'en'
+       AND c.layout NOT IN (${HIDDEN_LAYOUTS_SQL})
+     GROUP BY c.illustration_id
      ORDER BY
        CASE WHEN c.edhrec_rank IS NULL THEN 1 ELSE 0 END,
        c.edhrec_rank ASC,
+       c.released_at DESC,
+       c.set_code ASC,
+       CAST(c.collector_number AS INTEGER) ASC,
+       c.collector_number ASC,
        c.name ASC
      LIMIT ?`,
-    [`%${query}%`, `%${query}%`, limit]
+    [...tok.params, ...tok.params, limit]
+  );
+}
+
+/**
+ * Like `searchByName`, but dedupes at the oracle_id level (one row per
+ * card concept) instead of per illustration. Matches Scryfall's
+ * `unique=cards` mode — used by the Search tab so a query for
+ * "Lightning" returns one row per card, not 15 illustrations of
+ * Lightning Bolt clustered together.
+ *
+ * Picks the newest printing per oracle_id, ordered by EDHREC rank
+ * (most-played first) then name.
+ */
+export async function searchByNameUniqueCards(query: string, limit = 5000): Promise<ScryfallCard[]> {
+  if (!query || query.length < 2) return [];
+  const tok = tokenizedNameClauses(query);
+  return queryMany(
+    `SELECT c.* FROM cards c
+     INNER JOIN (
+       SELECT oracle_id, MAX(released_at) as latest
+       FROM cards
+       WHERE ${tok.sql.replace(/name LIKE/g, 'cards.name LIKE')}
+         AND oracle_id IS NOT NULL
+         AND lang = 'en'
+         AND layout NOT IN (${HIDDEN_LAYOUTS_SQL})
+       GROUP BY oracle_id
+     ) latest_oracle
+       ON c.oracle_id = latest_oracle.oracle_id
+      AND (c.released_at = latest_oracle.latest OR latest_oracle.latest IS NULL)
+     WHERE ${tok.sql.replace(/name LIKE/g, 'c.name LIKE')}
+       AND c.lang = 'en'
+       AND c.layout NOT IN (${HIDDEN_LAYOUTS_SQL})
+     GROUP BY c.oracle_id
+     ORDER BY
+       CASE WHEN c.edhrec_rank IS NULL THEN 1 ELSE 0 END,
+       c.edhrec_rank ASC,
+       c.released_at DESC,
+       c.set_code ASC,
+       CAST(c.collector_number AS INTEGER) ASC,
+       c.collector_number ASC,
+       c.name ASC
+     LIMIT ?`,
+    [...tok.params, ...tok.params, limit]
   );
 }
 
@@ -446,6 +523,13 @@ function rowToScryfallCard(row: any): ScryfallCard {
     legalities: {},
     released_at: row.released_at ?? '',
     layout: row.layout ?? '',
+    edhrec_rank: row.edhrec_rank != null ? Number(row.edhrec_rank) : null,
+    frame_effects: parseJsonArray<string>(row.frame_effects) ?? undefined,
+    border_color: row.border_color ?? undefined,
+    promo_types: parseJsonArray<string>(row.promo_types) ?? undefined,
+    finishes: parseJsonArray<string>(row.finishes) ?? undefined,
+    full_art: row.full_art != null ? !!Number(row.full_art) : undefined,
+    promo: row.promo != null ? !!Number(row.promo) : undefined,
   };
 }
 

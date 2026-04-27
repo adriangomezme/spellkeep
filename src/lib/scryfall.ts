@@ -21,6 +21,7 @@ import {
   findPrintsByOracleId as localFindPrintsByOracleId,
   isCatalogReady,
   searchByName as localSearchByName,
+  searchByNameUniqueCards as localSearchByNameUniqueCards,
 } from './catalog/catalogQueries';
 
 const BASE_URL = 'https://api.scryfall.com';
@@ -78,6 +79,15 @@ export type ScryfallCard = {
   produced_mana?: string[];
   finishes?: string[];
   prints_search_uri?: string;
+  edhrec_rank?: number | null;
+  // ── Set-grouping metadata (added 2026-04-27) ──
+  // Older snapshots don't carry these; consumers handle null safely.
+  // `finishes` already exists above; the other fields are new.
+  frame_effects?: string[];
+  border_color?: string;
+  promo_types?: string[];
+  full_art?: boolean;
+  promo?: boolean;
 };
 
 export type ScryfallSearchResult = {
@@ -117,6 +127,29 @@ export async function autocomplete(query: string): Promise<string[]> {
   }
 }
 
+export type SearchSortKey =
+  | 'name'
+  | 'released'
+  | 'cmc'
+  | 'usd'
+  | 'color'
+  | 'rarity'
+  | 'set'
+  | 'edhrec';
+
+export type SearchUniqueMode = 'prints' | 'cards' | 'art';
+
+export type SearchOptions = {
+  page?: number;
+  sortKey?: SearchSortKey;
+  sortAsc?: boolean;
+  /** `prints` (default) returns every printing — what the version
+   *  picker / scan flow needs. `cards` collapses by oracle_id so a
+   *  search for "Lightning Bolt" returns one row, matching Scryfall's
+   *  default browse view. */
+  unique?: SearchUniqueMode;
+};
+
 /**
  * Search cards with full Scryfall query syntax.
  *
@@ -124,32 +157,91 @@ export async function autocomplete(query: string): Promise<string[]> {
  * oracle_id, so a search for "Lightning Bolt" surfaces all 80+
  * versions instead of just one.
  */
+/**
+ * Search routing rules:
+ *
+ *  1. Try Scryfall first (with a short timeout). When the device is
+ *     online, this guarantees the result set + ordering are 1:1 with
+ *     scryfall.com — the canonical source of truth that users compare
+ *     against.
+ *  2. If the remote call fails (offline / 5xx / timeout), fall back to
+ *     the local `catalog.db` snapshot. The local query is a close
+ *     approximation but cannot reproduce Scryfall's full ranking logic
+ *     for ties, especially in `unique=cards` mode where Scryfall picks
+ *     a canonical print using internal metadata we don't carry.
+ *  3. Empty `total_cards` from Scryfall is a legitimate "no results"
+ *     and is returned directly — we do NOT fall back to local in that
+ *     case, otherwise the local catalog might surface stale matches
+ *     for queries Scryfall has updated to filter out.
+ */
+const REMOTE_TIMEOUT_MS = 6000;
+
 export async function searchCards(
   query: string,
-  page = 1
+  opts: SearchOptions = {}
 ): Promise<ScryfallSearchResult | null> {
   if (query.length < 2) return null;
+  const page = opts.page ?? 1;
+  const unique = opts.unique ?? 'prints';
+
+  // Remote first — this is the only way to get true 1:1 parity with
+  // scryfall.com. `null` from the helper means "request failed for an
+  // infrastructure reason"; we then try local. A successful response
+  // (including zero results) short-circuits.
+  const remote = await fetchRemoteSearch(query, page, opts.sortKey, opts.sortAsc, unique);
+  if (remote !== null) return remote;
 
   if (await isCatalogReady()) {
-    const local = await tryLocalSearch(query, page);
+    const local = await tryLocalSearch(query, page, opts.sortKey, opts.sortAsc, unique);
     if (local) return local;
   }
 
-  return fetchRemoteSearch(query, page);
+  return null;
 }
 
-async function fetchRemoteSearch(query: string, page: number): Promise<ScryfallSearchResult | null> {
+async function fetchRemoteSearch(
+  query: string,
+  page: number,
+  sortKey?: SearchSortKey,
+  sortAsc?: boolean,
+  unique: SearchUniqueMode = 'prints'
+): Promise<ScryfallSearchResult | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS);
   try {
-    const response = await fetch(
-      `${BASE_URL}/cards/search?q=${encodeURIComponent(query)}&page=${page}&unique=prints`
-    );
-    if (!response.ok) {
-      if (response.status === 404) return null;
-      throw new Error(`Scryfall search error: ${response.status}`);
+    const params = [
+      `q=${encodeURIComponent(query)}`,
+      `page=${page}`,
+      `unique=${unique}`,
+    ];
+    if (sortKey) {
+      params.push(`order=${sortKey}`);
+      params.push(`dir=${sortAsc ? 'asc' : 'desc'}`);
     }
-    return response.json();
+    const response = await fetch(`${BASE_URL}/cards/search?${params.join('&')}`, {
+      signal: controller.signal,
+    });
+    // 404 from Scryfall = "no cards match" — that's a legitimate empty
+    // result, not a transport failure, so surface it as such instead of
+    // triggering the local fallback path.
+    if (response.status === 404) {
+      return {
+        object: 'list',
+        total_cards: 0,
+        has_more: false,
+        data: [],
+      };
+    }
+    if (!response.ok) {
+      // 5xx and other transport-level failures fall back to local.
+      return null;
+    }
+    return await response.json();
   } catch {
+    // Network error / abort / timeout — caller falls back to local.
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -159,7 +251,13 @@ const PAGE_SIZE = 175; // matches Scryfall's page size for compat
  * Tries to answer a Scryfall-syntax query from the local catalog. Returns
  * null if the pattern isn't one we handle locally (caller falls back to API).
  */
-async function tryLocalSearch(query: string, page: number): Promise<ScryfallSearchResult | null> {
+async function tryLocalSearch(
+  query: string,
+  page: number,
+  sortKey?: SearchSortKey,
+  sortAsc?: boolean,
+  unique: SearchUniqueMode = 'prints'
+): Promise<ScryfallSearchResult | null> {
   const parsed = parseScryfallQuery(query);
   if (!parsed) return null;
 
@@ -176,10 +274,27 @@ async function tryLocalSearch(query: string, page: number): Promise<ScryfallSear
     const hit = await localFindCardByName(parsed.name);
     results = hit ? [hit] : [];
   } else if (parsed.freeText) {
-    results = await localSearchByName(parsed.freeText, PAGE_SIZE);
+    // Fetch up to 5000 matches in one shot, then paginate the in-memory
+    // array below. The PAGE_SIZE cap was clamping users to 175 results
+    // even when the universe had thousands (e.g. "sol" → 304 unique
+    // arts on Scryfall).
+    //
+    // Routing by unique mode:
+    //   - 'cards'  → collapse by oracle_id (one row per card concept).
+    //   - 'art'    → collapse by illustration_id (one row per artwork)
+    //                — Scryfall's default browse behavior, used by Search.
+    //   - 'prints' → fall back to art-level for free text since there
+    //                is no per-print free-text path locally.
+    results = unique === 'cards'
+      ? await localSearchByNameUniqueCards(parsed.freeText, 5000)
+      : await localSearchByName(parsed.freeText, 5000);
   }
 
   if (!results) return null;
+
+  if (sortKey) {
+    sortLocalResults(results, sortKey, sortAsc ?? true);
+  }
 
   // Paginate to match Scryfall's shape
   const start = (page - 1) * PAGE_SIZE;
@@ -190,6 +305,102 @@ async function tryLocalSearch(query: string, page: number): Promise<ScryfallSear
     has_more: start + slice.length < results.length,
     data: slice,
   };
+}
+
+const RARITY_RANK: Record<string, number> = {
+  common: 0,
+  uncommon: 1,
+  rare: 2,
+  mythic: 3,
+  special: 4,
+  bonus: 4,
+};
+
+function priceNum(card: ScryfallCard): number | null {
+  const raw = card.prices?.usd ?? card.prices?.usd_foil ?? card.prices?.usd_etched;
+  if (!raw) return null;
+  const n = parseFloat(raw);
+  return isFinite(n) ? n : null;
+}
+
+/**
+ * Compare two values such that nulls/undefined ALWAYS sort to the end,
+ * regardless of ascending/descending direction. Used for sort keys
+ * where "missing data" should never crowd the top of the list (price,
+ * EDHREC rank).
+ */
+function nullsLast<T>(a: T | null | undefined, b: T | null | undefined, dir: 1 | -1, cmp: (a: T, b: T) => number): number {
+  const aMissing = a == null;
+  const bMissing = b == null;
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  // dir is applied here so the natural compare flips, but the
+  // missing-goes-last preference above is direction-independent.
+  return cmp(a as T, b as T) * dir;
+}
+
+function sortLocalResults(results: ScryfallCard[], key: SearchSortKey, asc: boolean): void {
+  const dir: 1 | -1 = asc ? 1 : -1;
+  results.sort((a, b) => {
+    let cmp = 0;
+    switch (key) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name) * dir;
+        break;
+      case 'cmc':
+        cmp = ((a.cmc ?? 0) - (b.cmc ?? 0)) * dir;
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+      case 'usd':
+        cmp = nullsLast(priceNum(a), priceNum(b), dir, (x, y) => x - y);
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+      case 'color': {
+        const ca = (a.color_identity ?? []).length;
+        const cb = (b.color_identity ?? []).length;
+        cmp = (ca - cb) * dir;
+        if (cmp === 0) cmp = (a.color_identity ?? []).join('').localeCompare((b.color_identity ?? []).join('')) * dir;
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+      }
+      case 'rarity':
+        cmp = ((RARITY_RANK[a.rarity] ?? -1) - (RARITY_RANK[b.rarity] ?? -1)) * dir;
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+      case 'released':
+        cmp = (a.released_at ?? '').localeCompare(b.released_at ?? '') * dir;
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+      case 'set': {
+        cmp = (a.set ?? '').localeCompare(b.set ?? '') * dir;
+        if (cmp === 0) {
+          const na = parseInt(a.collector_number, 10);
+          const nb = parseInt(b.collector_number, 10);
+          if (!isNaN(na) && !isNaN(nb)) cmp = (na - nb) * dir;
+          else cmp = (a.collector_number ?? '').localeCompare(b.collector_number ?? '') * dir;
+        }
+        break;
+      }
+      case 'edhrec':
+        cmp = nullsLast(a.edhrec_rank ?? null, b.edhrec_rank ?? null, dir, (x, y) => x - y);
+        // Match Scryfall's secondary ordering as closely as we can
+        // without their internal tiebreaker: most recent set first,
+        // then set code, then numeric collector number ASC, then
+        // alphabetical. Mirrors the SQL ORDER BY in catalogQueries.
+        if (cmp === 0) cmp = (b.released_at ?? '').localeCompare(a.released_at ?? '');
+        if (cmp === 0) cmp = (a.set ?? '').localeCompare(b.set ?? '');
+        if (cmp === 0) {
+          const na = parseInt(a.collector_number, 10);
+          const nb = parseInt(b.collector_number, 10);
+          if (!isNaN(na) && !isNaN(nb)) cmp = na - nb;
+          else cmp = (a.collector_number ?? '').localeCompare(b.collector_number ?? '');
+        }
+        if (cmp === 0) cmp = a.name.localeCompare(b.name);
+        break;
+    }
+    return cmp;
+  });
 }
 
 type ParsedQuery = {
@@ -331,4 +542,13 @@ export function formatUSD(value: number | string | null | undefined): string {
 /** Legacy alias retained for back-compat with existing call sites. */
 export function formatPrice(price?: string): string {
   return formatUSD(price);
+}
+
+/**
+ * Best-effort display price for a card: prefers normal USD, then foil,
+ * then etched. Returns the raw string so callers can pipe through
+ * `formatUSD` themselves (or a custom format).
+ */
+export function pickAnyPrice(card: ScryfallCard): string | undefined {
+  return card.prices?.usd ?? card.prices?.usd_foil ?? card.prices?.usd_etched;
 }

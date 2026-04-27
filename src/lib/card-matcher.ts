@@ -202,21 +202,21 @@ export async function matchCard(ocrText: string): Promise<ScryfallCard[]> {
   if (collectorNumber) query += ` cn:${collectorNumber}`;
 
   try {
-    const result = await searchCards(query, 1);
+    const result = await searchCards(query, { page: 1 });
     if (result && result.data.length > 0) {
       return result.data.slice(0, 5);
     }
 
     // Fallback: try with just the name (exact match)
     if (setCode || collectorNumber) {
-      const nameOnly = await searchCards(`!"${name}"`, 1);
+      const nameOnly = await searchCards(`!"${name}"`, { page: 1 });
       if (nameOnly && nameOnly.data.length > 0) {
         return nameOnly.data.slice(0, 5);
       }
     }
 
     // Last resort: fuzzy search
-    const fuzzy = await searchCards(name, 1);
+    const fuzzy = await searchCards(name, { page: 1 });
     return fuzzy?.data.slice(0, 5) ?? [];
   } catch {
     return [];
