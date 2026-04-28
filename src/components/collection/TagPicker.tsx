@@ -271,55 +271,67 @@ export function TagPicker({
         >
           {tab === 'add' && (
             <>
-              <Text style={styles.sectionLabel}>Create new</Text>
-              <View style={styles.createRow}>
-                <TextInput
-                  ref={newNameRef}
-                  style={styles.input}
-                  value={newName}
-                  onChangeText={setNewName}
-                  placeholder="Tag name"
-                  placeholderTextColor={colors.textMuted}
-                  returnKeyType="done"
-                  onSubmitEditing={handleCreate}
-                  autoCapitalize="words"
-                  blurOnSubmit={false}
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.createBtn,
-                    (newName.trim().length === 0 || isCreating) && styles.createBtnDisabled,
-                  ]}
-                  onPress={handleCreate}
-                  disabled={newName.trim().length === 0 || isCreating}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                  <Text style={styles.createBtnLabel}>Add</Text>
-                </TouchableOpacity>
-              </View>
-
-              {canChooseScope && (
-                <View style={styles.scopeRow}>
-                  <ScopeToggle
-                    label="Global"
-                    description="Available everywhere"
-                    active={!newScopeLocal}
-                    onPress={() => setNewScopeLocal(false)}
+              <Text style={styles.sectionLabel}>Create new tag</Text>
+              <View style={styles.createCard}>
+                <View style={styles.createRow}>
+                  <TextInput
+                    ref={newNameRef}
+                    style={styles.input}
+                    value={newName}
+                    onChangeText={setNewName}
+                    placeholder="Tag name"
+                    placeholderTextColor={colors.textMuted}
+                    returnKeyType="done"
+                    onSubmitEditing={handleCreate}
+                    autoCapitalize="words"
+                    blurOnSubmit={false}
                   />
-                  <ScopeToggle
-                    label="Only here"
-                    description="Only inside this one"
-                    active={newScopeLocal}
-                    onPress={() => setNewScopeLocal(true)}
-                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.createBtn,
+                      (newName.trim().length === 0 || isCreating) && styles.createBtnDisabled,
+                    ]}
+                    onPress={handleCreate}
+                    disabled={newName.trim().length === 0 || isCreating}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.createBtnLabel}>Add</Text>
+                  </TouchableOpacity>
                 </View>
-              )}
 
-              <View style={styles.colorRow}>
-                <ColorPicker selected={newColor} onSelect={setNewColor} />
+                {canChooseScope && (
+                  <View style={styles.scopeRow}>
+                    <ScopeToggle
+                      label="Global"
+                      description="Available everywhere"
+                      active={!newScopeLocal}
+                      onPress={() => setNewScopeLocal(false)}
+                    />
+                    <ScopeToggle
+                      label="Only here"
+                      description="Only inside this one"
+                      active={newScopeLocal}
+                      onPress={() => setNewScopeLocal(true)}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.colorRow}>
+                  <ColorPicker selected={newColor} onSelect={setNewColor} />
+                </View>
               </View>
+
+              <Text style={styles.sectionHelper}>
+                Or pick from existing tags below to apply them to the selected cards.
+              </Text>
             </>
+          )}
+
+          {tab === 'remove' && (
+            <Text style={styles.sectionHelper}>
+              Select one or multiple tags to remove from the selected cards.
+            </Text>
           )}
 
           {canChooseScope && scopedTags.length > 0 && (
@@ -618,6 +630,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
 
+  /* Create-new card — groups input + scope + colors so the user reads
+   *  it as one decisive block, separate from the "pick existing" list. */
+  createCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm + 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+
+  sectionHelper: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+
   /* Create row */
   createRow: {
     flexDirection: 'row',
@@ -655,7 +686,6 @@ const styles = StyleSheet.create({
   scopeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.lg,
   },
   scopeOption: {
     flex: 1,
@@ -692,7 +722,7 @@ const styles = StyleSheet.create({
   },
 
   colorRow: {
-    marginTop: spacing.lg,
+    marginTop: 0,
   },
 
   /* Empty */

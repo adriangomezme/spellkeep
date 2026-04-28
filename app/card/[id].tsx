@@ -1597,6 +1597,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   sectionTrailing: {
     color: colors.textMuted,
@@ -1723,6 +1724,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
     marginTop: 6,
   },
   priceValueMuted: {
