@@ -856,6 +856,9 @@ export default function CollectionDetailScreen() {
         visible={showActions && !showEditInfo && !showMerge && !showExport && !showImport && !showFolderPicker}
         itemName={collectionName ?? ''}
         itemType={(collectionType as 'binder' | 'list') ?? 'binder'}
+        itemColor={collectionColor}
+        itemCount={totalCards}
+        itemValue={displayValue}
         inFolder={!!collectionFolderId}
         isQuickAddTarget={id === quickAddTargetId}
         hideReorder

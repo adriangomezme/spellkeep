@@ -36,6 +36,7 @@ import {
 } from '../../src/lib/collections.local';
 import { useCollectionsHub } from '../../src/lib/hooks/useCollectionsHub';
 import { useSortPreference } from '../../src/lib/hooks/useSortPreference';
+import { useMarketHeaderPref } from '../../src/lib/hooks/useMarketHeaderPref';
 import { ReorderableListView } from '../../src/components/collection/ReorderableList';
 import { CatalogBadge } from '../../src/components/CatalogBadge';
 import { CollectionListItem } from '../../src/components/collection/CollectionListItem';
@@ -83,6 +84,7 @@ export default function CollectionHubScreen() {
 
   const quickAddTargetId = useQuickAddTargetId();
   const sortPref = useSortPreference();
+  const { enabled: showMarketStats } = useMarketHeaderPref();
   const [reorderSection, setReorderSection] = useState<ReorderSection>(null);
 
   // Action sheet / modals state
@@ -345,57 +347,87 @@ export default function CollectionHubScreen() {
     ? 'Create a binder to organize your cards'
     : 'Create a list for wishlists or trades';
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        {showSearch ? (
-          <View style={styles.searchHeader}>
-            <Ionicons name="search" size={18} color={colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search..."
-              placeholderTextColor={colors.textMuted}
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity onPress={() => { setSearch(''); setShowSearch(false); }}>
-              <Text style={styles.searchCancel}>Cancel</Text>
+  const stickyHeader = showSearch ? (
+    <View style={styles.headerCard}>
+      <View style={[styles.searchHeaderWrap, { paddingTop: insets.top + spacing.md }]}>
+        <View style={styles.searchHeader}>
+          <Ionicons name="search" size={18} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search..."
+            placeholderTextColor={colors.textMuted}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity onPress={() => { setSearch(''); setShowSearch(false); }}>
+            <Text style={styles.searchCancel}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  ) : (
+    <View style={styles.headerCard}>
+      <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerTitle}>Collection</Text>
+          <View style={styles.headerActions}>
+            <CatalogBadge />
+            <TouchableOpacity
+              onPress={() => setShowCreate(true)}
+              style={styles.plusButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add-sharp" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        ) : (
+        </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/collection/owned')}
+          activeOpacity={0.6}
+          style={styles.countsRow}
+          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+        >
+          <View style={styles.countsBooks}>
+            <View style={[styles.countsBook, { opacity: 1 }]} />
+            <View style={[styles.countsBook, { opacity: 0.7 }]} />
+            <View style={[styles.countsBook, { opacity: 0.5 }]} />
+          </View>
+          <Text style={styles.countsLine}>
+            <Text style={styles.countsBold}>{ownedStats.total_cards.toLocaleString('en-US')}</Text>
+            <Text style={styles.countsLabel}> cards</Text>
+            <Text style={styles.countsDot}>  ·  </Text>
+            <Text style={styles.countsBold}>{ownedStats.unique_cards.toLocaleString('en-US')}</Text>
+            <Text style={styles.countsLabel}> unique</Text>
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={styles.countsChevron} />
+        </TouchableOpacity>
+
+        {showMarketStats && (
           <>
-            <Text style={styles.headerTitle}>Collection</Text>
-            <View style={styles.headerActions}>
-              <CatalogBadge />
-              <TouchableOpacity
-                onPress={() => setShowCreate(true)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="add-circle" size={28} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
+            <View style={styles.headerCardDivider} />
+            <MarketHeaderCompact />
           </>
         )}
       </View>
+    </View>
+  );
 
-      <View style={styles.padH}>
-        <MarketHeaderCompact />
-      </View>
-
-      <View style={styles.padL}>
-        <InsightTabs
-          onTabPress={(key) => {
-            if (key === 'price-alerts') {
-              router.push('/alerts');
-              return;
-            }
-            console.log('Insight:', key);
-          }}
-        />
-      </View>
+  const segmented = (
+    <>
+      <InsightTabs
+        onTabPress={(key) => {
+          if (key === 'price-alerts') {
+            router.push('/alerts');
+            return;
+          }
+          console.log('Insight:', key);
+        }}
+      />
 
       <View style={styles.segmentedWrapper}>
         <View style={styles.segmentedContainer}>
@@ -419,6 +451,12 @@ export default function CollectionHubScreen() {
           </TouchableOpacity>
         </View>
       </View>
+    </>
+  );
+
+  return (
+    <View style={styles.container}>
+      {stickyHeader}
 
       {reorderSection === 'folders' ? (
         <ReorderableListView
@@ -461,27 +499,9 @@ export default function CollectionHubScreen() {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
       >
-        {activeTab === 'binder' && (
-          <TouchableOpacity
-            style={styles.ownedRow}
-            onPress={() => router.push('/collection/owned')}
-            activeOpacity={0.6}
-          >
-            <View style={styles.ownedIconCircle}>
-              <Ionicons name="library" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.ownedInfo}>
-              <Text style={styles.ownedTitle}>Owned Cards</Text>
-              <Text style={[styles.ownedSubtitle, ownedStats.total_cards === 0 && { opacity: 0 }]}>
-                {ownedStats.total_cards > 0
-                  ? `${ownedStats.total_cards} Cards · ${ownedStats.unique_cards} unique`
-                  : '\u00A0'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-        )}
+        {segmented}
 
+        <View style={styles.listsWrap}>
         {folders.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>Folders</Text>
@@ -545,6 +565,7 @@ export default function CollectionHubScreen() {
             </TouchableOpacity>
           </View>
         )}
+        </View>
       </Animated.ScrollView>
       {!showSearch && (
         <Animated.View style={[styles.pullHint, hintStyle]} pointerEvents="none">
@@ -577,6 +598,17 @@ export default function CollectionHubScreen() {
           actionTarget?.kind === 'folder'
             ? 'folder'
             : (actionTarget?.item as CollectionSummary)?.type ?? 'binder'
+        }
+        itemColor={actionTarget?.item.color ?? null}
+        itemCount={
+          actionTarget?.kind === 'collection'
+            ? (actionTarget.item as CollectionSummary).card_count
+            : (actionTarget?.item as FolderSummary)?.item_count
+        }
+        itemValue={
+          actionTarget?.kind === 'collection'
+            ? (actionTarget.item as CollectionSummary).total_value
+            : undefined
         }
         isQuickAddTarget={
           actionTarget?.kind === 'collection' &&
@@ -641,16 +673,68 @@ export default function CollectionHubScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: {
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    ...shadows.lg,
+  },
+  headerInner: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerTitle: { color: colors.text, fontSize: fontSize.xxxl, fontWeight: '800', flex: 1, letterSpacing: -1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  plusButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  countsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingVertical: 2,
+  },
+  countsBooks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginRight: spacing.sm,
+  },
+  countsBook: {
+    width: 3,
+    height: 14,
+    borderRadius: 1,
+    backgroundColor: colors.text,
+  },
+  countsLine: {
+    fontSize: fontSize.md,
+  },
+  countsBold: { color: colors.text, fontSize: fontSize.md, fontWeight: '700' },
+  countsLabel: { color: colors.textSecondary, fontSize: fontSize.md, fontWeight: '500' },
+  countsDot: { color: colors.textMuted, fontSize: fontSize.md, fontWeight: '500' },
+  countsChevron: { marginLeft: spacing.xs },
+  headerCardDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  searchHeaderWrap: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
   },
-  headerTitle: { color: colors.text, fontSize: fontSize.xxxl, fontWeight: '800', flex: 1 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   searchHeader: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.surfaceSecondary, borderRadius: borderRadius.md,
@@ -658,15 +742,15 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.text, fontSize: fontSize.md },
   searchCancel: { color: colors.primary, fontSize: fontSize.md, fontWeight: '600', marginLeft: spacing.sm },
-  padH: { paddingHorizontal: spacing.lg },
   padL: { paddingLeft: spacing.lg },
-  segmentedWrapper: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  segmentedWrapper: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm + 4 },
   segmentedContainer: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: borderRadius.md, padding: 3 },
   segmentButton: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm + 2, borderRadius: borderRadius.sm + 2 },
   segmentButtonActive: { backgroundColor: colors.surface, ...shadows.sm },
   segmentText: { color: colors.textMuted, fontSize: fontSize.md, fontWeight: '600' },
   segmentTextActive: { color: colors.text },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
+  content: { paddingBottom: spacing.xxl },
+  listsWrap: { paddingHorizontal: spacing.lg },
   scrollWrap: { flex: 1 },
   pullHint: {
     position: 'absolute',
@@ -690,20 +774,10 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   sectionLabel: {
-    color: colors.textMuted, fontSize: fontSize.xs, fontWeight: '700',
-    textTransform: 'uppercase', letterSpacing: 0.5,
-    marginTop: spacing.md, marginBottom: spacing.sm,
+    color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 0.6,
+    marginTop: 8, marginBottom: spacing.sm,
   },
-  ownedRow: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
-    borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: 15,
-    marginBottom: spacing.sm, gap: spacing.md, ...shadows.sm,
-  },
-  ownedIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  ownedInfo: { flex: 1 },
-  ownedTitle: { color: colors.text, fontSize: fontSize.lg, fontWeight: '600' },
-  ownedSubtitle: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 2 },
-  ownedValue: { color: colors.primary, fontSize: fontSize.md, fontWeight: '700', marginRight: spacing.xs },
   emptyContainer: { alignItems: 'center', paddingTop: 60 },
   emptyIcon: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   emptyTitle: { color: colors.text, fontSize: fontSize.xxl, fontWeight: '700' },

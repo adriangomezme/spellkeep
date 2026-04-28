@@ -16,6 +16,7 @@ import {
   mergeCollections,
   type CollectionType,
 } from '../../lib/collections';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 type Destination = {
   id: string;
@@ -33,7 +34,14 @@ type Props = {
   onMerged: () => void;
 };
 
-export function MergeModal({ visible, sourceId, sourceName, sourceType, onClose, onMerged }: Props) {
+export function MergeModal({
+  visible,
+  sourceId,
+  sourceName,
+  sourceType,
+  onClose,
+  onMerged,
+}: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isMerging, setIsMerging] = useState(false);
 
@@ -48,6 +56,7 @@ export function MergeModal({ visible, sourceId, sourceName, sourceType, onClose,
   );
   const destinations = (destRows.data ?? []) as Destination[];
   const isLoading = destRows.isLoading;
+  const selectedDest = destinations.find((d) => d.id === selectedId);
 
   useEffect(() => {
     if (!visible) setSelectedId(null);
@@ -56,10 +65,9 @@ export function MergeModal({ visible, sourceId, sourceName, sourceType, onClose,
   async function handleMerge() {
     if (!selectedId) return;
 
-    const dest = destinations.find((d) => d.id === selectedId);
     Alert.alert(
-      'Confirm Merge',
-      `Merge all cards from "${sourceName}" into "${dest?.name}"?\n\n"${sourceName}" will be deleted after merging.`,
+      'Confirm merge',
+      `Merge all cards from "${sourceName}" into "${selectedDest?.name}"?\n\n"${sourceName}" will be deleted after merging.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -84,136 +92,207 @@ export function MergeModal({ visible, sourceId, sourceName, sourceType, onClose,
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-          <Text style={styles.title}>Merge</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Merge</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.cancel}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
 
-          {/* Source */}
-          <Text style={styles.fieldLabel}>Source — Merge from</Text>
-          <View style={styles.sourceRow}>
-            <Ionicons name={sourceType === 'binder' ? 'albums' : 'list'} size={18} color={colors.textSecondary} />
-            <Text style={styles.sourceName}>{sourceName}</Text>
-          </View>
+      {/* Source */}
+      <Text style={styles.fieldLabel}>From</Text>
+      <View style={styles.sourceRow}>
+        <View style={styles.sourceIconWrap}>
+          <Ionicons
+            name={sourceType === 'binder' ? 'albums' : 'list'}
+            size={18}
+            color={colors.textSecondary}
+          />
+        </View>
+        <Text style={styles.sourceName} numberOfLines={1}>{sourceName}</Text>
+      </View>
 
-          {/* Destination */}
-          <Text style={styles.fieldLabel}>Destination — Merging into</Text>
-          {isLoading ? (
-            <ActivityIndicator color={colors.primary} style={styles.loader} />
-          ) : destinations.length === 0 ? (
-            <Text style={styles.emptyText}>No other {sourceType}s to merge into</Text>
-          ) : (
-            <FlatList
-              data={destinations}
-              keyExtractor={(item) => item.id}
-              style={styles.list}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.destRow, selectedId === item.id && styles.destRowSelected]}
-                  onPress={() => setSelectedId(item.id)}
-                  activeOpacity={0.6}
-                >
-                  {item.color && <View style={[styles.destColor, { backgroundColor: item.color }]} />}
-                  <Text style={styles.destName}>{item.name}</Text>
-                  {selectedId === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
+      {/* Destination */}
+      <Text style={[styles.fieldLabel, styles.fieldLabelSpaced]}>Into</Text>
+      {isLoading ? (
+        <ActivityIndicator color={colors.primary} style={styles.loader} />
+      ) : destinations.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyIcon}>
+            <Ionicons
+              name={sourceType === 'binder' ? 'albums-outline' : 'list-outline'}
+              size={26}
+              color={colors.textMuted}
             />
-          )}
+          </View>
+          <Text style={styles.emptyTitle}>No other {sourceType}s</Text>
+          <Text style={styles.emptyText}>
+            Create another {sourceType} to merge this one into.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={destinations}
+          keyExtractor={(item) => item.id}
+          style={styles.list}
+          renderItem={({ item, index }) => {
+            const tint = item.color || '#A0A8B8';
+            const selected = selectedId === item.id;
+            const isLast = index === destinations.length - 1;
+            return (
+              <TouchableOpacity
+                style={[styles.destRow, !isLast && styles.destRowDivider]}
+                onPress={() => setSelectedId(item.id)}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.destThumb, { backgroundColor: tint }]} />
+                <Text style={styles.destName} numberOfLines={1}>{item.name}</Text>
+                <View style={[styles.radio, selected && styles.radioActive]}>
+                  {selected && <View style={styles.radioDot} />}
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
 
-          {/* Action */}
-          <TouchableOpacity
-            style={[styles.mergeButton, (!selectedId || isMerging) && styles.mergeButtonDisabled]}
-            onPress={handleMerge}
-            disabled={!selectedId || isMerging}
-          >
-            {isMerging ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.mergeText}>Confirm Merge</Text>
-            )}
-          </TouchableOpacity>
+      <PrimaryCTA
+        variant="solid"
+        style={styles.cta}
+        label={selectedDest ? `Merge into ${selectedDest.name}` : 'Merge'}
+        onPress={handleMerge}
+        loading={isMerging}
+        disabled={!selectedId || isMerging}
+      />
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
-    marginBottom: spacing.lg,
+    letterSpacing: -0.4,
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
   },
   fieldLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
     marginBottom: spacing.sm,
-    marginTop: spacing.sm,
+  },
+  fieldLabelSpaced: {
+    marginTop: spacing.md,
   },
   sourceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
+    gap: spacing.sm + 4,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
+    borderRadius: borderRadius.sm + 2,
+  },
+  sourceIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 5,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sourceName: {
+    flex: 1,
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '600',
   },
   loader: {
-    paddingVertical: spacing.lg,
-  },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
-    textAlign: 'center',
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.xl,
   },
   list: {
-    maxHeight: 200,
+    maxHeight: 240,
   },
   destRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
+    gap: spacing.sm + 4,
+    paddingVertical: spacing.sm + 4,
   },
-  destRowSelected: {
-    backgroundColor: colors.primary + '0D',
+  destRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  destColor: {
-    width: 4,
-    height: 24,
-    borderRadius: 2,
+  destThumb: {
+    width: 28,
+    height: 28,
+    borderRadius: 5,
   },
   destName: {
     flex: 1,
     color: colors.text,
     fontSize: fontSize.md,
-  },
-  mergeButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: 10,
-    backgroundColor: colors.primary,
-    marginTop: spacing.lg,
-  },
-  mergeButtonDisabled: {
-    opacity: 0.5,
-  },
-  mergeText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.md,
     fontWeight: '600',
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioActive: {
+    borderColor: colors.primary,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  cta: {
+    minHeight: 44,
+    marginTop: spacing.md,
   },
 });

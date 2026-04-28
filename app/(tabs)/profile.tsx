@@ -4,6 +4,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -34,6 +35,7 @@ import {
 import { colors, shadows, spacing, fontSize, borderRadius } from '../../src/constants';
 import { useAuthContext } from '../../src/components/AuthProvider';
 import { AuthSheet } from '../../src/components/AuthSheet';
+import { useMarketHeaderPref } from '../../src/lib/hooks/useMarketHeaderPref';
 
 type StorageSnapshot = {
   catalogVersion?: string;
@@ -53,6 +55,7 @@ export default function ProfileScreen() {
   const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
   const [priceRefreshedAt, setPriceRefreshedAt] = useState<string | null>(() => getLatestOverrideAt());
   const [priceProgress, setPriceProgress] = useState<RefreshProgress | null>(null);
+  const marketHeaderPref = useMarketHeaderPref();
 
   const loadStorage = useCallback(async () => {
     const [meta, imageCacheBytes, history, pendingUploads] = await Promise.all([
@@ -353,6 +356,26 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>Settings</Text>
+
+        {/* Market header — toggle the stats block in Collection hub */}
+        <View style={styles.row}>
+          <View style={[styles.iconCircle, { backgroundColor: colors.success + '1A' }]}>
+            <Ionicons name="stats-chart" size={20} color={colors.success} />
+          </View>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Market header</Text>
+            <Text style={styles.rowSubtitle} numberOfLines={2}>
+              Show total value, top card and trend on Collection
+            </Text>
+          </View>
+          <Switch
+            value={marketHeaderPref.enabled}
+            onValueChange={marketHeaderPref.setEnabled}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor={colors.border}
+          />
+        </View>
 
         {/* Sorting */}
 

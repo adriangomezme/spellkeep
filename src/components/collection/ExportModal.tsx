@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   Alert,
   StyleSheet,
-  ScrollView,
 } from 'react-native';
 import { shareAsync } from 'expo-sharing';
 import { cacheDirectory, writeAsStringAsync, EncodingType } from 'expo-file-system/legacy';
@@ -23,9 +22,9 @@ type FormatOption = {
 };
 
 const FORMATS: FormatOption[] = [
-  { key: 'spellkeep', label: 'SpellKeep CSV', description: 'Full card data in SpellKeep proprietary format.\nIncludes type, colors, rarity, cost, and layout.', section: 'spellkeep' },
-  { key: 'plain', label: 'Plain Text', description: 'Card name, set, quantity, and finish.\nSimple text format compatible with most apps.', section: 'standard' },
-  { key: 'csv', label: 'CSV', description: 'Standard CSV with all card properties.\nIncludes condition, quantity, and Scryfall ID.', section: 'standard' },
+  { key: 'spellkeep', label: 'SpellKeep CSV', description: 'Full card data in SpellKeep format — type, colors, rarity, cost and layout.', section: 'spellkeep' },
+  { key: 'plain', label: 'Plain Text', description: 'Card name, set, quantity and finish — works with most apps.', section: 'standard' },
+  { key: 'csv', label: 'CSV', description: 'Standard CSV with all card properties — condition, quantity and Scryfall ID.', section: 'standard' },
 ];
 
 const SECTIONS: { key: string; label: string | null }[] = [
@@ -58,32 +57,40 @@ export function ExportModal({ visible, collectionId, collectionName, onClose }: 
   }
 
   return (
-    // Dynamic sizing — with only three formats the fixed 75% sheet was
-    // leaving huge blank space under the last row. The ScrollView still
-    // renders for future-proofing but no longer stretches to fill.
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text style={styles.title}>Export</Text>
-      <Text style={styles.subtitle}>{collectionName}</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleWrap}>
+          <Text style={styles.title}>Export</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            From <Text style={styles.subtitleBold}>{collectionName}</Text>
+          </Text>
+        </View>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.cancel}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
+      <View>
         {SECTIONS.map((section) => {
           const sectionFormats = FORMATS.filter((f) => f.section === section.key);
           if (sectionFormats.length === 0) return null;
           return (
-            <View key={section.key}>
+            <View key={section.key} style={styles.section}>
               {section.label && <Text style={styles.sectionLabel}>{section.label}</Text>}
-              {sectionFormats.map((format) => {
-                const isSpellKeep = format.section === 'spellkeep';
+              {sectionFormats.map((format, idx) => {
+                const isFeatured = format.section === 'spellkeep';
+                const isLast = idx === sectionFormats.length - 1;
                 return (
                   <TouchableOpacity
                     key={format.key}
-                    style={styles.formatRow}
+                    style={[styles.formatRow, !isLast && styles.formatRowDivider]}
                     onPress={() => handleExport(format.key)}
                     disabled={exporting !== null}
-                    activeOpacity={0.5}
+                    activeOpacity={0.6}
                   >
                     <View style={styles.formatContent}>
-                      <Text style={[styles.formatLabel, isSpellKeep && styles.formatLabelHighlight]}>
+                      <Text style={[styles.formatLabel, isFeatured && styles.formatLabelHighlight]}>
                         {format.label}
                       </Text>
                       <Text style={styles.formatDesc}>{format.description}</Text>
@@ -99,38 +106,65 @@ export function ExportModal({ visible, collectionId, collectionName, onClose }: 
             </View>
           );
         })}
-      </ScrollView>
+      </View>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   subtitle: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
-    marginBottom: spacing.md,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  subtitleBold: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+  section: {
+    marginBottom: spacing.sm,
   },
   sectionLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.md,
+    letterSpacing: 0.6,
+    marginTop: spacing.sm,
     marginBottom: spacing.sm,
   },
   formatRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
+    paddingVertical: spacing.sm + 4,
+  },
+  formatRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   formatContent: {
     flex: 1,
@@ -139,14 +173,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   formatLabelHighlight: {
     color: colors.primary,
   },
   formatDesc: {
     color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    marginTop: 2,
-    lineHeight: 16,
+    fontSize: fontSize.sm,
+    marginTop: 3,
+    fontWeight: '500',
   },
 });

@@ -31,13 +31,21 @@ type Props = {
 export function ColorPicker({ selected, onSelect }: Props) {
   return (
     <View style={styles.grid}>
-      {/* No color option */}
+      {/* No color option (dashed circle with diagonal slash) */}
       <TouchableOpacity
-        style={[styles.swatch, styles.noColor, !selected && styles.swatchSelected]}
         onPress={() => onSelect(null)}
         activeOpacity={0.6}
       >
-        {!selected && <Ionicons name="checkmark" size={14} color={colors.textMuted} />}
+        <View
+          style={[
+            styles.ringSlot,
+            !selected && { borderColor: colors.textMuted },
+          ]}
+        >
+          <View style={[styles.swatch, styles.noColor]}>
+            <View style={styles.noColorSlash} />
+          </View>
+        </View>
       </TouchableOpacity>
 
       {COLLECTION_COLORS.map((color) => {
@@ -46,17 +54,21 @@ export function ColorPicker({ selected, onSelect }: Props) {
         return (
           <TouchableOpacity
             key={color}
-            style={[
-              styles.swatch,
-              { backgroundColor: color },
-              isSelected && styles.swatchSelected,
-            ]}
             onPress={() => onSelect(color)}
             activeOpacity={0.6}
           >
-            {isSelected && (
-              <Ionicons name="checkmark" size={14} color={isLight ? '#333' : '#FFF'} />
-            )}
+            <View
+              style={[
+                styles.ringSlot,
+                isSelected && { borderColor: color },
+              ]}
+            >
+              <View style={[styles.swatch, { backgroundColor: color }]}>
+                {isSelected && (
+                  <Ionicons name="checkmark" size={16} color={isLight ? '#333' : '#FFF'} />
+                )}
+              </View>
+            </View>
           </TouchableOpacity>
         );
       })}
@@ -68,23 +80,36 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  ringSlot: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   swatch: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   noColor: {
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: colors.border,
     borderStyle: 'dashed',
   },
-  swatchSelected: {
-    borderWidth: 2,
-    borderColor: colors.text,
+  noColorSlash: {
+    position: 'absolute',
+    width: 22,
+    height: 1.5,
+    backgroundColor: colors.textMuted,
+    transform: [{ rotate: '-45deg' }],
   },
 });

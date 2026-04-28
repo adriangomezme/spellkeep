@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,7 +38,13 @@ type Props = {
   defaultFolderFor?: CollectionType;
 };
 
-const TYPE_OPTIONS: { value: CreateType; label: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+const NAME_MAX = 40;
+
+const TYPE_OPTIONS: {
+  value: CreateType;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+}[] = [
   { value: 'binder', label: 'Binder', icon: 'albums' },
   { value: 'list', label: 'List', icon: 'list' },
   { value: 'folder', label: 'Folder', icon: 'folder' },
@@ -59,8 +64,7 @@ export function CreateCollectionModal({
   const [folderId, setFolderId] = useState<string | null>(null);
   const [folderFor, setFolderFor] = useState<CollectionType>('binder');
   // Read folders straight from local PowerSync SQLite so the picker has
-  // data on the first frame — going through supabase.auth.getUser() +
-  // fetchFolders used to stall the dropdown for 1-2 s on open.
+  // data on the first frame.
   const folderRows = useQuery<FolderSummary & { item_count: number }>(
     `SELECT id, name, type, color,
             (SELECT COUNT(*) FROM collections c WHERE c.folder_id = f.id) AS item_count
@@ -89,9 +93,6 @@ export function CreateCollectionModal({
 
   const isLocked = !!lockedType;
 
-  // Every time `visible` flips to true, sync state with the CURRENT props.
-  // The component stays mounted while the sheet animates in/out, so a stale
-  // useState(defaultType) at mount wouldn't pick up a later tab change.
   useEffect(() => {
     if (!visible) {
       setView('form');
@@ -151,8 +152,6 @@ export function CreateCollectionModal({
   const isFolder = type === 'folder';
 
   // ── Folder picker view ──
-  // Rendered in place of the form inside the same sheet. Single layer of
-  // modal, back button returns to the form without losing any state.
   if (view === 'folder-picker') {
     return (
       <BottomSheet visible={visible} onClose={onClose} snapPoints={['75%']}>
@@ -163,7 +162,7 @@ export function CreateCollectionModal({
           >
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.pickerTitle}>Select Folder</Text>
+          <Text style={styles.pickerTitle}>Select folder</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -226,101 +225,166 @@ export function CreateCollectionModal({
   }
 
   // ── Form view ──
+  const ctaLabel = `Create ${isFolder ? 'folder' : type}`;
+
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text style={styles.title}>
-        {isLocked ? `New ${lockedType === 'binder' ? 'Binder' : 'List'}` : 'Create New'}
-      </Text>
-
-      {!isLocked && (
-        <View style={styles.typeRow}>
-          {TYPE_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.typeButton, type === opt.value && styles.typeButtonActive]}
-              onPress={() => {
-                setType(opt.value);
-                setFolderId(lockedFolderId ?? null);
-              }}
-              activeOpacity={0.6}
-            >
-              <Ionicons
-                name={opt.icon}
-                size={18}
-                color={type === opt.value ? colors.primary : colors.textSecondary}
-              />
-              <Text style={[styles.typeLabel, type === opt.value && styles.typeLabelActive]}>
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      <BottomSheetTextInput
-        style={styles.input}
-        placeholder={
-          isFolder ? 'Folder name'
-          : type === 'binder' ? 'Binder name'
-          : 'List name'
-        }
-        placeholderTextColor={colors.textMuted}
-        value={name}
-        onChangeText={setName}
-        autoFocus={!skipAutoFocus}
-        returnKeyType="done"
-        onSubmitEditing={handleSave}
-      />
-
-      <Text style={styles.fieldLabel}>Color Identifier</Text>
-      <ColorPicker selected={color} onSelect={setColor} />
-
-      {isFolder && (
-        <>
-          <Text style={styles.fieldLabel}>Folder for</Text>
-          <View style={styles.folderForRow}>
-            <TouchableOpacity
-              style={[styles.folderForButton, folderFor === 'binder' && styles.folderForButtonActive]}
-              onPress={() => setFolderFor('binder')}
-              activeOpacity={0.6}
-            >
-              <Ionicons name="albums" size={16} color={folderFor === 'binder' ? colors.primary : colors.textSecondary} />
-              <Text style={[styles.folderForText, folderFor === 'binder' && styles.folderForTextActive]}>Binders</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.folderForButton, folderFor === 'list' && styles.folderForButtonActive]}
-              onPress={() => setFolderFor('list')}
-              activeOpacity={0.6}
-            >
-              <Ionicons name="list" size={16} color={folderFor === 'list' ? colors.primary : colors.textSecondary} />
-              <Text style={[styles.folderForText, folderFor === 'list' && styles.folderForTextActive]}>Lists</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-
-      {!isFolder && !lockedFolderId && matchingFolders.length > 0 && (
-        <TouchableOpacity
-          style={styles.folderPicker}
-          onPress={() => setView('folder-picker')}
-          activeOpacity={0.6}
-        >
-          <Ionicons
-            name={selectedFolder ? 'folder' : 'folder-outline'}
-            size={20}
-            color={selectedFolder ? selectedFolder.color ?? colors.textSecondary : colors.textSecondary}
-          />
-          <Text style={styles.folderLabel}>
-            {selectedFolder ? selectedFolder.name : 'No folder'}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Create new</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.cancel}>Cancel</Text>
         </TouchableOpacity>
-      )}
+      </View>
+
+      <View>
+        {/* Type selector */}
+        {!isLocked && (
+          <View style={styles.typeRow}>
+            {TYPE_OPTIONS.map((opt) => {
+              const active = type === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.typeButton, active && styles.typeButtonActive]}
+                  onPress={() => {
+                    setType(opt.value);
+                    setFolderId(lockedFolderId ?? null);
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={17}
+                    color={active ? colors.primary : colors.textSecondary}
+                  />
+                  <Text style={[styles.typeLabel, active && styles.typeLabelActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Name */}
+        <View style={styles.fieldLabelRow}>
+          <Text style={styles.fieldLabel}>
+            Name <Text style={styles.required}>*</Text>
+          </Text>
+        </View>
+        <View style={styles.inputWrap}>
+          <BottomSheetTextInput
+            style={styles.input}
+            placeholder={
+              isFolder ? 'Folder name'
+              : type === 'binder' ? 'Binder name'
+              : 'List name'
+            }
+            placeholderTextColor={colors.textMuted}
+            value={name}
+            onChangeText={(v) => setName(v.slice(0, NAME_MAX))}
+            autoFocus={!skipAutoFocus}
+            returnKeyType="done"
+            onSubmitEditing={handleSave}
+            maxLength={NAME_MAX}
+          />
+          <Text style={styles.inputCounter}>{name.length}/{NAME_MAX}</Text>
+        </View>
+
+        {/* Color identifier */}
+        <View style={styles.fieldLabelRow}>
+          <Text style={styles.fieldLabel}>Color identifier</Text>
+          <Text style={styles.fieldHelper}>Helps you spot it in lists</Text>
+        </View>
+        <ColorPicker selected={color} onSelect={setColor} />
+
+        {/* Folder for — folder type only */}
+        {isFolder && (
+          <>
+            <View style={styles.fieldLabelRow}>
+              <Text style={styles.fieldLabel}>Folder for</Text>
+            </View>
+            <View style={styles.folderForRow}>
+              <TouchableOpacity
+                style={[styles.folderForButton, folderFor === 'binder' && styles.folderForButtonActive]}
+                onPress={() => setFolderFor('binder')}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="albums"
+                  size={16}
+                  color={folderFor === 'binder' ? colors.primary : colors.textSecondary}
+                />
+                <Text style={[styles.folderForText, folderFor === 'binder' && styles.folderForTextActive]}>
+                  Binders
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.folderForButton, folderFor === 'list' && styles.folderForButtonActive]}
+                onPress={() => setFolderFor('list')}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="list"
+                  size={16}
+                  color={folderFor === 'list' ? colors.primary : colors.textSecondary}
+                />
+                <Text style={[styles.folderForText, folderFor === 'list' && styles.folderForTextActive]}>
+                  Lists
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {/* Parent folder — binder/list only */}
+        {!isFolder && !lockedFolderId && matchingFolders.length > 0 && (
+          <>
+            <View style={styles.fieldLabelRow}>
+              <Text style={styles.fieldLabel}>
+                Parent folder <Text style={styles.optional}>(optional)</Text>
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.parentRow}
+              onPress={() => setView('folder-picker')}
+              activeOpacity={0.6}
+            >
+              <View
+                style={[
+                  styles.parentThumb,
+                  {
+                    backgroundColor:
+                      (selectedFolder?.color ?? '#A0A8B8') + '22',
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="folder"
+                  size={16}
+                  color={selectedFolder?.color ?? colors.textSecondary}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.parentName,
+                  !selectedFolder && styles.parentNameMuted,
+                ]}
+                numberOfLines={1}
+              >
+                {selectedFolder ? selectedFolder.name : 'No folder'}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
 
       <PrimaryCTA
         variant="solid"
-        style={styles.saveButton}
-        label={`Create ${isFolder ? 'folder' : type}`}
+        style={styles.cta}
+        label={ctaLabel}
         onPress={handleSave}
         loading={isSaving}
         disabled={!name.trim()}
@@ -330,29 +394,45 @@ export function CreateCollectionModal({
 }
 
 const styles = StyleSheet.create({
-  title: {
-    color: colors.text,
-    fontSize: fontSize.xl,
-    fontWeight: '800',
+  // ── Header ──────────────────────────────────────────────────────────
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
+  title: {
+    color: colors.text,
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+
+  // ── Type selector ──────────────────────────────────────────────────
   typeRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    padding: 4,
   },
   typeButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
+    gap: spacing.xs + 2,
     paddingVertical: spacing.sm + 2,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
   },
   typeButtonActive: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surface,
   },
   typeLabel: {
     color: colors.textSecondary,
@@ -363,22 +443,64 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  input: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: fontSize.lg,
-    color: colors.text,
-    marginBottom: spacing.md,
+
+  // ── Field labels ───────────────────────────────────────────────────
+  fieldLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: spacing.sm,
   },
   fieldLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
+    letterSpacing: 0.6,
   },
+  required: {
+    color: colors.error,
+    fontWeight: '700',
+  },
+  optional: {
+    color: colors.textMuted,
+    fontWeight: '500',
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  fieldHelper: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+
+  // ── Name input ─────────────────────────────────────────────────────
+  inputWrap: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    paddingVertical: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: 60,
+    fontSize: fontSize.lg,
+    color: colors.text,
+  },
+  inputCounter: {
+    position: 'absolute',
+    right: spacing.md,
+    top: 0,
+    bottom: 0,
+    textAlignVertical: 'center',
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+    lineHeight: 50,
+  },
+
+  // ── Folder-for selector (folder type only) ─────────────────────────
   folderForRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -390,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderRadius: borderRadius.sm + 2,
     backgroundColor: colors.surfaceSecondary,
   },
@@ -406,26 +528,43 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  folderPicker: {
+
+  // ── Parent folder row ──────────────────────────────────────────────
+  parentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    // Match the "Binder name" input's padding so both form fields are
-    // the same visual height.
-    padding: spacing.md,
+    gap: spacing.sm + 2,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.sm + 4,
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
+    borderRadius: borderRadius.sm + 2,
+    marginBottom: spacing.sm,
   },
-  folderLabel: {
+  parentThumb: {
+    width: 28,
+    height: 28,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  parentName: {
     flex: 1,
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  parentNameMuted: {
     color: colors.textSecondary,
-    fontSize: fontSize.lg,
+    fontWeight: '500',
   },
-  saveButton: {
-    marginTop: spacing.md,
+
+  // ── CTA ────────────────────────────────────────────────────────────
+  cta: {
     minHeight: 44,
+    marginTop: spacing.sm,
   },
+
+  // ── Folder picker view ─────────────────────────────────────────────
   pickerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -453,10 +592,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     padding: 0,
   },
-  // Card-style rows — same visual language as the binder destination
-  // picker so the UI feels coherent between "add to binder" and "pick
-  // folder". Active state uses the primary tint; idle state carries the
-  // subtle surface fill.
   pickerRow: {
     flexDirection: 'row',
     alignItems: 'center',

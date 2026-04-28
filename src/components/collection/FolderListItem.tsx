@@ -24,7 +24,7 @@ export function FolderListItem({ name, itemCount, color, onPress, onLongPress, o
       onLongPress={onLongPress}
       activeOpacity={0.6}
     >
-      <View style={[styles.iconCircle, { backgroundColor: iconColor + '18' }]}>
+      <View style={[styles.iconSquare, { backgroundColor: iconColor + '18' }]}>
         <Ionicons name="folder" size={20} color={iconColor} />
       </View>
       <View style={styles.info}>
@@ -65,10 +65,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...shadows.sm,
   },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  iconSquare: {
+    width: 36,
+    height: 36,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -78,11 +78,13 @@ const styles = StyleSheet.create({
   name: {
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: -0.3,
   },
   subtitle: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontSize: fontSize.sm,
+    fontWeight: '500',
     marginTop: 2,
   },
   deleteAction: {

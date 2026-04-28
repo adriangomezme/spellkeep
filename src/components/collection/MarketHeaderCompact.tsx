@@ -1,140 +1,135 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, shadows, spacing, fontSize, borderRadius } from '../../constants';
+import { colors, spacing, fontSize } from '../../constants';
 
 const MOCK = {
-  collectionValue: 2847.35,
+  collectionValue: 136344.44,
   collectionChange24h: 1.42,
-  topMover: { name: 'Sheoldred', changePct: 12.8 },
-  biggestHolding: { name: 'The One Ring', value: 68.50 },
-  momentum: { score: 72 },
+  topMover: { name: 'Ugin, the Spirit Dragon', value: 1350, changePct: 12.5 },
+  biggestHolding: { name: 'Vorinclex', value: 1237.5, changePct: 12.5 },
 };
 
-function MiniChange({ value }: { value: number }) {
+function ChangeBadge({ value, suffix }: { value: number; suffix?: string }) {
   const isPositive = value >= 0;
+  const tint = isPositive ? colors.success : colors.error;
+  const compact = !suffix;
   return (
     <View style={s.changeRow}>
       <Ionicons
-        name={isPositive ? 'caret-up' : 'caret-down'}
-        size={8}
-        color={isPositive ? colors.success : colors.error}
+        name={isPositive ? 'arrow-up' : 'arrow-down'}
+        size={compact ? 9 : 11}
+        color={tint}
       />
-      <Text style={[s.changeVal, { color: isPositive ? colors.success : colors.error }]}>
+      <Text style={[compact ? s.changeValSm : s.changeVal, { color: tint }]}>
         {Math.abs(value).toFixed(1)}%
+        {suffix ? <Text style={s.changeSuffix}> {suffix}</Text> : null}
       </Text>
     </View>
   );
 }
 
+function formatMoney(v: number) {
+  return Math.round(v).toLocaleString('en-US');
+}
+
 export function MarketHeaderCompact() {
   const d = MOCK;
-  const mColor =
-    d.momentum.score >= 60 ? colors.success :
-    d.momentum.score >= 40 ? colors.warning :
-    colors.error;
 
   return (
-    <View style={s.card}>
-      {/* Collection Value */}
+    <View style={s.row}>
       <View style={[s.cell, s.divider]}>
-        <Text style={s.label}>Value</Text>
-        <Text style={s.value} numberOfLines={1}>${d.collectionValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</Text>
-        <MiniChange value={d.collectionChange24h} />
+        <Text style={s.label}>Total Value</Text>
+        <Text style={s.value} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          ${formatMoney(d.collectionValue)}
+        </Text>
+        <View style={s.valueChange}>
+          <ChangeBadge value={d.collectionChange24h} suffix="today" />
+        </View>
       </View>
 
-      {/* Top Mover */}
       <View style={[s.cell, s.divider]}>
-        <Text style={s.label}>Top Mover</Text>
-        <Text style={s.cardName} numberOfLines={1}>{d.topMover.name}</Text>
-        <MiniChange value={d.topMover.changePct} />
-      </View>
-
-      {/* Biggest Holding */}
-      <View style={s.cell}>
         <Text style={s.label}>Top Card</Text>
         <Text style={s.cardName} numberOfLines={1}>{d.biggestHolding.name}</Text>
-        <Text style={s.subval}>${d.biggestHolding.value.toFixed(0)}</Text>
+        <View style={s.subRow}>
+          <Text style={s.subval}>${formatMoney(d.biggestHolding.value)}</Text>
+          <ChangeBadge value={d.biggestHolding.changePct} />
+        </View>
+      </View>
+
+      <View style={s.cell}>
+        <Text style={s.label}>Top Mover</Text>
+        <Text style={s.cardName} numberOfLines={1}>{d.topMover.name}</Text>
+        <View style={s.subRow}>
+          <Text style={s.subval}>${formatMoney(d.topMover.value)}</Text>
+          <ChangeBadge value={d.topMover.changePct} />
+        </View>
       </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  card: {
+  row: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
-    paddingVertical: spacing.sm + 4,
-    ...shadows.sm,
   },
   cell: {
     flex: 1,
     paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 2,
     alignItems: 'flex-start',
   },
   divider: {
     borderRightWidth: 1,
-    borderRightColor: colors.divider,
+    borderRightColor: colors.border,
   },
   label: {
     color: colors.textMuted,
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    marginBottom: 3,
+    letterSpacing: 0.6,
+    marginBottom: spacing.xs,
   },
   value: {
     color: colors.text,
-    fontSize: fontSize.md,
+    fontSize: 22,
     fontWeight: '800',
+    letterSpacing: -0.5,
   },
   cardName: {
     color: colors.text,
-    fontSize: fontSize.xs + 1,
+    fontSize: fontSize.md,
     fontWeight: '700',
+  },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    marginTop: 4,
+    flexWrap: 'wrap',
   },
   subval: {
     color: colors.textSecondary,
-    fontSize: 10,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    marginTop: 1,
+  },
+  valueChange: {
+    marginTop: 4,
   },
   changeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 1,
-    marginTop: 1,
+    gap: 2,
   },
   changeVal: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  momentumRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  momentumNum: {
-    color: colors.text,
     fontSize: fontSize.sm,
-    fontWeight: '800',
+    fontWeight: '700',
   },
-  momentumMax: {
-    color: colors.textMuted,
-    fontSize: 9,
+  changeValSm: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  changeSuffix: {
     fontWeight: '500',
-  },
-  bar: {
-    width: '100%',
-    height: 3,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 1.5,
-    marginTop: 3,
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 1.5,
   },
 });

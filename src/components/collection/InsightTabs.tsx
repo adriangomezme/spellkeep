@@ -18,9 +18,9 @@ type InsightTab = {
 };
 
 const TABS: InsightTab[] = [
-  { key: 'top-movers', label: 'Top Movers', icon: 'trending-up', color: '#1D9E58' },
-  { key: 'price-alerts', label: 'Price Alerts', icon: 'notifications-outline', color: '#E0A52B' },
-  { key: 'recently-added', label: 'Recently Added', icon: 'time-outline', color: '#6B8AFF' },
+  { key: 'top-movers', label: 'Top Movers', icon: 'trending-up', color: colors.success },
+  { key: 'price-alerts', label: 'Price Alerts', icon: 'notifications-outline', color: colors.accent },
+  { key: 'recently-added', label: 'Recently Added', icon: 'time-outline', color: colors.textSecondary },
   { key: 'watchlist', label: 'Watchlist', icon: 'eye-outline', color: '#A371D6' },
   { key: 'market-trends', label: 'Market Trends', icon: 'bar-chart-outline', color: '#D2682B' },
 ];
@@ -54,18 +54,15 @@ export function InsightTabs({ onTabPress }: Props) {
               key={tab.key}
               style={styles.tab}
               onPress={() => onTabPress(tab.key)}
-              activeOpacity={0.5}
+              activeOpacity={0.6}
             >
-              <View style={[styles.iconBubble, { backgroundColor: tab.color + '1A' }]}>
-                <Ionicons name={tab.icon} size={14} color={tab.color} />
-              </View>
+              <Ionicons name={tab.icon} size={15} color={tab.color} />
               <Text style={styles.tabText}>{tab.label}</Text>
               {badge > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{badge}</Text>
                 </View>
               )}
-              <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
             </TouchableOpacity>
           );
         })}
@@ -76,48 +73,42 @@ export function InsightTabs({ onTabPress }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
   },
   scrollContent: {
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    paddingLeft: spacing.xs + 2,
-    paddingRight: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: borderRadius.sm,
+    gap: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 3,
+    borderRadius: borderRadius.sm + 2,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  iconBubble: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   tabText: {
-    color: colors.textSecondary,
+    color: colors.text,
     fontSize: fontSize.sm,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   badge: {
     minWidth: 18,
     height: 18,
     paddingHorizontal: 5,
     borderRadius: 9,
-    backgroundColor: '#C24848',
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    lineHeight: 12,
+    lineHeight: 13,
   },
 });

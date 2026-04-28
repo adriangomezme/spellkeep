@@ -3,19 +3,17 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from '../BottomSheet';
 import { useImportJob, type ImportJob } from './ImportJobProvider';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 // Global sheet that renders whenever there is an active (non-minimized)
 // import job. Owns the live-progress and completed/failed views so tapping
-// the MinimizedImportPill can always re-open them — earlier the progress
-// UI lived inside the per-screen ImportModal, so dismissing that screen
-// killed the sheet and the pill tap couldn't bring it back.
+// the MinimizedImportPill can always re-open them.
 
 function phaseLabel(phase: ImportJob['phase']) {
   switch (phase) {
@@ -54,29 +52,48 @@ export function ImportStatusSheet() {
   );
 }
 
-function ImportProgressView({ job, onMinimize }: { job: ImportJob; onMinimize: () => void }) {
+function ImportProgressView({
+  job,
+  onMinimize,
+}: {
+  job: ImportJob;
+  onMinimize: () => void;
+}) {
   const percent =
     job.total > 0 ? Math.min(100, Math.round((job.current / job.total) * 100)) : 0;
 
   return (
     <View style={styles.progressContainer}>
-      <View style={styles.progressHeader}>
-        <Text style={styles.progressTitle}>Importing</Text>
-        <TouchableOpacity style={styles.minimizeBtn} onPress={onMinimize}>
-          <Ionicons name="chevron-down" size={18} color={colors.primary} />
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleWrap}>
+          <Text style={styles.title}>Importing</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            Into <Text style={styles.subtitleBold}>{job.collectionName}</Text>
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.minimizeBtn}
+          onPress={onMinimize}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-down" size={16} color={colors.primary} />
           <Text style={styles.minimizeText}>Minimize</Text>
         </TouchableOpacity>
       </View>
 
-      <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.lg }} />
-
-      <Text style={styles.progressPhase}>{phaseLabel(job.phase)}</Text>
-      <Text style={styles.progressCounts}>
-        {job.current.toLocaleString()} of {job.total.toLocaleString()} · {percent}%
-      </Text>
-
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${percent}%` }]} />
+      {/* Phase + counts + bar */}
+      <View style={styles.progressBlock}>
+        <Text style={styles.progressPhase}>{phaseLabel(job.phase)}</Text>
+        <View style={styles.progressMeta}>
+          <Text style={styles.progressCounts}>
+            {job.current.toLocaleString()} of {job.total.toLocaleString()}
+          </Text>
+          <Text style={styles.progressPercent}>{percent}%</Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${percent}%` }]} />
+        </View>
       </View>
 
       <Text style={styles.progressHint}>
@@ -99,35 +116,44 @@ function ImportResultView({
   const result = job.result;
   const saved = result ? result.imported + result.updated : 0;
   const failedCount = result?.failed.length ?? 0;
+  const hasPartialFailures = !isFailed && failedCount > 0;
 
   function savedVariants(r: typeof result) {
     if (!r) return 0;
     return (r.imported_variants ?? 0) + (r.updated_variants ?? 0);
   }
 
+  const tint = isFailed
+    ? colors.error
+    : hasPartialFailures
+      ? colors.warning
+      : colors.success;
+  const tintBg = isFailed
+    ? colors.errorLight
+    : hasPartialFailures
+      ? colors.warningLight
+      : colors.successLight;
+  const iconName = isFailed
+    ? 'alert-circle'
+    : hasPartialFailures
+      ? 'checkmark-done'
+      : 'checkmark-circle';
+
   return (
     <View style={styles.resultContainer}>
-      <TouchableOpacity style={styles.closeBtn} onPress={onMinimize}>
-        <Ionicons name="chevron-down" size={22} color={colors.textMuted} />
-      </TouchableOpacity>
+      {/* Header (close right) */}
+      <View style={styles.resultHeader}>
+        <View style={{ width: 24 }} />
+        <TouchableOpacity
+          onPress={onMinimize}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-down" size={22} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
 
-      <View
-        style={[
-          styles.resultIcon,
-          {
-            backgroundColor: isFailed
-              ? colors.errorLight
-              : failedCount > 0
-              ? colors.warningLight
-              : colors.successLight,
-          },
-        ]}
-      >
-        <Ionicons
-          name={isFailed ? 'alert-circle' : failedCount > 0 ? 'checkmark-done' : 'checkmark-circle'}
-          size={40}
-          color={isFailed ? colors.error : failedCount > 0 ? colors.warning : colors.success}
-        />
+      <View style={[styles.resultIcon, { backgroundColor: tintBg }]}>
+        <Ionicons name={iconName} size={36} color={tint} />
       </View>
 
       <Text style={styles.resultTitle}>
@@ -137,9 +163,21 @@ function ImportResultView({
       {isFailed ? (
         <Text style={styles.resultSubtitle}>{job.error ?? 'Something went wrong.'}</Text>
       ) : (
-        <View style={styles.resultStats}>
+        <Text style={styles.resultSubtitle}>
+          <Text style={styles.resultSubtitleBold}>{saved.toLocaleString()}</Text>
+          {' cards · '}
+          <Text style={styles.resultSubtitleBold}>{savedVariants(result).toLocaleString()}</Text>
+          {' unique saved to '}
+          <Text style={styles.resultSubtitleBold}>{job.collectionName}</Text>
+        </Text>
+      )}
+
+      {!isFailed && (
+        <View style={styles.statsRow}>
           <ResultStat label="Imported" value={result?.imported ?? 0} />
+          <View style={styles.statsDivider} />
           <ResultStat label="Updated" value={result?.updated ?? 0} />
+          <View style={styles.statsDivider} />
           <ResultStat
             label="Failed"
             value={failedCount}
@@ -149,33 +187,40 @@ function ImportResultView({
       )}
 
       {!isFailed && failedCount > 0 && result && (
-        <ScrollView style={styles.failedList}>
+        <View style={styles.failedWrap}>
           <Text style={styles.failedHeader}>Cards we couldn't match</Text>
-          {result.failed.slice(0, 50).map((name, i) => (
-            <Text key={`${name}_${i}`} style={styles.failedItem} numberOfLines={1}>
-              {name}
-            </Text>
-          ))}
-          {failedCount > 50 && (
-            <Text style={styles.failedMore}>…and {failedCount - 50} more</Text>
-          )}
-        </ScrollView>
+          <ScrollView style={styles.failedList} nestedScrollEnabled>
+            {result.failed.slice(0, 50).map((name, i) => (
+              <Text key={`${name}_${i}`} style={styles.failedItem} numberOfLines={1}>
+                {name}
+              </Text>
+            ))}
+            {failedCount > 50 && (
+              <Text style={styles.failedMore}>…and {failedCount - 50} more</Text>
+            )}
+          </ScrollView>
+        </View>
       )}
 
-      <TouchableOpacity style={styles.doneButton} onPress={onDone}>
-        <Text style={styles.doneButtonText}>{isFailed ? 'Close' : 'Done'}</Text>
-      </TouchableOpacity>
-
-      {!isFailed && (
-        <Text style={styles.resultHint}>
-          {saved.toLocaleString()} cards · {savedVariants(result).toLocaleString()} unique saved to {job.collectionName}
-        </Text>
-      )}
+      <PrimaryCTA
+        variant="solid"
+        style={styles.cta}
+        label={isFailed ? 'Close' : 'Done'}
+        onPress={onDone}
+      />
     </View>
   );
 }
 
-function ResultStat({ label, value, accent }: { label: string; value: number; accent?: string }) {
+function ResultStat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: string;
+}) {
   return (
     <View style={styles.statCell}>
       <Text style={[styles.statValue, accent ? { color: accent } : null]}>
@@ -187,75 +232,111 @@ function ResultStat({ label, value, accent }: { label: string; value: number; ac
 }
 
 const styles = StyleSheet.create({
-  progressContainer: {
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  progressHeader: {
+  // ── Header ────────────────────────────────────────────────────────
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    gap: spacing.md,
   },
-  progressTitle: {
+  titleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  subtitleBold: {
+    color: colors.text,
+    fontWeight: '700',
   },
   minimizeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
     borderRadius: borderRadius.full,
     backgroundColor: colors.primaryLight,
   },
   minimizeText: {
     color: colors.primary,
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+
+  // ── Progress view ─────────────────────────────────────────────────
+  progressContainer: {
+    paddingBottom: spacing.sm,
+  },
+  progressBlock: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   progressPhase: {
     color: colors.text,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.md,
     fontWeight: '700',
-    textAlign: 'center',
-    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  progressMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: spacing.sm,
   },
   progressCounts: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
-    textAlign: 'center',
+    fontWeight: '500',
+  },
+  progressPercent: {
+    color: colors.primary,
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.borderLight,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.surface,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     backgroundColor: colors.primary,
-    borderRadius: 3,
+    borderRadius: 4,
   },
   progressHint: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     textAlign: 'center',
     paddingHorizontal: spacing.md,
-    marginTop: spacing.xs,
+    fontWeight: '500',
   },
+
+  // ── Result view ───────────────────────────────────────────────────
   resultContainer: {
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  closeBtn: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    padding: spacing.sm,
-    zIndex: 1,
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    marginBottom: spacing.md,
   },
   resultIcon: {
     width: 64,
@@ -263,54 +344,77 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
   resultTitle: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
+    marginBottom: spacing.xs,
   },
   resultSubtitle: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
+    fontWeight: '500',
     textAlign: 'center',
     paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
   },
-  resultStats: {
+  resultSubtitleBold: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    alignItems: 'center',
     alignSelf: 'stretch',
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  statsDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: colors.border,
   },
   statCell: {
+    flex: 1,
     alignItems: 'center',
   },
   statValue: {
     color: colors.text,
     fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   statLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    marginTop: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  failedList: {
-    alignSelf: 'stretch',
-    maxHeight: 180,
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.md,
-  },
-  failedHeader: {
-    color: colors.textSecondary,
+    color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    marginTop: 2,
+  },
+  failedWrap: {
+    alignSelf: 'stretch',
+    marginBottom: spacing.md,
+  },
+  failedHeader: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
     marginBottom: spacing.sm,
+  },
+  failedList: {
+    maxHeight: 160,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   failedItem: {
     color: colors.text,
@@ -320,27 +424,11 @@ const styles = StyleSheet.create({
   failedMore: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '600',
     marginTop: spacing.xs,
   },
-  doneButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    borderRadius: 10,
+  cta: {
+    minHeight: 44,
     alignSelf: 'stretch',
-    alignItems: 'center',
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-  },
-  doneButtonText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-  },
-  resultHint: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
   },
 });

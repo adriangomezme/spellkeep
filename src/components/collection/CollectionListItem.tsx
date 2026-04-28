@@ -75,11 +75,13 @@ const styles = StyleSheet.create({
   name: {
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: -0.3,
   },
   subtitle: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontSize: fontSize.sm,
+    fontWeight: '500',
     marginTop: 2,
   },
   swipeContainer: {

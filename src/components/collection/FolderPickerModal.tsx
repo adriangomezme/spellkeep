@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  View,
   Text,
   TouchableOpacity,
   ActivityIndicator,
@@ -26,7 +27,13 @@ type Props = {
   onMoved: () => void;
 };
 
-export function FolderPickerModal({ visible, collectionId, collectionType, onClose, onMoved }: Props) {
+export function FolderPickerModal({
+  visible,
+  collectionId,
+  collectionType,
+  onClose,
+  onMoved,
+}: Props) {
   const [isMoving, setIsMoving] = useState(false);
 
   // Local-first: folders come straight from SQLite so the picker works
@@ -55,61 +62,122 @@ export function FolderPickerModal({ visible, collectionId, collectionType, onClo
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text style={styles.title}>Move to Folder</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Move to folder</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.cancel}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={styles.loader} />
       ) : folders.length === 0 ? (
-        <Text style={styles.emptyText}>
-          No {collectionType} folders yet. Create one first.
-        </Text>
+        <View style={styles.emptyWrap}>
+          <View style={styles.emptyIcon}>
+            <Ionicons name="folder-outline" size={28} color={colors.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>No folders yet</Text>
+          <Text style={styles.emptyText}>
+            Create a {collectionType} folder first to move this {collectionType} into it.
+          </Text>
+        </View>
       ) : (
-        folders.map((folder) => (
-          <TouchableOpacity
-            key={folder.id}
-            style={styles.folderRow}
-            onPress={() => handleSelect(folder.id)}
-            disabled={isMoving}
-            activeOpacity={0.5}
-          >
-            <Ionicons name="folder" size={20} color={folder.color || '#A0A8B8'} />
-            <Text style={styles.folderName}>{folder.name}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-        ))
+        <View style={styles.list}>
+          {folders.map((folder, idx) => {
+            const tint = folder.color || '#A0A8B8';
+            const isLast = idx === folders.length - 1;
+            return (
+              <TouchableOpacity
+                key={folder.id}
+                style={[styles.row, !isLast && styles.rowDivider]}
+                onPress={() => handleSelect(folder.id)}
+                disabled={isMoving}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.thumb, { backgroundColor: tint + '22' }]}>
+                  <Ionicons name="folder" size={16} color={tint} />
+                </View>
+                <Text style={styles.rowName} numberOfLines={1}>{folder.name}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
-    marginBottom: spacing.lg,
+    letterSpacing: -0.4,
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
   },
   loader: {
     paddingVertical: spacing.xl,
   },
-  emptyText: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
-    textAlign: 'center',
-    paddingVertical: spacing.xl,
-  },
-  folderRow: {
+  list: {},
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
+    gap: spacing.sm + 4,
+    paddingVertical: spacing.sm + 4,
   },
-  folderName: {
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  thumb: {
+    width: 30,
+    height: 30,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowName: {
     flex: 1,
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
   },
 });

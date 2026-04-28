@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   Alert,
   StyleSheet,
   Keyboard,
@@ -16,6 +15,7 @@ import { BottomSheet } from '../BottomSheet';
 import type { ImportFormat } from '../../lib/import';
 import { useImportJob } from './ImportJobProvider';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
+import { PrimaryCTA } from '../PrimaryCTA';
 
 type FormatOption = {
   key: ImportFormat;
@@ -26,10 +26,10 @@ type FormatOption = {
 };
 
 const FORMATS: FormatOption[] = [
-  { key: 'spellkeep', label: 'SpellKeep CSV', description: 'CSV file exported by SpellKeep.\nIncludes full card data, finish, and layout.', allowPaste: false, section: 'spellkeep' },
-  { key: 'plain', label: 'Plain Text', description: 'Simple text list with card name, set, and quantity.\nSupports foil and etched flags.', allowPaste: true, section: 'standard' },
-  { key: 'csv', label: 'CSV', description: 'Standard CSV with header row.\nAuto-detects columns by name.', allowPaste: true, section: 'standard' },
-  { key: 'hevault', label: 'Hevault CSV', description: 'CSV file exported by Hevault.\nUses Scryfall IDs so language and etched variants stay distinct.', allowPaste: false, section: 'thirdparty' },
+  { key: 'spellkeep', label: 'SpellKeep CSV', description: 'CSV exported by SpellKeep — full card data, finish and layout.', allowPaste: false, section: 'spellkeep' },
+  { key: 'plain', label: 'Plain Text', description: 'Card name, set, quantity. Supports foil and etched flags.', allowPaste: true, section: 'standard' },
+  { key: 'csv', label: 'CSV', description: 'Standard CSV with header row — auto-detects columns by name.', allowPaste: true, section: 'standard' },
+  { key: 'hevault', label: 'Hevault CSV', description: 'CSV exported by Hevault — uses Scryfall IDs to keep variants distinct.', allowPaste: false, section: 'thirdparty' },
 ];
 
 const SECTIONS: { key: string; label: string | null }[] = [
@@ -101,7 +101,6 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
   async function runImport(text: string) {
     try {
       await startImport({ text, format, collectionId, collectionName });
-      // Hand off to the global ImportStatusSheet; close the starter.
       reset();
       onClose();
     } catch (err: any) {
@@ -109,63 +108,80 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
     }
   }
 
-  // Format picker needs a tall fixed sheet so the list scrolls cleanly.
-  // The input step is much shorter (just a Choose File button, or that
-  // plus a small paste area) — use dynamic sizing there so the sheet
-  // hugs the content and doesn't leave hundreds of pixels of blank
-  // space below the CTA.
-  const snapPoints = step === 'format'
-    ? ['75%', '90%']
-    : allowPaste ? ['55%', '85%'] : undefined;
-
   return (
-    <BottomSheet visible={visible} onClose={handleClose} snapPoints={snapPoints}>
+    <BottomSheet visible={visible} onClose={handleClose}>
       {step === 'format' ? (
         <>
-          <Text style={styles.title}>Import</Text>
-          <Text style={styles.subtitle}>into {collectionName}</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.titleWrap}>
+              <Text style={styles.title}>Import</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                Into <Text style={styles.subtitleBold}>{collectionName}</Text>
+              </Text>
+            </View>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
 
-          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          <View>
             {SECTIONS.map((section) => {
               const sectionFormats = FORMATS.filter((f) => f.section === section.key);
               if (sectionFormats.length === 0) return null;
               return (
-                <View key={section.key}>
+                <View key={section.key} style={styles.section}>
                   {section.label && <Text style={styles.sectionLabel}>{section.label}</Text>}
-                  {sectionFormats.map((f) => (
-                    <TouchableOpacity
-                      key={f.key}
-                      style={styles.formatRow}
-                      onPress={() => handleFormatSelect(f.key)}
-                      activeOpacity={0.5}
-                    >
-                      <View style={styles.formatContent}>
-                        <Text style={[styles.formatLabel, f.section === 'spellkeep' && styles.formatLabelHighlight]}>
-                          {f.label}
-                        </Text>
-                        <Text style={styles.formatDesc}>{f.description}</Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  ))}
+                  {sectionFormats.map((f, idx) => {
+                    const isLast = idx === sectionFormats.length - 1;
+                    const isFeatured = f.section === 'spellkeep';
+                    return (
+                      <TouchableOpacity
+                        key={f.key}
+                        style={[styles.formatRow, !isLast && styles.formatRowDivider]}
+                        onPress={() => handleFormatSelect(f.key)}
+                        activeOpacity={0.6}
+                      >
+                        <View style={styles.formatContent}>
+                          <Text style={[styles.formatLabel, isFeatured && styles.formatLabelHighlight]}>
+                            {f.label}
+                          </Text>
+                          <Text style={styles.formatDesc}>{f.description}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               );
             })}
-          </ScrollView>
+          </View>
         </>
       ) : (
         <>
-          <View style={styles.inputHeader}>
-            <TouchableOpacity onPress={() => setStep('format')}>
-              <Ionicons name="chevron-back" size={24} color={colors.text} />
+          {/* Input header (back + title + cancel) */}
+          <View style={styles.header}>
+            <View style={styles.backRow}>
+              <TouchableOpacity
+                onPress={() => setStep('format')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={24} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={styles.title}>{currentFormat?.label}</Text>
+            </View>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.cancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.inputTitle}>{currentFormat?.label}</Text>
-            <View style={{ width: 24 }} />
           </View>
 
           <TouchableOpacity style={styles.fileButton} onPress={handleFile} activeOpacity={0.6}>
-            <Ionicons name="folder-open-outline" size={20} color={colors.primary} />
-            <Text style={styles.fileButtonText}>Choose File</Text>
+            <Ionicons name="document-attach-outline" size={20} color={colors.primary} />
+            <View style={styles.fileButtonText}>
+              <Text style={styles.fileButtonLabel}>Choose file</Text>
+              <Text style={styles.fileButtonHint}>Pick a {currentFormat?.label} file from Files</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
           {allowPaste && (
@@ -178,7 +194,7 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
 
               <BottomSheetTextInput
                 style={styles.pasteInput}
-                placeholder="Paste your card list here..."
+                placeholder="Paste your card list here…"
                 placeholderTextColor={colors.textMuted}
                 value={pasteText}
                 onChangeText={setPasteText}
@@ -188,14 +204,13 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
                 autoCorrect={false}
               />
 
-              <TouchableOpacity
-                style={[styles.importButton, !pasteText.trim() && styles.importButtonDisabled]}
+              <PrimaryCTA
+                variant="solid"
+                style={styles.cta}
+                label="Import"
                 onPress={handlePaste}
                 disabled={!pasteText.trim()}
-              >
-                <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.importButtonText}>Import</Text>
-              </TouchableOpacity>
+              />
             </>
           )}
         </>
@@ -205,32 +220,66 @@ export function ImportModal({ visible, collectionId, collectionName, onClose }: 
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  titleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+    minWidth: 0,
+  },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   subtitle: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
-    marginBottom: spacing.md,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  subtitleBold: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+  section: {
+    marginBottom: spacing.sm,
   },
   sectionLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.md,
+    letterSpacing: 0.6,
+    marginTop: spacing.sm,
     marginBottom: spacing.sm,
   },
   formatRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
+    paddingVertical: spacing.sm + 4,
+  },
+  formatRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   formatContent: {
     flex: 1,
@@ -239,42 +288,42 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   formatLabelHighlight: {
     color: colors.primary,
   },
   formatDesc: {
     color: colors.textSecondary,
-    fontSize: fontSize.xs,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  inputHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-  },
-  inputTitle: {
-    color: colors.text,
-    fontSize: fontSize.xl,
-    fontWeight: '800',
+    fontSize: fontSize.sm,
+    marginTop: 3,
+    fontWeight: '500',
   },
   fileButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
+    gap: spacing.sm + 4,
     paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm + 2,
     borderWidth: 1.5,
     borderColor: colors.primary,
     borderStyle: 'dashed',
   },
   fileButtonText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  fileButtonLabel: {
     color: colors.primary,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  fileButtonHint: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 2,
+    fontWeight: '500',
   },
   dividerRow: {
     flexDirection: 'row',
@@ -284,38 +333,27 @@ const styles = StyleSheet.create({
   },
   dividerLine: {
     flex: 1,
-    height: 1,
-    backgroundColor: colors.divider,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
   },
   dividerText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   pasteInput: {
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.sm + 2,
     padding: spacing.md,
     fontSize: fontSize.sm,
     color: colors.text,
-    height: 150,
+    height: 130,
     fontFamily: 'Courier',
   },
-  importButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: spacing.md,
+  cta: {
+    minHeight: 44,
     marginTop: spacing.md,
-  },
-  importButtonDisabled: {
-    opacity: 0.5,
-  },
-  importButtonText: {
-    color: '#FFFFFF',
-    fontSize: fontSize.lg,
-    fontWeight: '600',
   },
 });

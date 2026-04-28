@@ -223,20 +223,40 @@ export default function FolderDetailScreen() {
     }
   }
 
+  const tint = folderColor || '#A0A8B8';
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={28} color={colors.text} />
-        </TouchableOpacity>
-        <Ionicons name="folder" size={22} color={folderColor || '#A0A8B8'} />
-        <Text style={styles.title} numberOfLines={1}>{folderName ?? 'Folder'}</Text>
-        <TouchableOpacity onPress={handleAddInFolder} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="add-circle" size={26} color={colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <View style={styles.headerCard}>
+        <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={26} color={colors.text} />
+          </TouchableOpacity>
+
+          <View style={[styles.thumb, { backgroundColor: tint + '22' }]}>
+            <Ionicons name="folder" size={18} color={tint} />
+          </View>
+
+          <Text style={styles.title} numberOfLines={1}>{folderName ?? 'Folder'}</Text>
+
+          <TouchableOpacity
+            onPress={handleAddInFolder}
+            style={styles.plusButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add-sharp" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowActions(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {reorderMode ? (
@@ -301,6 +321,7 @@ export default function FolderDetailScreen() {
         visible={showActions && !showEdit}
         itemName={folderName ?? ''}
         itemType="folder"
+        itemColor={folderColor ?? null}
         hideReorder
         onAction={handleFolderAction}
         onClose={() => setShowActions(false)}
@@ -329,6 +350,9 @@ export default function FolderDetailScreen() {
         visible={showItemActions}
         itemName={selectedItem?.name ?? ''}
         itemType={selectedItem?.type ?? 'binder'}
+        itemColor={selectedItem?.color ?? null}
+        itemCount={selectedItem?.card_count}
+        itemValue={selectedItem?.total_value}
         inFolder
         isQuickAddTarget={selectedItem?.id === quickAddTargetId}
         onAction={handleItemAction}
@@ -385,23 +409,44 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    ...shadows.sm,
+  },
+  headerInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm + 2,
+  },
+  thumb: {
+    width: 32,
+    height: 32,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     flex: 1,
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  plusButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   list: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm + 4,
     paddingBottom: spacing.xxl,
   },
   centered: {
