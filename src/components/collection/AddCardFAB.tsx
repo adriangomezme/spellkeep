@@ -16,6 +16,16 @@ type Props = {
   onImport: () => void;
 };
 
+type ActionDef = {
+  key: 'scan' | 'search' | 'import';
+  label: string;
+  description: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  iconBg: string;
+  iconColor: string;
+  onPress: () => void;
+};
+
 export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
   const [open, setOpen] = useState(false);
   const animation = useRef(new Animated.Value(0)).current;
@@ -36,7 +46,7 @@ export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
 
   const menuTranslateY = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [20, 0],
+    outputRange: [16, 0],
   });
 
   const rotate = animation.interpolate({
@@ -49,10 +59,34 @@ export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
     action();
   }
 
-  const ACTIONS = [
-    { key: 'scan', label: 'Scan', icon: 'camera-outline' as const, onPress: onScan },
-    { key: 'search', label: 'Search', icon: 'search-outline' as const, onPress: onSearch },
-    { key: 'import', label: 'Import', icon: 'arrow-down-circle-outline' as const, onPress: onImport },
+  const ACTIONS: ActionDef[] = [
+    {
+      key: 'scan',
+      label: 'Scan',
+      description: 'Use the camera',
+      icon: 'scan-outline',
+      iconBg: colors.primary + '14',
+      iconColor: colors.primary,
+      onPress: onScan,
+    },
+    {
+      key: 'search',
+      label: 'Search',
+      description: 'Find by name or set',
+      icon: 'search-outline',
+      iconBg: colors.success + '1A',
+      iconColor: colors.success,
+      onPress: onSearch,
+    },
+    {
+      key: 'import',
+      label: 'Import',
+      description: 'From CSV or plain text',
+      icon: 'arrow-down-outline',
+      iconBg: colors.accent + '1F',
+      iconColor: colors.accent,
+      onPress: onImport,
+    },
   ];
 
   return (
@@ -74,17 +108,25 @@ export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
               },
             ]}
           >
-            {ACTIONS.map((action) => (
-              <TouchableOpacity
-                key={action.key}
-                style={styles.menuItem}
-                onPress={() => handleAction(action.onPress)}
-                activeOpacity={0.6}
-              >
-                <Ionicons name={action.icon} size={20} color={colors.text} />
-                <Text style={styles.menuLabel}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {ACTIONS.map((action, idx) => {
+              const isLast = idx === ACTIONS.length - 1;
+              return (
+                <TouchableOpacity
+                  key={action.key}
+                  style={[styles.menuItem, !isLast && styles.menuItemDivider]}
+                  onPress={() => handleAction(action.onPress)}
+                  activeOpacity={0.6}
+                >
+                  <View style={[styles.menuIcon, { backgroundColor: action.iconBg }]}>
+                    <Ionicons name={action.icon} size={18} color={action.iconColor} />
+                  </View>
+                  <View style={styles.menuText}>
+                    <Text style={styles.menuLabel}>{action.label}</Text>
+                    <Text style={styles.menuDescription}>{action.description}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </Animated.View>
         )}
 
@@ -94,7 +136,7 @@ export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
           activeOpacity={0.8}
         >
           <Animated.View style={{ transform: [{ rotate }] }}>
-            <Ionicons name="add" size={26} color={colors.text} />
+            <Ionicons name="add-sharp" size={26} color={colors.text} />
           </Animated.View>
         </TouchableOpacity>
       </View>
@@ -105,7 +147,7 @@ export function AddCardFAB({ onScan, onSearch, onImport }: Props) {
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     zIndex: 90,
   },
   fabContainer: {
@@ -118,22 +160,43 @@ const styles = StyleSheet.create({
   menu: {
     marginBottom: spacing.md,
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.xs,
-    minWidth: 160,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.xs + 2,
+    minWidth: 240,
     ...shadows.lg,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: spacing.sm + 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  menuItemDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  menuIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: {
+    flex: 1,
   },
   menuLabel: {
     color: colors.text,
     fontSize: fontSize.md,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  menuDescription: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
     fontWeight: '500',
+    marginTop: 1,
   },
   fab: {
     width: 48,

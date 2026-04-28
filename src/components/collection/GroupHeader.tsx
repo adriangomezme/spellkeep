@@ -6,15 +6,19 @@ import { MTGGlyph } from '../MTGGlyph';
 import type { Group } from '../../lib/cardListUtils';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
-const COLOR_DOT_SWATCH: Record<string, string> = {
-  W: '#F9FAF4',
-  U: '#0E68AB',
-  B: '#150B00',
-  R: '#D3202A',
-  G: '#00733E',
-  multi: '#E0C540',
-  colorless: '#CCC2C0',
+// Pastel "gem" backgrounds used as the bubble fill behind each mana
+// glyph — same palette as the FilterSheet color chips so the visual
+// language stays consistent across the app.
+const COLOR_BUBBLE_BG: Record<string, string> = {
+  W: '#FFFBD5',
+  U: '#AAE0FA',
+  B: '#CBC2BF',
+  R: '#F9AA8F',
+  G: '#9BD3AE',
+  colorless: '#E8E4E0',
+  multi: '#F0E68C',
 };
+const COLOR_BUBBLE_FG = '#1A1718';
 
 // Light "ribbon" header: surface elevated above the page bg so it
 // reads as a divider between groups, not as a chrome bar. A 1 px
@@ -54,7 +58,7 @@ function GroupHeaderImpl({ group, isCollapsed, onToggle }: Props) {
 
       <Ionicons
         name="chevron-down"
-        size={18}
+        size={16}
         color={HEADER_FG_MUTED}
         style={[styles.chevron, isCollapsed && styles.chevronCollapsed]}
       />
@@ -103,16 +107,23 @@ function GroupHeaderIcon({ group }: { group: Group<unknown> }) {
       }
       return <Ionicons name="albums-outline" size={18} color={HEADER_FG_MUTED} />;
     case 'color': {
-      const swatch = COLOR_DOT_SWATCH[icon.color];
-      return (
-        <View
-          style={[
-            styles.colorDot,
-            { backgroundColor: swatch },
-            icon.color === 'W' && styles.colorDotBorder,
-          ]}
-        />
-      );
+      // Pastel bubble matches the FilterSheet color chips: a coloured
+      // gem-style background with the dark mana glyph centered on top.
+      const bg = COLOR_BUBBLE_BG[icon.color] ?? COLOR_BUBBLE_BG.colorless;
+      const glyph =
+        icon.color === 'multi' ? (
+          <MTGGlyph kind="type" code="multicolor" size={13} color={COLOR_BUBBLE_FG} />
+        ) : icon.color === 'colorless' ? (
+          <MTGGlyph kind="mana" code="C" size={13} color={COLOR_BUBBLE_FG} />
+        ) : (
+          <MTGGlyph
+            kind="mana"
+            code={icon.color as 'W' | 'U' | 'B' | 'R' | 'G'}
+            size={13}
+            color={COLOR_BUBBLE_FG}
+          />
+        );
+      return <View style={[styles.colorBubble, { backgroundColor: bg }]}>{glyph}</View>;
     }
     case 'tag':
       return (
@@ -133,17 +144,17 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm + 2,
     backgroundColor: HEADER_BG,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: HEADER_BORDER,
   },
   iconWrap: {
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -154,12 +165,13 @@ const styles = StyleSheet.create({
     color: HEADER_FG,
     fontSize: fontSize.md,
     fontWeight: '700',
-    letterSpacing: 0.1,
+    letterSpacing: -0.1,
   },
   sub: {
     color: HEADER_FG_MUTED,
     fontSize: fontSize.xs,
-    marginTop: 2,
+    marginTop: 1,
+    fontWeight: '500',
     fontVariant: ['tabular-nums'],
   },
   chevron: {
@@ -172,13 +184,16 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
   },
+  colorBubble: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   colorDot: {
     width: 16,
     height: 16,
     borderRadius: borderRadius.full,
-  },
-  colorDotBorder: {
-    borderWidth: 1,
-    borderColor: colors.border,
   },
 });

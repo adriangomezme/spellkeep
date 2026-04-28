@@ -18,14 +18,18 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from '../BottomSheet';
 import { MTGGlyph, type ManaGlyph } from '../MTGGlyph';
+import { PrimaryCTA } from '../PrimaryCTA';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CHROME_HEIGHT = 220; // header + tabs + search + apply + padding
 const SELECTED_BAR_HEIGHT = 40;
 
-function getSetListMax(snapFraction: number, hasSelected: boolean): number {
-  return SCREEN_HEIGHT * snapFraction - CHROME_HEIGHT - (hasSelected ? SELECTED_BAR_HEIGHT : 0);
+function getSetListMax(snapFraction: number): number {
+  // The selected-summary bar is always rendered (with a placeholder when
+  // empty) so heights stay stable when the user picks an item — no jump
+  // cut. The list max-height accounts for that constant.
+  return SCREEN_HEIGHT * snapFraction - CHROME_HEIGHT - SELECTED_BAR_HEIGHT;
 }
 
 /* ── MTG color definitions — pastel "gem" backgrounds matching the
@@ -67,6 +71,12 @@ export type PriceMode = 'gte' | 'lte';
  *               — commander deck-building semantics). */
 export type ColorMatchMode = 'gte' | 'eq' | 'lte';
 
+/** Tag match mode — applied when one or more tags are selected.
+ *  - `any` : entry has at least one of the selected tags (OR).
+ *  - `all` : entry has every selected tag (AND — historical default).
+ *  - `not` : entry has none of the selected tags (excludes). */
+export type TagMatchMode = 'any' | 'all' | 'not';
+
 export type FilterState = {
   /** Mana-cost colors selection (rule 903.4: cost + color indicator). */
   colors: string[];
@@ -84,6 +94,7 @@ export type FilterState = {
   sets: string[];
   languages: string[];
   tags: string[];
+  tagsMode: TagMatchMode;
 };
 
 export const EMPTY_FILTERS: FilterState = {
@@ -100,6 +111,7 @@ export const EMPTY_FILTERS: FilterState = {
   sets: [],
   languages: [],
   tags: [],
+  tagsMode: 'all',
 };
 
 export function countActiveFilters(f: FilterState): number {
@@ -143,6 +155,41 @@ const COLOR_MODE_LABELS: Record<ColorMatchMode, string> = {
   eq: 'Exact',
   lte: 'Within',
 };
+
+const TAG_MODE_LABELS: Record<TagMatchMode, string> = {
+  any: 'Any',
+  all: 'All',
+  not: 'Not',
+};
+const TAG_MODE_ORDER: TagMatchMode[] = ['any', 'all', 'not'];
+
+function TagModeSegmented({
+  value,
+  onChange,
+}: {
+  value: TagMatchMode;
+  onChange: (next: TagMatchMode) => void;
+}) {
+  return (
+    <View style={styles.modeSegmented}>
+      {TAG_MODE_ORDER.map((m) => {
+        const active = value === m;
+        return (
+          <TouchableOpacity
+            key={m}
+            style={[styles.modeSegment, active && styles.modeSegmentActive]}
+            onPress={() => onChange(m)}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.modeSegmentLabel, active && styles.modeSegmentLabelActive]}>
+              {TAG_MODE_LABELS[m]}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 const COLOR_MODE_HELP: Record<ColorMatchMode, string> = {
   gte: 'Card has at least the chosen colors.',
@@ -276,8 +323,14 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       <View style={styles.header}>
         <Text style={styles.title}>Filters</Text>
         {activeCount > 0 && (
-          <TouchableOpacity onPress={handleReset} activeOpacity={0.6}>
-            <Text style={styles.resetText}>Reset All</Text>
+          <TouchableOpacity
+            onPress={handleReset}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.6}
+            style={styles.resetButton}
+          >
+            <Ionicons name="refresh-outline" size={13} color={colors.error} />
+            <Text style={styles.resetText}>Reset · {activeCount}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -512,19 +565,24 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       ) : tab === 'set' ? (
         /* ── Set tab ── */
         <View style={{ flex: 1 }}>
-          {/* Selected sets summary */}
-          {local.sets.length > 0 && (
-            <View style={styles.selectedSetsBar}>
-              <Text style={styles.selectedSetsText}>
-                {local.sets.length === 1
-                  ? availableSets.find((s) => s.code === local.sets[0])?.name ?? local.sets[0].toUpperCase()
-                  : `${local.sets.length} sets selected`}
-              </Text>
-              <TouchableOpacity onPress={() => setLocal({ ...local, sets: [] })} activeOpacity={0.6}>
-                <Text style={styles.selectedSetsClear}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {/* Selected sets summary — always rendered (with a hint when
+              empty) so the layout doesn't jump when the user picks. */}
+          <View style={[styles.selectedSetsBar, local.sets.length === 0 && styles.selectedSetsBarEmpty]}>
+            {local.sets.length > 0 ? (
+              <>
+                <Text style={styles.selectedSetsText} numberOfLines={1}>
+                  {local.sets.length === 1
+                    ? availableSets.find((s) => s.code === local.sets[0])?.name ?? local.sets[0].toUpperCase()
+                    : `${local.sets.length} sets selected`}
+                </Text>
+                <TouchableOpacity onPress={() => setLocal({ ...local, sets: [] })} activeOpacity={0.6}>
+                  <Text style={styles.selectedSetsClear}>Clear</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.selectedSetsHint}>No sets selected</Text>
+            )}
+          </View>
 
           {/* Search */}
           <View style={styles.setSearchField}>
@@ -546,7 +604,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
           </View>
 
           {/* Full set list */}
-          <ScrollView style={{ maxHeight: getSetListMax(snapFraction, local.sets.length > 0) }} nestedScrollEnabled showsVerticalScrollIndicator>
+          <ScrollView style={{ maxHeight: getSetListMax(snapFraction) }} nestedScrollEnabled showsVerticalScrollIndicator>
             {filteredSets.map((s) => {
               const active = local.sets.includes(s.code);
               return (
@@ -577,18 +635,22 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       ) : tab === 'language' ? (
         /* ── Language tab ── */
         <View style={{ flex: 1 }}>
-          {local.languages.length > 0 && (
-            <View style={styles.selectedSetsBar}>
-              <Text style={styles.selectedSetsText}>
-                {local.languages.length === 1
-                  ? availableLanguages.find((l) => l.code === local.languages[0])?.label ?? local.languages[0].toUpperCase()
-                  : `${local.languages.length} languages selected`}
-              </Text>
-              <TouchableOpacity onPress={() => setLocal({ ...local, languages: [] })} activeOpacity={0.6}>
-                <Text style={styles.selectedSetsClear}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={[styles.selectedSetsBar, local.languages.length === 0 && styles.selectedSetsBarEmpty]}>
+            {local.languages.length > 0 ? (
+              <>
+                <Text style={styles.selectedSetsText} numberOfLines={1}>
+                  {local.languages.length === 1
+                    ? availableLanguages.find((l) => l.code === local.languages[0])?.label ?? local.languages[0].toUpperCase()
+                    : `${local.languages.length} languages selected`}
+                </Text>
+                <TouchableOpacity onPress={() => setLocal({ ...local, languages: [] })} activeOpacity={0.6}>
+                  <Text style={styles.selectedSetsClear}>Clear</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.selectedSetsHint}>No languages selected</Text>
+            )}
+          </View>
 
           <View style={styles.setSearchField}>
             <Ionicons name="search" size={14} color={colors.textMuted} />
@@ -608,7 +670,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
             )}
           </View>
 
-          <ScrollView style={{ maxHeight: getSetListMax(snapFraction, local.languages.length > 0) }} nestedScrollEnabled showsVerticalScrollIndicator>
+          <ScrollView style={{ maxHeight: getSetListMax(snapFraction) }} nestedScrollEnabled showsVerticalScrollIndicator>
             {filteredLanguages.map((l) => {
               const active = local.languages.includes(l.code);
               return (
@@ -639,18 +701,30 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       ) : (
         /* ── Tags tab ── */
         <View style={{ flex: 1 }}>
-          {local.tags.length > 0 && (
-            <View style={styles.selectedSetsBar}>
-              <Text style={styles.selectedSetsText}>
-                {local.tags.length === 1
-                  ? availableTags.find((t) => t.id === local.tags[0])?.name ?? '1 tag selected'
-                  : `${local.tags.length} tags selected`}
-              </Text>
-              <TouchableOpacity onPress={() => setLocal({ ...local, tags: [] })} activeOpacity={0.6}>
-                <Text style={styles.selectedSetsClear}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={styles.tagModeRow}>
+            <Text style={styles.tagModeLabel}>Match</Text>
+            <TagModeSegmented
+              value={local.tagsMode}
+              onChange={(m) => setLocal({ ...local, tagsMode: m })}
+            />
+          </View>
+
+          <View style={[styles.selectedSetsBar, local.tags.length === 0 && styles.selectedSetsBarEmpty]}>
+            {local.tags.length > 0 ? (
+              <>
+                <Text style={styles.selectedSetsText} numberOfLines={1}>
+                  {local.tags.length === 1
+                    ? availableTags.find((t) => t.id === local.tags[0])?.name ?? '1 tag selected'
+                    : `${local.tags.length} tags selected`}
+                </Text>
+                <TouchableOpacity onPress={() => setLocal({ ...local, tags: [] })} activeOpacity={0.6}>
+                  <Text style={styles.selectedSetsClear}>Clear</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={styles.selectedSetsHint}>No tags selected</Text>
+            )}
+          </View>
 
           <View style={styles.setSearchField}>
             <Ionicons name="search" size={14} color={colors.textMuted} />
@@ -670,7 +744,7 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
             )}
           </View>
 
-          <ScrollView style={{ maxHeight: getSetListMax(snapFraction, local.tags.length > 0) }} nestedScrollEnabled showsVerticalScrollIndicator>
+          <ScrollView style={{ maxHeight: getSetListMax(snapFraction) }} nestedScrollEnabled showsVerticalScrollIndicator>
             {filteredTags.map((t) => {
               const active = local.tags.includes(t.id);
               return (
@@ -706,12 +780,12 @@ export function FilterSheet({ visible, filters, availableSets, availableLanguage
       )}
 
       {/* ── Apply button ── */}
-      <TouchableOpacity style={styles.applyButton} onPress={handleApply} activeOpacity={0.6}>
-        <Ionicons name="checkmark" size={18} color="#FFF" />
-        <Text style={styles.applyText}>
-          Apply{activeCount > 0 ? ` (${activeCount})` : ''}
-        </Text>
-      </TouchableOpacity>
+      <PrimaryCTA
+        variant="solid"
+        style={styles.applyButton}
+        label={`Apply${activeCount > 0 ? ` · ${activeCount}` : ''}`}
+        onPress={handleApply}
+      />
     </BottomSheet>
   );
 }
@@ -725,38 +799,50 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
+    fontSize: fontSize.xxl,
     fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: colors.errorLight,
+    borderRadius: 999,
   },
   resetText: {
     color: colors.error,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
   },
-  /* Tabs */
+  /* Tabs (segmented control) */
   tabRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    padding: 4,
+    gap: 4,
+    marginBottom: spacing.md,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    borderRadius: borderRadius.sm,
   },
   tabActive: {
-    borderBottomColor: colors.primary,
+    backgroundColor: colors.surface,
   },
   tabLabel: {
-    color: colors.textMuted,
-    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   tabLabelActive: {
     color: colors.primary,
+    fontWeight: '700',
   },
   /* Sections */
   sectionLabel: {
@@ -764,7 +850,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
@@ -789,14 +875,14 @@ const styles = StyleSheet.create({
   modeSegmented: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
     padding: 2,
     gap: 2,
   },
   modeSegment: {
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 4,
-    borderRadius: borderRadius.sm - 2,
+    borderRadius: 4,
   },
   modeSegmentActive: {
     backgroundColor: colors.surface,
@@ -949,32 +1035,59 @@ const styles = StyleSheet.create({
     color: colors.text,
     padding: 0,
   },
-  /* Set tab */
+  /* Tag match-mode header (Any / All / Not). */
+  tagModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  tagModeLabel: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+
+  /* Set tab — selected summary bar always rendered (with hint when empty)
+   *  to keep the layout stable when the user picks. */
   selectedSetsBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.primaryLight,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm + 2,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
+    minHeight: SELECTED_BAR_HEIGHT,
+  },
+  selectedSetsBarEmpty: {
+    backgroundColor: colors.surfaceSecondary,
   },
   selectedSetsText: {
     color: colors.primary,
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  selectedSetsHint: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
   },
   selectedSetsClear: {
     color: colors.error,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   setSearchField: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
     paddingHorizontal: spacing.md,
     height: 40,
     gap: spacing.sm,
@@ -1044,18 +1157,7 @@ const styles = StyleSheet.create({
   },
   /* Apply button */
   applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
+    minHeight: 44,
     marginTop: spacing.sm,
-  },
-  applyText: {
-    color: '#FFF',
-    fontSize: fontSize.lg,
-    fontWeight: '600',
   },
 });

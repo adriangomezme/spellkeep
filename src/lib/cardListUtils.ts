@@ -354,13 +354,20 @@ export function filterAndSort<T extends CardEntry>(
   }
 
   if (filters.tags.length > 0 && tagsByEntryId) {
-    // Multi-select on tags is AND: an entry must carry every selected
-    // tag to pass. Single-tag filter is the common case and falls
-    // through quickly.
+    // Match mode is user-selectable in the FilterSheet:
+    //   - 'any': entry has at least one of the selected tags
+    //   - 'all': entry has every selected tag (historical default)
+    //   - 'not': entry has none of the selected tags
     const wanted = filters.tags;
+    const mode = filters.tagsMode ?? 'all';
     result = result.filter((e) => {
       const ids = tagsByEntryId.get(e.id);
+      if (mode === 'not') {
+        if (!ids || ids.length === 0) return true;
+        return wanted.every((t) => !ids.includes(t));
+      }
       if (!ids || ids.length === 0) return false;
+      if (mode === 'any') return wanted.some((t) => ids.includes(t));
       return wanted.every((t) => ids.includes(t));
     });
   }

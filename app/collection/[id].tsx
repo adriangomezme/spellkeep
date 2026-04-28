@@ -665,9 +665,35 @@ export default function CollectionDetailScreen() {
     overflow: 'hidden',
   }));
 
+  // When grouping is active, sticky group headers collide with the
+  // header card's rounded corner and the page bg "tooths" through. We
+  // interpolate the bottom radius to 0 once scroll starts so the seam
+  // stays clean. With no grouping (the FlatList renders cards directly,
+  // no sticky chrome) we keep the corner static — there's nothing to
+  // collide with.
+  const isGrouped = groupBy !== 'none';
+  const headerCardStyle = useAnimatedStyle(() => {
+    if (!isGrouped) {
+      return {
+        borderBottomLeftRadius: borderRadius.xl,
+        borderBottomRightRadius: borderRadius.xl,
+      };
+    }
+    const radius = interpolate(
+      lastY.value,
+      [0, 6],
+      [borderRadius.xl, 0],
+      Extrapolation.CLAMP,
+    );
+    return {
+      borderBottomLeftRadius: radius,
+      borderBottomRightRadius: radius,
+    };
+  });
+
   return (
     <View style={styles.container}>
-      <View style={styles.headerCard}>
+      <Animated.View style={[styles.headerCard, headerCardStyle]}>
         <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
           {/* ── Header ── Cross-fade between normal and bulk so the switch
               doesn't feel like a jump cut. 180 ms fade is long enough to
@@ -769,7 +795,7 @@ export default function CollectionDetailScreen() {
             />
           </Animated.View>
         )}
-      </View>
+      </Animated.View>
 
       {/* ── Content ──
           On first open we wait for enrichment before painting the grid
@@ -1086,11 +1112,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
 
-  /* ── Header ── */
+  /* ── Header ──
+   *  Bottom radius is animated via headerCardStyle (collapses to 0 once
+   *  scroll starts so sticky group headers seal cleanly against the
+   *  card's edge). */
   headerCard: {
     backgroundColor: colors.surface,
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
     paddingBottom: spacing.xs + 2,
     ...shadows.sm,
   },
