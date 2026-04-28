@@ -43,12 +43,14 @@ const METRICS: Record<ToolbarSize, Metrics> = {
 };
 
 /**
- * Total visible height the toolbar occupies, including its bottom
- * padding. Screens use this to drive the scroll-collapse animation
- * (the row interpolates from this down to 0).
+ * Total visible height the toolbar occupies, including its top and
+ * bottom padding. Screens use this to drive the scroll-collapse
+ * animation (the row interpolates from this down to 0). Must stay in
+ * sync with `container.paddingTop` and `container.paddingBottom`
+ * below — otherwise the toolbar clips during animation.
  */
 export function toolbarHeightFor(size: ToolbarSize): number {
-  return METRICS[size].controlHeight + spacing.sm;
+  return METRICS[size].controlHeight + (spacing.sm + 2) + spacing.sm;
 }
 
 /**
@@ -176,6 +178,7 @@ export function nextViewMode(current: ViewMode): ViewMode {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm + 2,
     paddingBottom: spacing.sm,
   },
   searchRow: {
@@ -188,7 +191,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
@@ -198,7 +201,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   iconButton: {
-    borderRadius: borderRadius.sm,
+    borderRadius: 6,
     backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',

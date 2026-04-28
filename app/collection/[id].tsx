@@ -666,94 +666,110 @@ export default function CollectionDetailScreen() {
   }));
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* ── Header ── Cross-fade between normal and bulk so the switch
-          doesn't feel like a jump cut. 180 ms fade is long enough to
-          read as "smooth" and short enough to not impede bulk entry.
-          The bulk header uses a non-breaking-space subtitle so its
-          height matches the normal header — no layout shift. */}
-      {bulk.isActive ? (
-        <Animated.View
-          key="bulk-header"
-          entering={FadeIn.duration(180)}
-          exiting={FadeOut.duration(180)}
-          style={styles.header}
-        >
-          <TouchableOpacity onPress={bulk.exit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close" size={28} color={colors.text} />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.title} numberOfLines={1}>
-              {bulk.size === 0 ? 'Select cards' : `${bulk.size} selected`}
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              {bulk.size === 0 ? 'Tap cards to select' : '\u00A0'}
-            </Text>
-          </View>
-          <View style={{ width: 28 }} />
-        </Animated.View>
-      ) : (
-        <Animated.View
-          key="normal-header"
-          entering={FadeIn.duration(180)}
-          exiting={FadeOut.duration(180)}
-          style={styles.header}
-        >
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chevron-back" size={28} color={colors.text} />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
-            <Text
-              style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
+    <View style={styles.container}>
+      <View style={styles.headerCard}>
+        <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+          {/* ── Header ── Cross-fade between normal and bulk so the switch
+              doesn't feel like a jump cut. 180 ms fade is long enough to
+              read as "smooth" and short enough to not impede bulk entry.
+              The bulk header uses a non-breaking-space subtitle so its
+              height matches the normal header — no layout shift. */}
+          {bulk.isActive ? (
+            <Animated.View
+              key="bulk-header"
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(180)}
+              style={styles.headerRow}
             >
-              {uniqueCards > 0
-                ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
-                : '\u00A0'}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+              <TouchableOpacity onPress={bulk.exit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={28} color={colors.text} />
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {bulk.size === 0 ? 'Select cards' : `${bulk.size} selected`}
+                </Text>
+                <Text style={styles.headerSubtitle}>
+                  {bulk.size === 0 ? 'Tap cards to select' : '\u00A0'}
+                </Text>
+              </View>
+              <View style={{ width: 28 }} />
+            </Animated.View>
+          ) : (
+            <Animated.View
+              key="normal-header"
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(180)}
+              style={styles.headerRow}
+            >
+              <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={styles.title} numberOfLines={1}>{collectionName ?? 'Collection'}</Text>
+                {uniqueCards > 0 ? (
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>
+                    <Text style={styles.metaBold}>{totalCards.toLocaleString('en-US')}</Text>
+                    <Text style={styles.metaLabel}> cards</Text>
+                    <Text style={styles.metaDot}>  ·  </Text>
+                    <Text style={styles.metaBold}>{uniqueCards.toLocaleString('en-US')}</Text>
+                    <Text style={styles.metaLabel}> unique</Text>
+                    {displayValue > 0 && (
+                      <>
+                        <Text style={styles.metaDot}>  ·  </Text>
+                        <Text style={styles.metaValue}>
+                          ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Text>
+                      </>
+                    )}
+                  </Text>
+                ) : (
+                  <Text style={styles.headerSubtitle}>{'\u00A0'}</Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setShowActions(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+        </View>
 
-      {/* ── Toolbar (collapses on scroll) or Bulk actions bar ── */}
-      {bulk.isActive ? (
-        <Animated.View
-          key="bulk-bar"
-          entering={FadeIn.duration(180)}
-          exiting={FadeOut.duration(180)}
-        >
-          <BulkActionsBar
-            count={bulk.size}
-            onTag={handleBulkTag}
-            onMove={handleBulkMove}
-            onAdd={handleBulkAdd}
-            onDelete={handleBulkDelete}
-          />
-        </Animated.View>
-      ) : (
-        <Animated.View
-          key="normal-bar"
-          entering={FadeIn.duration(180)}
-          exiting={FadeOut.duration(180)}
-          style={toolbarStyle}
-        >
-          <CollectionToolbar
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            viewMode={viewMode}
-            onToggleView={() => setViewMode(nextViewMode(viewMode))}
-            onSortPress={() => setShowSort(true)}
-            onFilterPress={() => setShowFilter(true)}
-            activeFilters={countActiveFilters(filters)}
-            onGroupPress={() => setShowGroupBy(true)}
-            groupActive={groupBy !== 'none'}
-            size={toolbarSize}
-          />
-        </Animated.View>
-      )}
+        {/* ── Toolbar inside the header card (collapses on scroll) ── */}
+        {bulk.isActive ? (
+          <Animated.View
+            key="bulk-bar"
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(180)}
+          >
+            <BulkActionsBar
+              count={bulk.size}
+              onTag={handleBulkTag}
+              onMove={handleBulkMove}
+              onAdd={handleBulkAdd}
+              onDelete={handleBulkDelete}
+            />
+          </Animated.View>
+        ) : (
+          <Animated.View
+            key="normal-bar"
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(180)}
+            style={toolbarStyle}
+          >
+            <CollectionToolbar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              viewMode={viewMode}
+              onToggleView={() => setViewMode(nextViewMode(viewMode))}
+              onSortPress={() => setShowSort(true)}
+              onFilterPress={() => setShowFilter(true)}
+              activeFilters={countActiveFilters(filters)}
+              onGroupPress={() => setShowGroupBy(true)}
+              groupActive={groupBy !== 'none'}
+              size={toolbarSize}
+            />
+          </Animated.View>
+        )}
+      </View>
 
       {/* ── Content ──
           On first open we wait for enrichment before painting the grid
@@ -1071,12 +1087,20 @@ const styles = StyleSheet.create({
   },
 
   /* ── Header ── */
-  header: {
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    paddingBottom: spacing.xs + 2,
+    ...shadows.sm,
+  },
+  headerInner: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
   headerCenter: {
@@ -1087,11 +1111,32 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   headerSubtitle: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
-    marginTop: 1,
+    marginTop: 2,
+  },
+  metaBold: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  metaLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  metaDot: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  metaValue: {
+    color: colors.success,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
   },
 
   /* ── Grid shared ── */

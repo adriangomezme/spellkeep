@@ -458,38 +458,54 @@ export default function OwnedCardsScreen() {
   }));
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={28} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.title}>Owned Cards</Text>
-          <Text
-            style={[styles.headerSubtitle, uniqueCards === 0 && { opacity: 0 }]}
-          >
-            {uniqueCards > 0
-              ? `${totalCards.toLocaleString()} cards · ${uniqueCards.toLocaleString()} unique${displayValue > 0 ? ` · $${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''}`
-              : '\u00A0'}
-          </Text>
+    <View style={styles.container}>
+      <View style={styles.headerCard}>
+        <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+          {/* ── Header ── */}
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
+            </TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Text style={styles.title}>Owned Cards</Text>
+              {uniqueCards > 0 ? (
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  <Text style={styles.metaBold}>{totalCards.toLocaleString('en-US')}</Text>
+                  <Text style={styles.metaLabel}> cards</Text>
+                  <Text style={styles.metaDot}>  ·  </Text>
+                  <Text style={styles.metaBold}>{uniqueCards.toLocaleString('en-US')}</Text>
+                  <Text style={styles.metaLabel}> unique</Text>
+                  {displayValue > 0 && (
+                    <>
+                      <Text style={styles.metaDot}>  ·  </Text>
+                      <Text style={styles.metaValue}>
+                        ${displayValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </>
+                  )}
+                </Text>
+              ) : (
+                <Text style={styles.headerSubtitle}>{'\u00A0'}</Text>
+              )}
+            </View>
+            <View style={{ width: 28 }} />
+          </View>
         </View>
-        <View style={{ width: 28 }} />
-      </View>
 
-      {/* ── Toolbar (collapses on scroll) ── */}
-      <Animated.View style={toolbarStyle}>
-        <CollectionToolbar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          viewMode={viewMode}
-          onToggleView={() => setViewMode(nextViewMode(viewMode))}
-          onSortPress={() => setShowSort(true)}
-          onFilterPress={() => setShowFilter(true)}
-          activeFilters={countActiveFilters(filters)}
-          size={toolbarSize}
-        />
-      </Animated.View>
+        {/* ── Toolbar inside the header card (collapses on scroll) ── */}
+        <Animated.View style={toolbarStyle}>
+          <CollectionToolbar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            viewMode={viewMode}
+            onToggleView={() => setViewMode(nextViewMode(viewMode))}
+            onSortPress={() => setShowSort(true)}
+            onFilterPress={() => setShowFilter(true)}
+            activeFilters={countActiveFilters(filters)}
+            size={toolbarSize}
+          />
+        </Animated.View>
+      </View>
 
       {/* ── Content ── */}
       {!showGrid ? (
@@ -563,12 +579,20 @@ const styles = StyleSheet.create({
   },
 
   /* ── Header ── */
-  header: {
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    paddingBottom: spacing.xs + 2,
+    ...shadows.sm,
+  },
+  headerInner: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
   headerCenter: {
@@ -579,11 +603,32 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   headerSubtitle: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
-    marginTop: 1,
+    marginTop: 2,
+  },
+  metaBold: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  metaLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  metaDot: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+  },
+  metaValue: {
+    color: colors.success,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
   },
 
   /* ── Grid shared ── */
