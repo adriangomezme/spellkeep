@@ -33,8 +33,8 @@ import {
   updateRecentSearchMeta,
 } from '../../src/lib/hooks/useRecentSearches';
 import { useRecentlyViewedCards, type RecentCard } from '../../src/lib/hooks/useRecentlyViewedCards';
-import { useTrendingCards } from '../../src/lib/hooks/useTrendingCards';
-import { useLatestSetCards } from '../../src/lib/hooks/useLatestSetCards';
+import { useNewlyPrintedCards } from '../../src/lib/hooks/useNewlyPrintedCards';
+import { useWeeklyBucket, type DiscoveryBucket } from '../../src/lib/hooks/useWeeklyBucket';
 import { AI_SUGGESTION_CHIPS, type AiSuggestionChip } from '../../src/lib/search/aiSuggestionChips';
 import { useSearchFilters } from '../../src/lib/hooks/useSearchFilters';
 import type { SearchFilterState } from '../../src/lib/search/searchFilters';
@@ -144,8 +144,8 @@ export default function SearchScreen() {
   const { items: recentSearches, remove: removeRecentSearch, clear: clearRecentSearches } =
     useRecentSearches();
   const { items: recentlyViewed } = useRecentlyViewedCards();
-  const trendingCards = useTrendingCards(12);
-  const latestSet = useLatestSetCards(10);
+  const newlyPrinted = useNewlyPrintedCards(12);
+  const weekly = useWeeklyBucket(12);
 
   const [isFocused, setIsFocused] = useState(false);
   const [showSort, setShowSort] = useState(false);
@@ -210,6 +210,23 @@ export default function SearchScreen() {
       setQuery(chip.query);
       submit(chip.query);
       void addRecentSearch(chip.query);
+      inputRef.current?.blur();
+    },
+    [setQuery, submit]
+  );
+
+  const tapWeeklyBucketSeeAll = useCallback(
+    (bucket: DiscoveryBucket) => {
+      // "See all" on the weekly editorial card stages the bucket's
+      // Scryfall query into the input so the user can browse the
+      // full result set (instead of the 12-card preview row). The
+      // bucket title is what we save to recents — re-tapping replays
+      // the same theme without exposing the raw syntax.
+      setQuery(bucket.query);
+      submit(bucket.query);
+      void addRecentSearch(bucket.title, {
+        text: bucket.query,
+      });
       inputRef.current?.blur();
     },
     [setQuery, submit]
@@ -435,9 +452,9 @@ export default function SearchScreen() {
           <SearchEmptyState
             recentSearches={recentSearches}
             recentlyViewed={recentlyViewed}
-            trendingCards={trendingCards}
-            latestSetName={latestSet.setName}
-            latestSetCards={latestSet.cards}
+            newlyPrintedCards={newlyPrinted.cards}
+            weeklyBucket={weekly.bucket}
+            weeklyBucketCards={weekly.cards}
             aiChips={AI_SUGGESTION_CHIPS}
             onTapSearch={tapRecentSearch}
             onRemoveSearch={removeRecentSearch}
@@ -445,6 +462,7 @@ export default function SearchScreen() {
             onTapCard={goToRecentCard}
             onTapDiscoverCard={goToCard}
             onTapAiChip={tapAiChip}
+            onTapWeeklyBucketSeeAll={tapWeeklyBucketSeeAll}
           />
         ) : (
           <SearchResults

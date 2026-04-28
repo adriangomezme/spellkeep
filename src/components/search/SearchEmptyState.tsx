@@ -14,14 +14,21 @@ import type { RecentSearch } from '../../lib/hooks/useRecentSearches';
 import type { ScryfallCard } from '../../lib/scryfall';
 import { getCardImageUri } from '../../lib/scryfall';
 import type { AiSuggestionChip } from '../../lib/search/aiSuggestionChips';
-import { colors, spacing, fontSize, borderRadius } from '../../constants';
+import type { DiscoveryBucket } from '../../lib/hooks/useWeeklyBucket';
+import { colors, spacing, fontSize, borderRadius, shadows } from '../../constants';
 
 type Props = {
   recentSearches: RecentSearch[];
   recentlyViewed: RecentCard[];
-  trendingCards: ScryfallCard[];
-  latestSetName: string | null;
-  latestSetCards: ScryfallCard[];
+  /** Cards printed across the catalog in the last ~45 days (Layer 2
+   *  of the Discovery redesign). Replaces the old Trending/Latest
+   *  pair which both converged on the same Commander staples. */
+  newlyPrintedCards: ScryfallCard[];
+  /** This week's themed bucket loaded from Supabase, plus its cards
+   *  (Layer 4). When the bucket fetch fails or returns zero hits the
+   *  whole section is hidden — discovery is additive, not load-bearing. */
+  weeklyBucket: DiscoveryBucket | null;
+  weeklyBucketCards: ScryfallCard[];
   aiChips: AiSuggestionChip[];
   onTapSearch: (rs: RecentSearch) => void;
   onRemoveSearch: (query: string) => void;
@@ -29,6 +36,10 @@ type Props = {
   onTapCard: (card: RecentCard) => void;
   onTapDiscoverCard: (card: ScryfallCard) => void;
   onTapAiChip: (chip: AiSuggestionChip) => void;
+  /** Stage the weekly bucket's Scryfall query into the search input
+   *  so the user can browse the full result set, not just the
+   *  preview row. */
+  onTapWeeklyBucketSeeAll: (bucket: DiscoveryBucket) => void;
 };
 
 const PREVIEW_CARD_WIDTH = 180;
@@ -37,9 +48,9 @@ const PREVIEW_MAX = 10;
 function SearchEmptyStateInner({
   recentSearches,
   recentlyViewed,
-  trendingCards,
-  latestSetName,
-  latestSetCards,
+  newlyPrintedCards,
+  weeklyBucket,
+  weeklyBucketCards,
   aiChips,
   onTapSearch,
   onRemoveSearch,
@@ -47,6 +58,7 @@ function SearchEmptyStateInner({
   onTapCard,
   onTapDiscoverCard,
   onTapAiChip,
+  onTapWeeklyBucketSeeAll,
 }: Props) {
   const recentsWithResults = useMemo(
     () => recentSearches.filter((rs) => (rs.total ?? 0) > 0).slice(0, PREVIEW_MAX),
@@ -54,13 +66,13 @@ function SearchEmptyStateInner({
   );
   const hasRecents = recentsWithResults.length > 0;
   const hasViewed = recentlyViewed.length > 0;
-  const hasTrending = trendingCards.length > 0;
-  const hasLatest = latestSetCards.length > 0;
+  const hasNewlyPrinted = newlyPrintedCards.length > 0;
+  const hasBucket = !!weeklyBucket && weeklyBucketCards.length > 0;
   const hasAi = aiChips.length > 0;
 
   // Brand-new install with no catalog data and no history yet — keep
   // the original placeholder so the screen isn't a blank slate.
-  if (!hasRecents && !hasViewed && !hasTrending && !hasLatest && !hasAi) {
+  if (!hasRecents && !hasViewed && !hasNewlyPrinted && !hasBucket && !hasAi) {
     return (
       <View style={styles.empty}>
         <View style={styles.emptyIcon}>
@@ -126,22 +138,22 @@ function SearchEmptyStateInner({
         </Section>
       )}
 
-      {hasTrending && (
-        <Section title="Trending now" subtitle="Top EDHREC cards from recent sets.">
-          <DiscoverCarousel
-            cards={trendingCards}
-            onPress={onTapDiscoverCard}
-          />
-        </Section>
+      {hasBucket && weeklyBucket && (
+        <WeeklyBucketSection
+          bucket={weeklyBucket}
+          cards={weeklyBucketCards}
+          onPressCard={onTapDiscoverCard}
+          onPressSeeAll={() => onTapWeeklyBucketSeeAll(weeklyBucket)}
+        />
       )}
 
-      {hasLatest && (
+      {hasNewlyPrinted && (
         <Section
-          title="Latest release"
-          subtitle={latestSetName ? `Highlights from ${latestSetName}` : undefined}
+          title="Newly printed"
+          subtitle="Fresh prints from the last 45 days, across every set type."
         >
           <DiscoverCarousel
-            cards={latestSetCards}
+            cards={newlyPrintedCards}
             onPress={onTapDiscoverCard}
           />
         </Section>
@@ -206,6 +218,54 @@ function Section({
         )}
       </View>
       {children}
+    </View>
+  );
+}
+
+// Featured presentation for the weekly bucket — chrome distinct from
+// the plain Sections so the curated pick reads as a "this week's
+// editorial" call-out rather than another grid of cards. Icon-led
+// header, soft tinted card, "See all" affordance to stage the full
+// query into the search input.
+function WeeklyBucketSection({
+  bucket,
+  cards,
+  onPressCard,
+  onPressSeeAll,
+}: {
+  bucket: DiscoveryBucket;
+  cards: ScryfallCard[];
+  onPressCard: (card: ScryfallCard) => void;
+  onPressSeeAll: () => void;
+}) {
+  const iconName = (bucket.icon || 'sparkles-outline') as React.ComponentProps<
+    typeof Ionicons
+  >['name'];
+  return (
+    <View style={styles.section}>
+      <View style={styles.bucketCard}>
+        <View style={styles.bucketHeader}>
+          <View style={styles.bucketIcon}>
+            <Ionicons name={iconName} size={18} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bucketKicker}>This week&rsquo;s pick</Text>
+            <Text style={styles.bucketTitle} numberOfLines={1}>
+              {bucket.title}
+            </Text>
+            {bucket.subtitle && (
+              <Text style={styles.bucketSubtitle}>{bucket.subtitle}</Text>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={onPressSeeAll}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.bucketSeeAll}>See all</Text>
+          </TouchableOpacity>
+        </View>
+        <DiscoverCarousel cards={cards} onPress={onPressCard} />
+      </View>
     </View>
   );
 }
@@ -345,5 +405,52 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 10,
     marginTop: 1,
+  },
+  /* Weekly bucket — featured editorial card */
+  bucketCard: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.primaryLight,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    ...shadows.sm,
+  },
+  bucketHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  bucketIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bucketKicker: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  bucketTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  bucketSubtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  bucketSeeAll: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
 });
