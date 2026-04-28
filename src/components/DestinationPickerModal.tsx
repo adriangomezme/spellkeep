@@ -52,16 +52,18 @@ export function DestinationPickerModal({
     >
       <View style={styles.container}>
         <View style={styles.header}>
-          <View style={styles.headerBtn} />
+          <TouchableOpacity onPress={onClose} hitSlop={10}>
+            <Text style={styles.cancel}>Cancel</Text>
+          </TouchableOpacity>
           <View style={styles.titleWrap}>
             <Text style={styles.title}>Select destination</Text>
             <Text style={styles.subtitle}>
-              {binders.length} {binders.length === 1 ? 'binder' : 'binders'} · {lists.length} {lists.length === 1 ? 'list' : 'lists'}
+              <Text style={styles.subtitleBold}>{binders.length}</Text> {binders.length === 1 ? 'binder' : 'binders'}
+              <Text style={styles.subtitleDot}>  ·  </Text>
+              <Text style={styles.subtitleBold}>{lists.length}</Text> {lists.length === 1 ? 'list' : 'lists'}
             </Text>
           </View>
-          <TouchableOpacity onPress={onClose} hitSlop={10} style={[styles.headerBtn, styles.closeBtn]}>
-            <Ionicons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
+          <View style={styles.headerSlot} />
         </View>
 
         <ScrollView
@@ -69,20 +71,22 @@ export function DestinationPickerModal({
           showsVerticalScrollIndicator={false}
         >
           {binders.length > 0 && <Text style={styles.group}>Binders</Text>}
-          {binders.map((d) => (
+          {binders.map((d, idx) => (
             <Row
               key={d.id}
               dest={d}
               active={selectedId === d.id}
+              isLast={idx === binders.length - 1}
               onPress={() => onSelect(d.id)}
             />
           ))}
           {lists.length > 0 && <Text style={styles.group}>Lists</Text>}
-          {lists.map((d) => (
+          {lists.map((d, idx) => (
             <Row
               key={d.id}
               dest={d}
               active={selectedId === d.id}
+              isLast={idx === lists.length - 1}
               onPress={() => onSelect(d.id)}
             />
           ))}
@@ -95,30 +99,40 @@ export function DestinationPickerModal({
 function Row({
   dest,
   active,
+  isLast,
   onPress,
 }: {
   dest: CollectionSummary;
   active: boolean;
+  isLast: boolean;
   onPress: () => void;
 }) {
+  const tint = dest.color || colors.border;
+  const iconColor = dest.color ? 'rgba(255,255,255,0.9)' : colors.textSecondary;
   return (
     <TouchableOpacity
-      style={[styles.row, active && styles.rowActive]}
+      style={[styles.row, active && styles.rowActive, !isLast && styles.rowDivider]}
       onPress={onPress}
       activeOpacity={0.6}
     >
-      <Ionicons
-        name={DEST_ICONS[dest.type] ?? 'albums'}
-        size={22}
-        color={dest.color ?? colors.textSecondary}
-      />
+      <View style={[styles.thumb, { backgroundColor: tint }]}>
+        <Ionicons
+          name={DEST_ICONS[dest.type] ?? 'albums'}
+          size={16}
+          color={iconColor}
+        />
+      </View>
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{dest.name}</Text>
-        <Text style={styles.rowSubtitle}>
-          {dest.unique_cards} unique · {dest.card_count} total
+        <Text style={[styles.rowTitle, active && styles.rowTitleActive]} numberOfLines={1}>
+          {dest.name}
+        </Text>
+        <Text style={styles.rowSubtitle} numberOfLines={1}>
+          <Text style={styles.rowSubtitleBold}>{dest.card_count.toLocaleString('en-US')}</Text> cards
+          <Text style={styles.subtitleDot}>  ·  </Text>
+          <Text style={styles.rowSubtitleBold}>{dest.unique_cards.toLocaleString('en-US')}</Text> unique
         </Text>
       </View>
-      {active && <Ionicons name="checkmark" size={22} color={colors.primary} />}
+      {active && <Ionicons name="checkmark" size={20} color={colors.primary} />}
     </TouchableOpacity>
   );
 }
@@ -138,11 +152,14 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
   },
-  headerBtn: {
-    width: 40,
+  headerSlot: {
+    width: 60,
   },
-  closeBtn: {
-    alignItems: 'flex-end',
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+    minWidth: 60,
   },
   titleWrap: {
     flex: 1,
@@ -151,16 +168,25 @@ const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   subtitle: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: 2,
+    fontWeight: '500',
+  },
+  subtitleBold: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  subtitleDot: {
+    color: colors.textMuted,
   },
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
   },
   group: {
     color: colors.textMuted,
@@ -174,15 +200,24 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.md,
+    gap: spacing.sm + 4,
+    paddingVertical: spacing.sm + 4,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    marginBottom: 6,
+  },
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   rowActive: {
-    backgroundColor: colors.primary + '14',
+    backgroundColor: colors.primary + '0F',
+  },
+  thumb: {
+    width: 30,
+    height: 30,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowText: {
     flex: 1,
@@ -191,11 +226,20 @@ const styles = StyleSheet.create({
   rowTitle: {
     color: colors.text,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '500',
+    letterSpacing: -0.2,
+  },
+  rowTitleActive: {
+    color: colors.primary,
   },
   rowSubtitle: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     marginTop: 2,
+    fontWeight: '500',
+  },
+  rowSubtitleBold: {
+    color: colors.textSecondary,
+    fontWeight: '700',
   },
 });

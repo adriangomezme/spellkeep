@@ -533,6 +533,7 @@ const styles = StyleSheet.create({
   cancelLabel: {
     color: colors.textSecondary,
     fontSize: fontSize.md,
+    fontWeight: '500',
   },
   doneLabel: {
     color: colors.primary,
@@ -551,36 +552,37 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   subtitle: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     marginTop: 2,
+    fontWeight: '500',
   },
 
-  /* Tabs */
+  /* Tabs (segmented control) */
   tabs: {
     flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    paddingBottom: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    padding: 4,
+    gap: 4,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: 0,
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabBtnActive: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surface,
   },
   tabBtnDisabled: {
     opacity: 0.4,
@@ -603,7 +605,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: 0,
   },
 
   sectionLabel: {
@@ -624,12 +626,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 40,
+    height: 42,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 6,
     color: colors.text,
     fontSize: fontSize.md,
   },
@@ -637,9 +637,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    height: 40,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.sm,
+    height: 42,
+    paddingHorizontal: spacing.md + 2,
+    borderRadius: 6,
     backgroundColor: colors.primary,
   },
   createBtnDisabled: {
@@ -659,9 +659,9 @@ const styles = StyleSheet.create({
   },
   scopeOption: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm + 2,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -705,7 +705,7 @@ const styles = StyleSheet.create({
   /* Tag list */
   listCard: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.sm + 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     overflow: 'hidden',
@@ -716,14 +716,14 @@ const styles = StyleSheet.create({
   },
   rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.divider,
+    borderBottomColor: colors.border,
   },
   rowMain: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
+    gap: spacing.sm + 2,
+    paddingVertical: spacing.sm + 4,
     paddingHorizontal: spacing.md,
   },
   rowDot: {
@@ -735,12 +735,13 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontSize: fontSize.md,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   rowCount: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   rowCheckSlot: {
     width: 22,
