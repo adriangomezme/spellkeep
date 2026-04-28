@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheet } from './BottomSheet';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { PrimaryCTA } from './PrimaryCTA';
 import {
   colors,
   spacing,
@@ -209,6 +210,14 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <View style={styles.container}>
+        {/* Sheet chrome */}
+        <View style={styles.chromeRow}>
+          <Text style={styles.chromeTitle}>{isEdit ? 'Edit alert' : 'Create alert'}</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.cancel}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Card summary */}
         <View style={styles.header}>
           {thumbUri && (
@@ -221,7 +230,7 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
             />
           )}
           <View style={styles.headerText}>
-            <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
+            <Text style={styles.title} numberOfLines={2}>{displayName}</Text>
             <Text style={styles.subtitle} numberOfLines={1}>
               {displaySet} · #{displayNumber}
             </Text>
@@ -236,7 +245,7 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
 
         {/* Finish */}
         {availableFinishes.length > 1 && (
-          <>
+          <View style={styles.field}>
             <Text style={styles.label}>Finish</Text>
             <View style={styles.segmented}>
               {availableFinishes.map((f) => (
@@ -257,77 +266,84 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
                 </TouchableOpacity>
               ))}
             </View>
-          </>
+          </View>
         )}
 
-        {/* Direction */}
-        <Text style={styles.label}>Direction</Text>
-        <View style={styles.segmented}>
-          {DIRECTIONS.map((d) => {
-            const active = direction === d.key;
-            const color = dirColor(d.key);
-            return (
+        {/* Direction — colored when active so the up/down semantics are
+            obvious at a glance (above = green, below = red). */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Direction</Text>
+          <View style={styles.segmented}>
+            {DIRECTIONS.map((d) => {
+              const active = direction === d.key;
+              const color = dirColor(d.key);
+              return (
+                <TouchableOpacity
+                  key={d.key}
+                  style={[
+                    styles.segment,
+                    active && { backgroundColor: color + '1A' },
+                  ]}
+                  onPress={() => setDirection(d.key)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={d.key === 'above' ? 'trending-up' : 'trending-down'}
+                    size={14}
+                    color={active ? color : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      active && { color, fontWeight: '700' },
+                    ]}
+                  >
+                    {d.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Mode + numeric input — grouped so the value field sits right
+            below the mode chooser and the prefix/suffix stay reserved
+            (always rendered, hidden via opacity) so the digits don't
+            jump when toggling between $ and %. */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Target</Text>
+          <View style={styles.segmented}>
+            {MODES.map((m) => (
               <TouchableOpacity
-                key={d.key}
-                style={[
-                  styles.segment,
-                  active && { borderColor: color, backgroundColor: color + '15' },
-                ]}
-                onPress={() => setDirection(d.key)}
+                key={m.key}
+                style={[styles.segment, mode === m.key && styles.segmentActive]}
+                onPress={() => setMode(m.key)}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name={d.key === 'above' ? 'trending-up' : 'trending-down'}
-                  size={14}
-                  color={active ? color : colors.textSecondary}
-                />
                 <Text
                   style={[
                     styles.segmentText,
-                    active && { color },
+                    mode === m.key && styles.segmentTextActive,
                   ]}
                 >
-                  {d.label}
+                  {m.label}
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </View>
+            ))}
+          </View>
 
-        {/* Mode */}
-        <Text style={styles.label}>Target</Text>
-        <View style={styles.segmented}>
-          {MODES.map((m) => (
-            <TouchableOpacity
-              key={m.key}
-              style={[styles.segment, mode === m.key && styles.segmentActive]}
-              onPress={() => setMode(m.key)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.segmentText,
-                  mode === m.key && styles.segmentTextActive,
-                ]}
-              >
-                {m.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Numeric input */}
-        <View style={styles.inputRow}>
-          <Text style={styles.inputPrefix}>{mode === 'price' ? '$' : ''}</Text>
-          <BottomSheetTextInput
-            value={rawValue}
-            onChangeText={setRawValue}
-            placeholder={mode === 'price' ? '0.00' : '15'}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            style={styles.input}
-          />
-          <Text style={styles.inputSuffix}>{mode === 'percent' ? '%' : ''}</Text>
+          <View style={styles.inputRow}>
+            <Text style={[styles.inputAffix, mode !== 'price' && styles.inputAffixHidden]}>$</Text>
+            <BottomSheetTextInput
+              value={rawValue}
+              onChangeText={setRawValue}
+              placeholder={mode === 'price' ? '0.00' : '15'}
+              placeholderTextColor={colors.textMuted}
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
+            <Text style={[styles.inputAffix, mode !== 'percent' && styles.inputAffixHidden]}>%</Text>
+          </View>
         </View>
 
         {/* Preview / validation */}
@@ -371,18 +387,14 @@ export function CreateAlertSheet({ visible, onClose, onSaved, card, existing }: 
         </TouchableOpacity>
 
         {/* CTA */}
-        <TouchableOpacity
-          style={[styles.cta, !canSave && styles.ctaDisabled]}
+        <PrimaryCTA
+          variant="solid"
+          style={styles.cta}
+          label={isEdit ? 'Save changes' : 'Create alert'}
           onPress={handleSave}
+          loading={saving}
           disabled={!canSave}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.ctaText}>{isEdit ? 'Save changes' : 'Create alert'}</Text>
-          )}
-        </TouchableOpacity>
+        />
       </View>
     </BottomSheet>
   );
@@ -397,6 +409,22 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
   },
+  chromeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chromeTitle: {
+    color: colors.text,
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,11 +433,16 @@ const styles = StyleSheet.create({
   thumb: {
     width: 56,
     height: 78,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm + 2,
     backgroundColor: colors.surfaceSecondary,
   },
-  headerText: { flex: 1 },
-  title: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
+  headerText: { flex: 1, minWidth: 0 },
+  title: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
   subtitle: { color: colors.textSecondary, fontSize: fontSize.sm, marginTop: 2 },
   market: { color: colors.text, fontSize: fontSize.md, fontWeight: '700', marginTop: 6 },
   marketLabel: { color: colors.textMuted, fontSize: fontSize.xs, fontWeight: '500' },
@@ -418,16 +451,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginVertical: spacing.xs,
   },
+  field: {
+    gap: spacing.sm,
+  },
   label: {
-    color: colors.textSecondary,
+    color: colors.textMuted,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   segmented: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    padding: 4,
+    gap: 4,
   },
   segment: {
     flex: 1,
@@ -435,59 +474,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
   },
   segmentActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '10',
+    backgroundColor: colors.surface,
   },
   segmentText: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     fontWeight: '600',
   },
-  segmentTextActive: { color: colors.primary },
-  segmentHint: {
-    color: colors.textMuted,
-    fontSize: fontSize.xs,
-    fontWeight: '500',
+  segmentTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
+    borderRadius: borderRadius.sm + 2,
+    paddingHorizontal: spacing.sm + 2,
+    backgroundColor: colors.surfaceSecondary,
   },
-  inputPrefix: { color: colors.textSecondary, fontSize: fontSize.xl, fontWeight: '700' },
-  inputSuffix: { color: colors.textSecondary, fontSize: fontSize.xl, fontWeight: '700' },
+  inputAffix: {
+    color: colors.textSecondary,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    width: 18,
+    textAlign: 'center',
+  },
+  inputAffixHidden: {
+    opacity: 0,
+  },
   input: {
     flex: 1,
     color: colors.text,
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
-    paddingVertical: spacing.md,
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    paddingVertical: spacing.sm + 2,
     textAlign: 'center',
   },
   preview: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
+    fontWeight: '500',
     textAlign: 'center',
     lineHeight: 20,
   },
   errorText: {
-    color: '#C24848',
+    color: colors.error,
     fontSize: fontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   rearmRow: {
     flexDirection: 'row',
@@ -497,9 +537,19 @@ const styles = StyleSheet.create({
   },
   rearmRowDisabled: { opacity: 0.55 },
   rearmTextWrap: { flex: 1 },
-  rearmTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: '600' },
+  rearmTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
   rearmTitleDisabled: { color: colors.textMuted },
-  rearmHint: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2 },
+  rearmHint: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    marginTop: 2,
+    fontWeight: '500',
+  },
   toggle: {
     width: 44,
     height: 26,
@@ -518,13 +568,7 @@ const styles = StyleSheet.create({
   },
   toggleKnobOn: { transform: [{ translateX: 18 }] },
   cta: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    minHeight: 44,
     marginTop: spacing.xs,
   },
-  ctaDisabled: { opacity: 0.5 },
-  ctaText: { color: '#FFFFFF', fontSize: fontSize.md, fontWeight: '700' },
 });

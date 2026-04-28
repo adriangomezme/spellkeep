@@ -24,6 +24,7 @@ import {
   type PriceAlert,
 } from '../lib/priceAlerts';
 import { useAlertPrices, priceKey } from '../lib/hooks/useAlertPrices';
+import { PrimaryCTA } from './PrimaryCTA';
 
 const DIR_UP = '#1D9E58';
 const DIR_DOWN = '#C24848';
@@ -73,24 +74,34 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
     <>
       <BottomSheet visible={visible && !editing && !creating} onClose={onClose}>
         <View style={styles.container}>
-          <View style={styles.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Alerts for this card</Text>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {card.name} · {(card.set ?? '').toUpperCase()} #{card.collector_number}
-              </Text>
-            </View>
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{alerts.length}</Text>
-            </View>
+          {/* Sheet chrome */}
+          <View style={styles.chromeRow}>
+            <Text style={styles.chromeTitle}>Alerts</Text>
+            {alerts.length > 0 && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{alerts.length}</Text>
+              </View>
+            )}
           </View>
+
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {card.name}
+            <Text style={styles.subtitleDot}>  ·  </Text>
+            <Text style={styles.subtitleSet}>{(card.set ?? '').toUpperCase()} #{card.collector_number}</Text>
+          </Text>
 
           <View style={styles.divider} />
 
           {alerts.length === 0 ? (
-            <Text style={styles.emptyText}>
-              No alerts for this card yet.
-            </Text>
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="notifications-outline" size={26} color={colors.textMuted} />
+              </View>
+              <Text style={styles.emptyTitle}>No alerts yet</Text>
+              <Text style={styles.emptyText}>
+                Set a target price or % move and we'll let you know when it triggers.
+              </Text>
+            </View>
           ) : (
             <View style={styles.list}>
               {alerts.map((a) => (
@@ -105,20 +116,13 @@ export function CardAlertsSheet({ visible, onClose, card }: Props) {
             </View>
           )}
 
-          <TouchableOpacity
-            style={[
-              styles.cta,
-              alerts.length >= MAX_ALERTS_PER_CARD && styles.ctaDisabled,
-            ]}
+          <PrimaryCTA
+            variant="solid"
+            style={styles.cta}
+            label={alerts.length === 0 ? 'Create alert' : 'Add another'}
             onPress={() => setCreating(true)}
             disabled={alerts.length >= MAX_ALERTS_PER_CARD}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={18} color="#FFFFFF" />
-            <Text style={styles.ctaText}>
-              {alerts.length === 0 ? 'Create alert' : 'Add another'}
-            </Text>
-          </TouchableOpacity>
+          />
 
           {alerts.length >= MAX_ALERTS_PER_CARD && (
             <Text style={styles.limitText}>
@@ -219,14 +223,20 @@ function capitalize(s: string) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: spacing.md },
-  header: {
+  container: { gap: spacing.sm + 2 },
+
+  // Sheet chrome
+  chromeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    justifyContent: 'space-between',
   },
-  title: { color: colors.text, fontSize: fontSize.lg, fontWeight: '700' },
-  subtitle: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 2 },
+  chromeTitle: {
+    color: colors.text,
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
   countBadge: {
     minWidth: 28,
     height: 28,
@@ -239,46 +249,101 @@ const styles = StyleSheet.create({
   countBadgeText: {
     color: colors.primary,
     fontSize: fontSize.sm,
-    fontWeight: '700',
+    fontWeight: '800',
   },
+
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
+  subtitleDot: {
+    color: colors.textMuted,
+  },
+  subtitleSet: {
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
+    marginVertical: spacing.xs,
   },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    textAlign: 'center',
+
+  // Empty state
+  emptyWrap: {
+    alignItems: 'center',
     paddingVertical: spacing.md,
   },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm + 2,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+  },
+
+  // Alert rows
   list: { gap: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.sm + 2,
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: borderRadius.sm + 2,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
   },
-  rowLeft: { flex: 1 },
+  rowLeft: { flex: 1, minWidth: 0 },
   conditionLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  conditionText: { fontSize: fontSize.md, fontWeight: '700' },
-  targetText: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '500' },
+  conditionText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  targetText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
   finishText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '500',
     marginTop: 2,
   },
   rowRight: { alignItems: 'flex-end' },
-  currentValue: { color: colors.text, fontSize: fontSize.md, fontWeight: '700' },
-  deltaText: { fontSize: fontSize.xs, fontWeight: '700', marginTop: 2 },
-  deleteBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+  currentValue: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  deltaText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    marginTop: 2,
   },
   actionGroup: {
     flexDirection: 'row',
@@ -287,28 +352,21 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 6,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // CTA
   cta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: spacing.md + 2,
+    minHeight: 44,
     marginTop: spacing.xs,
   },
-  ctaText: { color: '#FFFFFF', fontSize: fontSize.md, fontWeight: '700' },
-  ctaDisabled: { opacity: 0.4 },
   limitText: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '500',
     textAlign: 'center',
   },
 });

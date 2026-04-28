@@ -248,6 +248,18 @@ export function AddCardSheet({
     <>
       <BottomSheet visible={visible} onClose={onClose}>
         <View style={styles.container}>
+          {/* Sheet chrome — discreet Cancel for explicit dismissal,
+              header card preview is the hero. */}
+          <View style={styles.chromeRow}>
+            <Text style={styles.chromeTitle}>Add card</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.cancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Header card summary */}
           <View style={styles.header}>
             <Image
@@ -258,7 +270,7 @@ export function AddCardSheet({
               transition={150}
             />
             <View style={styles.headerText}>
-              <Text style={styles.title} numberOfLines={1}>{selectedCard.name}</Text>
+              <Text style={styles.title} numberOfLines={2}>{selectedCard.name}</Text>
               <Text style={styles.subtitle} numberOfLines={1}>
                 {selectedCard.set_name} · #{selectedCard.collector_number}
               </Text>
@@ -473,6 +485,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // Sheet chrome
+  chromeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  chromeTitle: {
+    color: colors.text,
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  cancel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+
   // Header
   header: {
     flexDirection: 'row',
@@ -483,7 +514,7 @@ const styles = StyleSheet.create({
   thumb: {
     width: 96,
     height: 134,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm + 2,
     backgroundColor: colors.surfaceSecondary,
   },
   headerText: {
@@ -494,6 +525,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   subtitle: {
     color: colors.textSecondary,
@@ -564,12 +596,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
   },
   selectorTextWrap: {
     flex: 1,
@@ -590,13 +620,13 @@ const styles = StyleSheet.create({
   segmented: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    padding: 3,
-    gap: 2,
+    borderRadius: borderRadius.sm + 2,
+    padding: 4,
+    gap: 4,
   },
   segment: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: borderRadius.sm,
     alignItems: 'center',
   },
@@ -629,21 +659,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.sm + 2,
     paddingHorizontal: spacing.sm,
-    height: 52,
+    height: 42,
   },
   stepperBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperText: {
     color: colors.text,
-    fontSize: fontSize.xxl,
+    fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.3,
     minWidth: 40,
     textAlign: 'center',
   },
@@ -652,11 +683,9 @@ const styles = StyleSheet.create({
   priceField: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    height: 52,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm + 2,
+    height: 42,
     paddingHorizontal: spacing.md,
   },
   priceCurrency: {
