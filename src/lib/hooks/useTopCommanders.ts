@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@powersync/react';
+import { db } from '../powersync/system';
 import { batchResolveByScryfallId } from '../catalog/catalogQueries';
 import type { ScryfallCard } from '../scryfall';
 
@@ -42,6 +43,27 @@ export function useTopCommanders(
 
   useEffect(() => {
     mountedRef.current = true;
+    console.log(
+      `[useTopCommanders] window=${window} powersync_rows=${ids.length}`
+    );
+    // One-shot diagnostic: count every row we have locally for the
+    // table, regardless of window. Tells us at a glance whether the
+    // PowerSync sync stream landed any data at all.
+    if (ids.length === 0 && window === 'week') {
+      void db
+        .getAll<{ c: number; w: string | null }>(
+          `SELECT COUNT(*) AS c, GROUP_CONCAT(DISTINCT time_window) AS w FROM top_commanders`
+        )
+        .then((rows) => {
+          const r = rows?.[0];
+          console.log(
+            `[useTopCommanders] local_table_total=${r?.c ?? 'n/a'} windows=${r?.w ?? 'n/a'}`
+          );
+        })
+        .catch((err) =>
+          console.warn(`[useTopCommanders] local_table_probe_failed`, err)
+        );
+    }
     if (ids.length === 0) {
       setCards([]);
       setIsLoading(false);
@@ -57,13 +79,20 @@ export function useTopCommanders(
         // order which doesn't match our incoming `ids` after the SQL
         // shuffle, so we walk `ids` and pull from the map.
         const ordered: ScryfallCard[] = [];
+        const missing: string[] = [];
         for (const id of ids) {
           const card = map.get(id);
           if (card) ordered.push(card);
+          else missing.push(id);
         }
+        console.log(
+          `[useTopCommanders] window=${window} resolved=${ordered.length}/${ids.length}` +
+            (missing.length > 0 ? ` missing_first=${missing.slice(0, 3).join(',')}` : '')
+        );
         setCards(ordered);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn(`[useTopCommanders] resolve failed`, err);
         if (mountedRef.current) setCards([]);
       })
       .finally(() => {
