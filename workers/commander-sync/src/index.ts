@@ -23,7 +23,11 @@ async function main() {
       const raw = await fetchTopCommanders(window, config.topN);
       console.log(`[commander-sync] window=${window} fetched=${raw.length}`);
 
-      const entries = raw.map((r) => ({ name: r.name, slug: r.sanitized }));
+      const entries = raw.map((r) => ({
+        id: r.id,
+        name: r.name,
+        slug: r.sanitized,
+      }));
       const resolved = await resolveCommanders(entries);
       console.log(
         `[commander-sync] window=${window} resolved=${resolved.length}/${raw.length}`

@@ -9,6 +9,11 @@ import { config } from './config.ts';
 export type CommanderWindow = 'week' | 'month' | 'two-years';
 
 export type RawEdhrecCommander = {
+  /** Canonical Scryfall ID of the specific printing EDHREC features.
+   *  Treat this as authoritative — they pick the print whose art is
+   *  the page hero, so reusing it keeps our carousel art consistent
+   *  with EDHREC's own display. */
+  id: string;
   /** EDHREC's display name. May be a partner pair joined by " // ". */
   name: string;
   /** URL slug — e.g. "atraxa-praetors-voice". */
@@ -74,23 +79,19 @@ function extractCardviews(body: unknown): RawEdhrecCommander[] {
     if (!Array.isArray(views)) continue;
     for (const v of views) {
       if (!v || typeof v !== 'object') continue;
-      const name = (v as Record<string, unknown>).name;
+      const obj = v as Record<string, unknown>;
+      const id = obj.id;
+      const name = obj.name;
+      if (typeof id !== 'string' || id.length === 0) continue;
       if (typeof name !== 'string' || name.length === 0) continue;
       out.push({
+        id,
         name,
-        sanitized: typeof (v as Record<string, unknown>).sanitized === 'string'
-          ? ((v as Record<string, unknown>).sanitized as string)
-          : undefined,
-        image: typeof (v as Record<string, unknown>).image === 'string'
-          ? ((v as Record<string, unknown>).image as string)
-          : undefined,
-        num_decks: typeof (v as Record<string, unknown>).num_decks === 'number'
-          ? ((v as Record<string, unknown>).num_decks as number)
-          : undefined,
+        sanitized: typeof obj.sanitized === 'string' ? obj.sanitized : undefined,
+        image: typeof obj.image === 'string' ? obj.image : undefined,
+        num_decks: typeof obj.num_decks === 'number' ? obj.num_decks : undefined,
         potential_decks:
-          typeof (v as Record<string, unknown>).potential_decks === 'number'
-            ? ((v as Record<string, unknown>).potential_decks as number)
-            : undefined,
+          typeof obj.potential_decks === 'number' ? obj.potential_decks : undefined,
       });
     }
   }
