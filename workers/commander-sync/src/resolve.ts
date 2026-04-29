@@ -6,10 +6,17 @@ import { supabase } from './supabase.ts';
  *
  * Constraints:
  *   - Only single-card commanders. Partner pairs (joined with " // ")
- *     are dropped — see project decision.
+ *     drop the second face and resolve via the first.
  *   - DFCs / split / adventure cards keep their canonical " // " name
  *     in Scryfall, so we try the full name first. If that misses, we
- *     fall back to the front face only (everything before " // ").
+ *     fall back to a `name LIKE 'Front // %'` lookup that catches
+ *     DFCs the catalog stores under their full canonical name.
+ *   - PRINT QUALITY: when a name has multiple printings (regular set
+ *     + Secret Lair art card + showcase + extended-art + ...), we
+ *     pick the cleanest "normal" art so the carousel doesn't render
+ *     art-only cards or showcase variants. The tiering function
+ *     prefers `layout=normal/transform/...`, English, non-promo,
+ *     no special frame_effects, then most-recent release.
  *   - Order matters: the worker passes EDHREC's ranking and we
  *     preserve it in `Resolved[]` so consumers can rank rows directly.
  */
@@ -19,21 +26,38 @@ export type Resolved = {
   edhrec_slug: string | null;
 };
 
+type CardRow = {
+  scryfall_id: string;
+  name: string;
+  layout: string | null;
+  lang: string | null;
+  promo: boolean | null;
+  frame_effects: string | null; // serialized JSON array
+  released_at: string | null;
+};
+
+const SKIP_LAYOUTS = new Set([
+  'art_series',
+  'token',
+  'double_faced_token',
+  'emblem',
+  'planar',
+  'scheme',
+  'vanguard',
+  'reversible_card',
+  'minigame',
+]);
+
+const SPECIAL_FRAME_EFFECTS = new Set([
+  'extendedart',
+  'showcase',
+  'borderless',
+  'inverted',
+]);
+
 export async function resolveCommanders(
   entries: Array<{ name: string; slug?: string }>
 ): Promise<Resolved[]> {
-  // Three passes per entry, in order:
-  //   1. Exact match on the EDHREC name. Catches every plain card.
-  //   2. DFC fallback: catalog stores DFCs as "Front // Back" but
-  //      EDHREC sends only "Front". A `name LIKE 'Front // %'`
-  //      lookup picks them up.
-  //   3. Front-face fallback for partner pairs ("X // Y") — try the
-  //      first half as a single card. If it's a true partner pair,
-  //      the front face exists as its own catalog row.
-  //
-  // We dedupe on scryfall_id to skip a commander that already
-  // resolved at a higher rank (rare, but possible if EDHREC repeats
-  // the same card in featured tiers).
   const want = entries.map((e, i) => ({
     rank: i + 1,
     name: e.name,
@@ -41,20 +65,17 @@ export async function resolveCommanders(
   }));
   if (want.length === 0) return [];
 
-  // Pass 1: exact-name lookup.
+  // Pass 1: exact-name lookup with print-quality picker.
   const fullNames = Array.from(new Set(want.map((w) => w.name)));
-  const exactHits = await batchLookupByName(fullNames);
+  const exactHits = await pickBestPrintByName(fullNames);
 
-  // Pass 2: DFC lookup for plain (no " // ") names that missed exact.
-  // We resolve via `name LIKE 'X // %'` and keep the first hit per
-  // front. Partner pairs (with " // " in the EDHREC name) are NOT
-  // run through this pass — they get the front-face pass below.
+  // Pass 2: DFC lookup for plain names that missed exact match.
   const missingPlain = want.filter(
     (w) => !exactHits.has(w.name) && !w.name.includes(' // ')
   );
   const dfcHits =
     missingPlain.length > 0
-      ? await batchLookupByFrontFacePrefix(
+      ? await pickBestDfcFront(
           Array.from(new Set(missingPlain.map((w) => w.name)))
         )
       : new Map<string, string>();
@@ -72,7 +93,7 @@ export async function resolveCommanders(
   const frontNames = Array.from(new Set(frontMap.values()));
   const frontHits =
     frontNames.length > 0
-      ? await batchLookupByName(frontNames)
+      ? await pickBestPrintByName(frontNames)
       : new Map<string, string>();
 
   const seen = new Set<string>();
@@ -90,71 +111,122 @@ export async function resolveCommanders(
 }
 
 /**
- * Resolve a list of "front" names (no " // ") to catalog rows that
- * store them as the front face of a DFC ("Front // Back"). The
- * PostgREST `or` filter has fragile escaping rules around the LIKE
- * pattern's slashes/spaces, so we issue one `like` query per name
- * in parallel batches. Worst case is dozens of small queries per
- * run — well within the 5-day cadence budget and the round-trip
- * cost is dominated by the EDHREC fetch anyway.
+ * For each requested name, fetch every English non-art-card printing
+ * and choose the one with the most "normal" art (lowest preference
+ * tier; latest release as tiebreaker).
  */
-async function batchLookupByFrontFacePrefix(
+async function pickBestPrintByName(
+  names: string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (names.length === 0) return out;
+  const CHUNK = 200;
+  for (let i = 0; i < names.length; i += CHUNK) {
+    const slice = names.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('cards')
+      .select('scryfall_id, name, layout, lang, promo, frame_effects, released_at')
+      .in('name', slice)
+      .eq('lang', 'en');
+    if (error) {
+      throw new Error(`cards lookup failed: ${error.message}`);
+    }
+    rankAndStore(out, (data ?? []) as CardRow[], (r) => r.name);
+  }
+  return out;
+}
+
+/**
+ * Resolve a list of "front" names (no " // ") to catalog rows that
+ * store them as the front face of a DFC ("Front // Back"). One
+ * `LIKE` per name (parallel batches), each returning all printings —
+ * we then apply the same print-quality tiering as the exact-match
+ * path so DFCs don't pull art-card variants either.
+ */
+async function pickBestDfcFront(
   fronts: string[]
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (fronts.length === 0) return out;
-  const CONCURRENCY = 8;
+  const CONCURRENCY = 6;
   for (let i = 0; i < fronts.length; i += CONCURRENCY) {
     const batch = fronts.slice(i, i + CONCURRENCY);
     const results = await Promise.all(
       batch.map(async (front) => {
         const { data, error } = await supabase
           .from('cards')
-          .select('scryfall_id, name')
+          .select('scryfall_id, name, layout, lang, promo, frame_effects, released_at')
           .like('name', `${front} // %`)
-          .limit(1);
+          .eq('lang', 'en');
         if (error) {
           throw new Error(
             `DFC front-face lookup for "${front}" failed: ${error.message}`
           );
         }
-        const row = (data ?? [])[0] as { scryfall_id?: string } | undefined;
-        return { front, id: row?.scryfall_id };
+        return { front, rows: (data ?? []) as CardRow[] };
       })
     );
     for (const r of results) {
-      if (r.id && !out.has(r.front)) out.set(r.front, r.id);
+      // Tier and pick using the front (the EDHREC-side name) as the
+      // map key, regardless of the catalog's full "X // Y" name.
+      const local = new Map<string, string>();
+      rankAndStore(local, r.rows, () => r.front);
+      const id = local.get(r.front);
+      if (id && !out.has(r.front)) out.set(r.front, id);
     }
   }
   return out;
 }
 
-async function batchLookupByName(
-  names: string[]
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (names.length === 0) return out;
-  // Supabase's PostgREST IN filter handles a few hundred values
-  // comfortably. We chunk at 200 to stay well within URL length.
-  const CHUNK = 200;
-  for (let i = 0; i < names.length; i += CHUNK) {
-    const slice = names.slice(i, i + CHUNK);
-    const { data, error } = await supabase
-      .from('cards')
-      .select('scryfall_id, name')
-      .in('name', slice);
-    if (error) {
-      throw new Error(`cards lookup failed: ${error.message}`);
-    }
-    for (const row of data ?? []) {
-      const id = (row as { scryfall_id: string }).scryfall_id;
-      const name = (row as { name: string }).name;
-      // Keep the FIRST hit per name. Reprints share scryfall_id only
-      // when they're the same printing — `name` collisions across
-      // different printings resolve to whichever Postgres returns
-      // first; the consumer treats scryfall_id as authoritative.
-      if (id && name && !out.has(name)) out.set(name, id);
-    }
+/**
+ * Group rows by `keyOf(row)`, then for each key pick the row with
+ * the lowest preference tier (best "normal" art), breaking ties by
+ * latest release. Rows with skip-list layouts are dropped entirely.
+ */
+function rankAndStore(
+  out: Map<string, string>,
+  rows: CardRow[],
+  keyOf: (r: CardRow) => string
+): void {
+  const grouped = new Map<string, CardRow[]>();
+  for (const r of rows) {
+    if (r.layout && SKIP_LAYOUTS.has(r.layout)) continue;
+    const key = keyOf(r);
+    const list = grouped.get(key) ?? [];
+    list.push(r);
+    grouped.set(key, list);
   }
-  return out;
+  for (const [key, list] of grouped) {
+    if (out.has(key)) continue;
+    list.sort((a, b) => {
+      const ta = preferenceTier(a);
+      const tb = preferenceTier(b);
+      if (ta !== tb) return ta - tb;
+      const ra = a.released_at ?? '';
+      const rb = b.released_at ?? '';
+      return ra > rb ? -1 : ra < rb ? 1 : 0;
+    });
+    const best = list[0];
+    if (best?.scryfall_id) out.set(key, best.scryfall_id);
+  }
+}
+
+/** Lower is better. Hard penalties for promos/special frames so the
+ * carousel always prefers the regular set printing when one exists. */
+function preferenceTier(r: CardRow): number {
+  let tier = 0;
+  if (r.promo) tier += 5;
+  const fx = parseFrameEffects(r.frame_effects);
+  if (fx.some((f) => SPECIAL_FRAME_EFFECTS.has(f))) tier += 3;
+  return tier;
+}
+
+function parseFrameEffects(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }

@@ -223,6 +223,7 @@ function SearchEmptyStateInner({
           <DiscoverCarousel
             cards={newlyPrintedCards}
             onPress={onTapDiscoverCard}
+            cardWidth={WEEKLY_CARD_WIDTH}
           />
         </Section>
       )}
@@ -465,13 +466,15 @@ function WeeklyBucketSection({
   );
 }
 
-// Standard discovery card (Recently viewed, Newly printed). Bumped 20%
-// from the original 96 px to 115 px for better visibility.
+// Standard discovery card — used by Recently viewed only. Bumped
+// 20% from the original 96 px to 115 px for better visibility.
 const DISCOVER_CARD_WIDTH = Math.round(96 * 1.2);
-// Weekly bucket cards stay larger as the editorial pick — kept on the
-// original 1.38× ratio against the 96 px baseline so the hierarchy
-// (weekly > discover) stays consistent regardless of base bumps.
-const WEEKLY_CARD_WIDTH = Math.round(96 * 1.38);
+// Editorial card — used by This Week's pick, Newly printed, Top
+// Commanders, and the Standard / Modern Meta sections. The Search
+// hub centers all the curated discovery on a single, larger card
+// size so the hierarchy reads "Recently viewed = quick gallery,
+// everything else = editorial".
+const WEEKLY_CARD_WIDTH = Math.round(96 * 1.38 * 1.15);
 
 // ──────────────────────────────────────────────────────────────────────
 // Meta decks — DUMMY scaffolding. The deck rosters below are
