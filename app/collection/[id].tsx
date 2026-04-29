@@ -7,7 +7,6 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
 } from 'react-native-reanimated';
 import { useQuery } from '@powersync/react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -636,34 +635,43 @@ export default function CollectionDetailScreen() {
     [viewMode, tagsById, bulk.isSelected, handleCardPress, handleEditPress],
   );
 
-  // Direction-driven toolbar collapse.
-  // `hidden` is a 0..1 flag: scroll down past 40 px flips it to 1, any
-  // reverse drag flips it back to 0 — even mid-scroll, matching Safari
-  // / Instagram. Spring keeps the motion fluid, not on/off.
+  // Toolbar collapse — scroll-delta accumulator drives the chrome 1:1 with
+  // the finger. We use translate + negative marginBottom (no `height` anim)
+  // so the toolbar's children (CollectionToolbar with its TextInput) keep
+  // a constant frame and iOS doesn't re-measure them every frame. That was
+  // the cause of the "render hitch / flicker" on reverse-scroll reveal.
+  const COLLAPSE_THRESHOLD = 220;
   const lastY = useSharedValue(0);
-  const hidden = useSharedValue(0);
-  const SPRING = { damping: 20, stiffness: 140, mass: 0.8 } as const;
+  const accumulator = useSharedValue(0);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
       const y = e.contentOffset.y;
       const delta = y - lastY.value;
-      if (y <= 0) {
-        hidden.value = withSpring(0, SPRING);
-      } else if (delta > 2 && y > 40) {
-        hidden.value = withSpring(1, SPRING);
-      } else if (delta < -2) {
-        hidden.value = withSpring(0, SPRING);
-      }
       lastY.value = y;
+
+      if (y <= 0) {
+        accumulator.value = 0;
+        return;
+      }
+
+      const next = accumulator.value + delta;
+      accumulator.value =
+        next < 0 ? 0 : next > COLLAPSE_THRESHOLD ? COLLAPSE_THRESHOLD : next;
     },
   });
 
-  const toolbarStyle = useAnimatedStyle(() => ({
-    opacity: 1 - hidden.value,
-    height: interpolate(hidden.value, [0, 1], [toolbarHeight, 0], Extrapolation.CLAMP),
-    overflow: 'hidden',
-  }));
+  const toolbarStyle = useAnimatedStyle(() => {
+    if (toolbarHeight === 0) return { opacity: 1 };
+    const progress = accumulator.value / COLLAPSE_THRESHOLD;
+    return {
+      transform: [{ translateY: -toolbarHeight * progress }],
+      marginBottom: -toolbarHeight * progress,
+      // Opacity finishes fading well before the translate completes so the
+      // toolbar is invisible during the trailing half of its slide-out.
+      opacity: interpolate(progress, [0, 0.45, 1], [1, 0, 0], Extrapolation.CLAMP),
+    };
+  });
 
   // When grouping is active, sticky group headers collide with the
   // header card's rounded corner and the page bg "tooths" through. We
@@ -759,7 +767,10 @@ export default function CollectionDetailScreen() {
           )}
         </View>
 
-        {/* ── Toolbar inside the header card (collapses on scroll) ── */}
+        {/* ── Toolbar inside the header card (collapses on scroll) ──
+            Wrapped in a clipping View so the translate-out doesn't leak
+            past the header card's bottom edge. */}
+        <View style={styles.toolbarClip}>
         {bulk.isActive ? (
           <Animated.View
             key="bulk-bar"
@@ -795,6 +806,7 @@ export default function CollectionDetailScreen() {
             />
           </Animated.View>
         )}
+        </View>
       </Animated.View>
 
       {/* ── Content ──
@@ -1124,6 +1136,9 @@ const styles = StyleSheet.create({
   headerInner: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xs,
+  },
+  toolbarClip: {
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

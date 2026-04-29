@@ -14,7 +14,6 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -431,31 +430,39 @@ export default function OwnedCardsScreen() {
     </View>
   ) : null;
 
-  // Direction-driven toolbar collapse — see app/collection/[id].tsx.
+  // Toolbar collapse — see app/collection/[id].tsx for the rationale.
+  // Translate-only animation (no `height`) so the TextInput's frame stays
+  // constant and iOS doesn't re-measure children every frame.
+  const COLLAPSE_THRESHOLD = 220;
   const lastY = useSharedValue(0);
-  const hidden = useSharedValue(0);
-  const SPRING = { damping: 20, stiffness: 140, mass: 0.8 } as const;
+  const accumulator = useSharedValue(0);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
       const y = e.contentOffset.y;
       const delta = y - lastY.value;
-      if (y <= 0) {
-        hidden.value = withSpring(0, SPRING);
-      } else if (delta > 2 && y > 40) {
-        hidden.value = withSpring(1, SPRING);
-      } else if (delta < -2) {
-        hidden.value = withSpring(0, SPRING);
-      }
       lastY.value = y;
+
+      if (y <= 0) {
+        accumulator.value = 0;
+        return;
+      }
+
+      const next = accumulator.value + delta;
+      accumulator.value =
+        next < 0 ? 0 : next > COLLAPSE_THRESHOLD ? COLLAPSE_THRESHOLD : next;
     },
   });
 
-  const toolbarStyle = useAnimatedStyle(() => ({
-    opacity: 1 - hidden.value,
-    height: interpolate(hidden.value, [0, 1], [toolbarHeight, 0], Extrapolation.CLAMP),
-    overflow: 'hidden',
-  }));
+  const toolbarStyle = useAnimatedStyle(() => {
+    if (toolbarHeight === 0) return { opacity: 1 };
+    const progress = accumulator.value / COLLAPSE_THRESHOLD;
+    return {
+      transform: [{ translateY: -toolbarHeight * progress }],
+      marginBottom: -toolbarHeight * progress,
+      opacity: interpolate(progress, [0, 0.45, 1], [1, 0, 0], Extrapolation.CLAMP),
+    };
+  });
 
   return (
     <View style={styles.container}>
@@ -492,7 +499,10 @@ export default function OwnedCardsScreen() {
           </View>
         </View>
 
-        {/* ── Toolbar inside the header card (collapses on scroll) ── */}
+        {/* ── Toolbar inside the header card (collapses on scroll) ──
+            Wrapped in a clipping View so the translate-out doesn't leak
+            past the header card's bottom edge. */}
+        <View style={styles.toolbarClip}>
         <Animated.View style={toolbarStyle}>
           <CollectionToolbar
             searchQuery={searchQuery}
@@ -505,6 +515,7 @@ export default function OwnedCardsScreen() {
             size={toolbarSize}
           />
         </Animated.View>
+        </View>
       </View>
 
       {/* ── Content ── */}
@@ -589,6 +600,9 @@ const styles = StyleSheet.create({
   headerInner: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xs,
+  },
+  toolbarClip: {
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

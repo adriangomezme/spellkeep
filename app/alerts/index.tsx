@@ -438,10 +438,6 @@ export default function AlertsScreen() {
               if (h > 0 && h !== collapseHeight) setCollapseHeight(h);
             }}
           >
-              <Text style={styles.description}>
-                Get notified when cards hit your target.
-              </Text>
-
               <View style={styles.searchWrap}>
                 <Ionicons name="search" size={16} color={colors.textMuted} />
                 <TextInput
@@ -1314,13 +1310,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: fontSize.sm,
     fontWeight: '500',
-  },
-  description: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: '500',
-    lineHeight: 19,
-    marginTop: spacing.sm,
   },
   searchWrap: {
     flexDirection: 'row',

@@ -108,17 +108,53 @@ export default function CollectionHubScreen() {
   const PULL_THRESHOLD = 110;
   const pullY = useSharedValue(0);
 
+  // Collapse the financial block on scroll. Same translate-only technique
+  // we use in /alerts and binder/list/owned: scroll-delta accumulator
+  // drives a translateY + marginBottom on the wrapper so children keep a
+  // constant frame and iOS doesn't re-measure on reveal.
+  const FINANCIAL_COLLAPSE_THRESHOLD = 220;
+  const lastY = useSharedValue(0);
+  const financialAccumulator = useSharedValue(0);
+  const [financialHeight, setFinancialHeight] = useState(0);
+
   const openSearch = useCallback(() => {
     setShowSearch(true);
   }, []);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
-      pullY.value = e.contentOffset.y;
-      if (!showSearch && e.contentOffset.y <= -PULL_THRESHOLD) {
+      const y = e.contentOffset.y;
+      pullY.value = y;
+      if (!showSearch && y <= -PULL_THRESHOLD) {
         runOnJS(openSearch)();
       }
+
+      const delta = y - lastY.value;
+      lastY.value = y;
+
+      if (y <= 0) {
+        financialAccumulator.value = 0;
+        return;
+      }
+
+      const next = financialAccumulator.value + delta;
+      financialAccumulator.value =
+        next < 0
+          ? 0
+          : next > FINANCIAL_COLLAPSE_THRESHOLD
+            ? FINANCIAL_COLLAPSE_THRESHOLD
+            : next;
     },
+  });
+
+  const financialCollapseStyle = useAnimatedStyle(() => {
+    if (financialHeight === 0) return { opacity: 1 };
+    const progress = financialAccumulator.value / FINANCIAL_COLLAPSE_THRESHOLD;
+    return {
+      transform: [{ translateY: -financialHeight * progress }],
+      marginBottom: -financialHeight * progress,
+      opacity: interpolate(progress, [0, 0.45, 1], [1, 0, 0], Extrapolation.CLAMP),
+    };
   });
 
   const hintStyle = useAnimatedStyle(() => {
@@ -408,10 +444,18 @@ export default function CollectionHubScreen() {
         </TouchableOpacity>
 
         {showMarketStats && (
-          <>
-            <View style={styles.headerCardDivider} />
-            <MarketHeaderCompact />
-          </>
+          <View style={styles.financialClip}>
+            <Animated.View
+              style={financialCollapseStyle}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                if (h > 0 && h !== financialHeight) setFinancialHeight(h);
+              }}
+            >
+              <View style={styles.headerCardDivider} />
+              <MarketHeaderCompact />
+            </Animated.View>
+          </View>
         )}
       </View>
     </View>
@@ -729,6 +773,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginTop: spacing.md,
     marginBottom: spacing.md,
+  },
+  financialClip: {
+    overflow: 'hidden',
   },
   searchHeaderWrap: {
     paddingHorizontal: spacing.lg,
