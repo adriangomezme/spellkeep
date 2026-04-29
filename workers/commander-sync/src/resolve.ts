@@ -90,42 +90,43 @@ export async function resolveCommanders(
 }
 
 /**
- * Bulk-resolve a list of "front" names (no " // ") to catalog rows
- * that store them as the front face of a DFC ("Front // Back"). One
- * round-trip per chunk; we OR up the LIKE clauses rather than running
- * one query per name.
+ * Resolve a list of "front" names (no " // ") to catalog rows that
+ * store them as the front face of a DFC ("Front // Back"). The
+ * PostgREST `or` filter has fragile escaping rules around the LIKE
+ * pattern's slashes/spaces, so we issue one `like` query per name
+ * in parallel batches. Worst case is dozens of small queries per
+ * run — well within the 5-day cadence budget and the round-trip
+ * cost is dominated by the EDHREC fetch anyway.
  */
 async function batchLookupByFrontFacePrefix(
   fronts: string[]
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (fronts.length === 0) return out;
-  const CHUNK = 60;
-  for (let i = 0; i < fronts.length; i += CHUNK) {
-    const slice = fronts.slice(i, i + CHUNK);
-    const orFilter = slice.map((n) => `name.like.${escapeLike(n)} // *`).join(',');
-    const { data, error } = await supabase
-      .from('cards')
-      .select('scryfall_id, name')
-      .or(orFilter);
-    if (error) {
-      throw new Error(`DFC front-face lookup failed: ${error.message}`);
-    }
-    for (const row of data ?? []) {
-      const id = (row as { scryfall_id: string }).scryfall_id;
-      const name = (row as { name: string }).name;
-      const front = name.split(' // ')[0]?.trim();
-      if (id && front && !out.has(front)) out.set(front, id);
+  const CONCURRENCY = 8;
+  for (let i = 0; i < fronts.length; i += CONCURRENCY) {
+    const batch = fronts.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (front) => {
+        const { data, error } = await supabase
+          .from('cards')
+          .select('scryfall_id, name')
+          .like('name', `${front} // %`)
+          .limit(1);
+        if (error) {
+          throw new Error(
+            `DFC front-face lookup for "${front}" failed: ${error.message}`
+          );
+        }
+        const row = (data ?? [])[0] as { scryfall_id?: string } | undefined;
+        return { front, id: row?.scryfall_id };
+      })
+    );
+    for (const r of results) {
+      if (r.id && !out.has(r.front)) out.set(r.front, r.id);
     }
   }
   return out;
-}
-
-function escapeLike(s: string): string {
-  // PostgREST `or` filter values can't contain commas or parens
-  // unquoted; conservatively quote the whole pattern when needed.
-  if (/[,()]/.test(s)) return `"${s.replace(/"/g, '\\"')}"`;
-  return s;
 }
 
 async function batchLookupByName(
