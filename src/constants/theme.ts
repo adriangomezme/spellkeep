@@ -21,9 +21,10 @@ export const colors = {
   primaryLight: '#DBE3F7',
   primaryDark: '#061A6E',
 
-  // Warm accent — amber, semantically distinct from `warning`
-  accent: '#F59E0B',
-  accentLight: '#FEF4C5',
+  // Lively accent — vivid blue. Pairs with the deep navy primary as a
+  // brighter companion (sparkles, AI chips, secondary highlights).
+  accent: '#3B82F6',
+  accentLight: '#DBEAFE',
 
   // MTG mana (canon)
   manaWhite: '#F9FAF4',

@@ -51,9 +51,14 @@ type Props = {
    *  merges `filters` into search state, sets the text query, and
    *  fires a search. */
   onApply: (filters: SearchFilterState, query: string) => void;
+  /** Optional prefill — when the sheet opens, the prompt input is
+   *  seeded with this text. Used by the AI Search promotional banner
+   *  so tapping an example pill walks the user straight into a
+   *  populated query they can submit or tweak. */
+  initialPrompt?: string;
 };
 
-export function AiSearchSheet({ visible, onClose, onApply }: Props) {
+export function AiSearchSheet({ visible, onClose, onApply, initialPrompt }: Props) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AiSearchResult | null>(null);
@@ -71,11 +76,11 @@ export function AiSearchSheet({ visible, onClose, onApply }: Props) {
   // user taps into the field when they're ready.
   useEffect(() => {
     if (visible) {
-      setPrompt('');
+      setPrompt(initialPrompt ?? '');
       setResult(null);
       setLoading(false);
     }
-  }, [visible]);
+  }, [visible, initialPrompt]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = prompt.trim();

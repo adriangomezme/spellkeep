@@ -150,6 +150,10 @@ export default function SearchScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const [showSort, setShowSort] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  /** Optional prefill for the AI Search sheet — populated when the
+   *  user taps an example pill in the AI promotional banner so the
+   *  sheet opens already-loaded with that prompt. */
+  const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
   // Two top-level views: 'cards' = the universal search experience,
   // 'sets' = a browseable list of every set in the catalog. Tapping a
   // set in 'sets' mode hands a `set:CODE` query back to 'cards'.
@@ -214,6 +218,24 @@ export default function SearchScreen() {
     },
     [setQuery, submit]
   );
+
+  const tapSeeAllNewlyPrinted = useCallback(() => {
+    // Approximate the local "newly printed" carousel with a Scryfall
+    // query: cards released in the last 45 days, ordered by release
+    // date, excluding basics and reprints to keep the result feed
+    // focused on first-time prints. The friendly label "Newly printed"
+    // is what we save to recents, not the raw syntax.
+    const cutoff = new Date(Date.now() - 45 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    const text = `date>=${cutoff} -is:reprint -t:basic`;
+    setQuery(text);
+    setSortBy('added');
+    setSortAsc(false);
+    submit(text);
+    void addRecentSearch('Newly printed', { text });
+    inputRef.current?.blur();
+  }, [setQuery, setSortBy, setSortAsc, submit]);
 
   const tapWeeklyBucketSeeAll = useCallback(
     (bucket: DiscoveryBucket) => {
@@ -360,81 +382,81 @@ export default function SearchScreen() {
     if (key.length < 2 || isLoading) return;
     const previews = results
       .slice(0, 4)
-      .map((c) => getCardImageUri(c, 'small'))
+      .map((c) => getCardImageUri(c, 'normal'))
       .filter((u): u is string => !!u);
     void updateRecentSearchMeta(key, previews, totalCards);
   }, [activeRecentLabel, submittedQuery, results, isLoading, totalCards]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Search</Text>
-        <View style={styles.headerRight}>
-          {/* Discreet inline spinner — small, color.primary, sits next
-              to the count rather than replacing it. Count stays put
-              once we have any results so the user always sees the
-              cardinality even during pagination loads. */}
-          {searchView === 'cards' && isLoading && (
-            <ActivityIndicator size="small" color={colors.primary} />
-          )}
-          {searchView === 'cards' && totalCards > 0 && (
-            <Text style={styles.resultCount}>
-              {totalCards.toLocaleString()} results
-            </Text>
-          )}
+    <View style={styles.container}>
+      {/* White-card header — title + Cards/Sets segment + (cards-mode only)
+          search toolbar. Same editorial mood used across the app: full
+          bleed surface, bottom-radius, sm shadow. */}
+      <View style={styles.headerCard}>
+        <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+          {/* Title row + Cards/Sets segment side-by-side. The previous
+              loading-indicator + result-count slot was removed; the
+              status of an in-flight search needs a new home — see the
+              session TODO list for the follow-up decision. */}
+          <View style={styles.headerTopRow}>
+            <Text style={styles.title}>Search</Text>
+            <View style={styles.headerRightCluster}>
+              {searchView === 'cards' && isLoading && (
+                <ActivityIndicator size="small" color={colors.primary} />
+              )}
+              <View style={styles.viewSegment}>
+              {(['cards', 'sets'] as const).map((view) => {
+                const active = searchView === view;
+                return (
+                  <TouchableOpacity
+                    key={view}
+                    style={[styles.viewSeg, active && styles.viewSegActive]}
+                    onPress={() => setSearchView(view)}
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons
+                      name={view === 'cards' ? 'search' : 'albums-outline'}
+                      size={14}
+                      color={active ? colors.primary : colors.textMuted}
+                    />
+                    <Text
+                      style={[styles.viewSegLabel, active && styles.viewSegLabelActive]}
+                    >
+                      {view === 'cards' ? 'Cards' : 'Sets'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              </View>
+            </View>
+          </View>
         </View>
-      </View>
 
-      {/* Cards | Sets segmented — top-level switch between the search
-          experience and the browseable set catalog. Sticky just below
-          the title so the user always knows which mode they're in. */}
-      <View style={styles.viewSegment}>
-        {(['cards', 'sets'] as const).map((view) => {
-          const active = searchView === view;
-          return (
-            <TouchableOpacity
-              key={view}
-              style={[styles.viewSeg, active && styles.viewSegActive]}
-              onPress={() => setSearchView(view)}
-              activeOpacity={0.6}
-            >
-              <Ionicons
-                name={view === 'cards' ? 'search' : 'albums-outline'}
-                size={14}
-                color={active ? colors.primary : colors.textMuted}
-              />
-              <Text
-                style={[styles.viewSegLabel, active && styles.viewSegLabelActive]}
-              >
-                {view === 'cards' ? 'Cards' : 'Sets'}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {searchView === 'cards' && (
+          <SearchToolbar
+            ref={inputRef}
+            query={query}
+            onChangeQuery={setQuery}
+            onClear={clear}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            onSubmit={onSubmit}
+            viewMode={viewMode}
+            onToggleView={() => setViewMode(nextViewMode(viewMode))}
+            onSortPress={() => setShowSort(true)}
+            onFilterPress={() => router.push('/search/filters')}
+            activeFilters={activeFilterCount}
+            onAiPress={() => setShowAi(true)}
+            size={toolbarSize}
+            fieldSquareBottom={showSuggestions}
+          />
+        )}
       </View>
 
       {searchView === 'sets' ? (
         <SetsBrowser onSelectSet={handleSelectSet} />
       ) : (
         <>
-      <SearchToolbar
-        ref={inputRef}
-        query={query}
-        onChangeQuery={setQuery}
-        onClear={clear}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        onSubmit={onSubmit}
-        viewMode={viewMode}
-        onToggleView={() => setViewMode(nextViewMode(viewMode))}
-        onSortPress={() => setShowSort(true)}
-        onFilterPress={() => router.push('/search/filters')}
-        activeFilters={activeFilterCount}
-        onAiPress={() => setShowAi(true)}
-        size={toolbarSize}
-        fieldSquareBottom={showSuggestions}
-      />
-
       <SyntaxChips clauses={syntaxClauses} onRemove={handleRemoveClause} />
 
       {error && (
@@ -463,6 +485,15 @@ export default function SearchScreen() {
             onTapDiscoverCard={goToCard}
             onTapAiChip={tapAiChip}
             onTapWeeklyBucketSeeAll={tapWeeklyBucketSeeAll}
+            onOpenAi={() => {
+              setAiInitialPrompt(undefined);
+              setShowAi(true);
+            }}
+            onTapAiExample={(prompt) => {
+              setAiInitialPrompt(prompt);
+              setShowAi(true);
+            }}
+            onSeeAllNewlyPrinted={tapSeeAllNewlyPrinted}
           />
         ) : (
           <SearchResults
@@ -474,6 +505,7 @@ export default function SearchScreen() {
             onLoadMore={loadMore}
             onPress={goToCard}
             isEmpty={filteredResults.length === 0}
+            totalCards={totalCards}
           />
         )}
 
@@ -517,6 +549,7 @@ export default function SearchScreen() {
         visible={showAi}
         onClose={() => setShowAi(false)}
         onApply={handleAiApply}
+        initialPrompt={aiInitialPrompt}
       />
     </View>
   );
@@ -527,22 +560,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    paddingBottom: spacing.xs + 2,
+    ...shadows.sm,
+  },
+  headerInner: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
     paddingBottom: spacing.sm,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  headerRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   title: {
     color: colors.text,
     fontSize: fontSize.xxxl,
     fontWeight: '800',
-  },
-  resultCount: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
+    letterSpacing: -1,
   },
   body: {
     flex: 1,
@@ -559,28 +603,21 @@ const styles = StyleSheet.create({
     zIndex: 10,
     elevation: 10,
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 20,
-  },
   viewSegment: {
     flexDirection: 'row',
-    marginHorizontal: spacing.lg,
     backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm + 2,
     padding: 2,
-    marginBottom: spacing.sm,
+    alignSelf: 'center',
   },
   viewSeg: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm - 2,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm + 2,
+    borderRadius: borderRadius.sm,
   },
   viewSegActive: {
     backgroundColor: colors.surface,

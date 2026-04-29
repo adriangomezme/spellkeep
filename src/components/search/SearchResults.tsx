@@ -37,6 +37,9 @@ type Props = {
   onLoadMore: () => void;
   onPress: (card: ScryfallCard) => void;
   isEmpty: boolean;
+  /** Total count from the latest search query — rendered as a small
+   *  caption above the first result. Hidden when 0 / loading-into-empty. */
+  totalCards?: number;
 };
 
 function CompactItem({ card, onPress, width, marginBottom }: { card: ScryfallCard; onPress: (c: ScryfallCard) => void; width: number; marginBottom: number | null }) {
@@ -106,6 +109,7 @@ function SearchResultsInner({
   onLoadMore,
   onPress,
   isEmpty,
+  totalCards,
 }: Props) {
   const gItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
   // FlatList ignores columnWrapperStyle when numColumns === 1, so we
@@ -146,6 +150,15 @@ function SearchResultsInner({
     <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
   ) : null;
 
+  // Result-count caption pinned above the first result. Only shown
+  // when we actually have results so the "no cards found" empty
+  // state stays uncluttered.
+  const header = totalCards != null && totalCards > 0 && results.length > 0 ? (
+    <Text style={styles.resultCount}>
+      {totalCards.toLocaleString()} {totalCards === 1 ? 'result' : 'results'}
+    </Text>
+  ) : null;
+
   if (viewMode === 'list') {
     return (
       <FlatList
@@ -159,6 +172,7 @@ function SearchResultsInner({
         windowSize={7}
         maxToRenderPerBatch={10}
         removeClippedSubviews
+        ListHeaderComponent={header}
         ListEmptyComponent={empty}
         ListFooterComponent={footer}
       />
@@ -180,6 +194,7 @@ function SearchResultsInner({
       windowSize={7}
       maxToRenderPerBatch={6}
       removeClippedSubviews
+      ListHeaderComponent={header}
       ListEmptyComponent={empty}
       ListFooterComponent={footer}
     />
@@ -193,6 +208,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: GRID_PADDING,
     paddingTop: spacing.sm,
     paddingBottom: 100,
+  },
+  resultCount: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm + 2,
   },
   gridRow: {
     gap: GRID_GAP,

@@ -1,0 +1,22 @@
+{
+  "name": "@spellkeep/commander-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worker that scrapes EDHREC's commanders/{week,month,} JSON feeds every 5 days, resolves names to Scryfall IDs against the catalog, and upserts top-100-per-window into Supabase for the Search hub's Top Commanders carousel.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

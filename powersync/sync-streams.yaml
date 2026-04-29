@@ -4,6 +4,12 @@ streams:
     # Scryfall set metadata — small, same for all users.
     global_sets:
         query: "SELECT id, scryfall_id, code, name, set_type, released_at, card_count, icon_svg_uri, updated_at FROM sets"
+    # Top Commanders feed from EDHREC — 100 rows × 3 windows, refreshed
+    # every 5 days by the commander-sync worker. Global (no user filter).
+    # Column is `time_window` because `window` is a reserved keyword in
+    # the sync-streams SQL parser.
+    global_top_commanders:
+        query: "SELECT time_window, rank, scryfall_id, edhrec_slug, refreshed_at FROM top_commanders"
     # Profile row for the signed-in user.
     user_profile:
         query: "SELECT * FROM profiles WHERE id = auth.user_id()"

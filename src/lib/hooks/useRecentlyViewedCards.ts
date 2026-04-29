@@ -12,6 +12,11 @@ export type RecentCard = {
   set_name: string;
   collector_number: string;
   image_uri_small?: string;
+  /** Higher-resolution thumbnail used by the Recently viewed carousel
+   *  on the Search hub. Older entries persisted before this field
+   *  existed will only have `image_uri_small`; consumers should
+   *  prefer `image_uri_normal` and fall back. */
+  image_uri_normal?: string;
   price_usd?: string;
   viewed_at: number;
 };
@@ -53,15 +58,18 @@ async function persist(items: RecentCard[]): Promise<void> {
 }
 
 function toRecent(card: ScryfallCard): RecentCard {
-  const img =
+  const small =
     card.image_uris?.small ?? card.card_faces?.[0]?.image_uris?.small;
+  const normal =
+    card.image_uris?.normal ?? card.card_faces?.[0]?.image_uris?.normal;
   return {
     id: card.id,
     name: card.name,
     set_code: card.set,
     set_name: card.set_name,
     collector_number: card.collector_number,
-    image_uri_small: img,
+    image_uri_small: small,
+    image_uri_normal: normal,
     price_usd: card.prices?.usd,
     viewed_at: Date.now(),
   };
