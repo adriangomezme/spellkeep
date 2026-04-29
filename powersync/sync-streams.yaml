@@ -7,9 +7,11 @@ streams:
     # Top Commanders feed from EDHREC — 100 rows × 3 windows, refreshed
     # every 5 days by the commander-sync worker. Global (no user filter).
     # Column is `time_window` because `window` is a reserved keyword in
-    # the sync-streams SQL parser.
+    # the sync-streams SQL parser. PowerSync uses `id` as the bucket
+    # partition key, hence the composite PK was migrated to (id) +
+    # unique(time_window, rank).
     global_top_commanders:
-        query: "SELECT time_window, rank, scryfall_id, edhrec_slug, refreshed_at FROM top_commanders"
+        query: "SELECT id, time_window, rank, scryfall_id, edhrec_slug, refreshed_at FROM top_commanders"
     # Profile row for the signed-in user.
     user_profile:
         query: "SELECT * FROM profiles WHERE id = auth.user_id()"
