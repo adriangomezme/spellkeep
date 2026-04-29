@@ -26,8 +26,8 @@ import {
 import { useAlertPrices, priceKey } from '../lib/hooks/useAlertPrices';
 import { PrimaryCTA } from './PrimaryCTA';
 
-const DIR_UP = '#1D9E58';
-const DIR_DOWN = '#C24848';
+const DIR_UP = colors.success;
+const DIR_DOWN = colors.error;
 
 type Props = {
   visible: boolean;
@@ -180,40 +180,35 @@ function AlertRow({
   return (
     <TouchableOpacity style={styles.row} onPress={onEdit} activeOpacity={0.7}>
       <View style={styles.rowLeft}>
-        <View style={styles.conditionLine}>
+        <Text style={styles.finishLabel}>{capitalize(alert.finish)}</Text>
+        <View style={styles.storyLine}>
           <Ionicons
             name={alert.direction === 'above' ? 'trending-up' : 'trending-down'}
-            size={14}
+            size={13}
             color={dColor}
           />
           <Text style={[styles.conditionText, { color: dColor }]}>{conditionLabel}</Text>
-          {alert.mode === 'percent' && (
-            <Text style={styles.targetText}>→ {formatUSD(target)}</Text>
-          )}
+          <Text style={styles.storyMeta}>
+            {alert.mode === 'percent' ? ` · target ${formatUSD(target)}` : ''}
+            {' · from '}{formatUSD(alert.snapshot_price)}
+          </Text>
         </View>
-        <Text style={styles.finishText}>
-          {capitalize(alert.finish)} · from {formatUSD(alert.snapshot_price)}
+        <Text style={styles.currentLine}>
+          <Text style={styles.currentValue}>
+            {hasCurrent ? formatUSD(currentPrice!) : '—'}
+          </Text>
+          {hasCurrent ? (
+            <Text style={[styles.deltaInline, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
+              {'  '}({deltaUp ? '+' : ''}{deltaPct.toFixed(2)}%)
+            </Text>
+          ) : (
+            <Text style={styles.deltaInlineMuted}>{'  '}no data</Text>
+          )}
         </Text>
       </View>
-      <View style={styles.rowRight}>
-        <Text style={styles.currentValue}>
-          {hasCurrent ? formatUSD(currentPrice!) : '—'}
-        </Text>
-        {hasCurrent ? (
-          <Text style={[styles.deltaText, { color: deltaUp ? DIR_UP : DIR_DOWN }]}>
-            {deltaUp ? '+' : ''}{deltaPct.toFixed(2)}%
-          </Text>
-        ) : (
-          <Text style={[styles.deltaText, { color: colors.textMuted }]}>
-            no data
-          </Text>
-        )}
-      </View>
-      <View style={styles.actionGroup}>
-        <TouchableOpacity onPress={onDelete} hitSlop={6} style={styles.actionBtn}>
-          <Ionicons name="trash-outline" size={14} color={colors.error} />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity onPress={onDelete} hitSlop={6} style={styles.actionBtn}>
+        <Ionicons name="trash-outline" size={14} color={colors.error} />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -311,43 +306,47 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
   },
-  rowLeft: { flex: 1, minWidth: 0 },
-  conditionLine: {
+  rowLeft: { flex: 1, minWidth: 0, gap: 2 },
+  finishLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  storyLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
+    flexWrap: 'wrap',
   },
   conditionText: {
     fontSize: fontSize.md,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
-  targetText: {
+  storyMeta: {
     color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    fontWeight: '500',
-  },
-  finishText: {
-    color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '500',
+  },
+  currentLine: {
     marginTop: 2,
   },
-  rowRight: { alignItems: 'flex-end' },
   currentValue: {
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
-  deltaText: {
+  deltaInline: {
     fontSize: fontSize.xs,
     fontWeight: '700',
-    marginTop: 2,
   },
-  actionGroup: {
-    flexDirection: 'row',
-    gap: 4,
+  deltaInlineMuted: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
   },
   actionBtn: {
     width: 28,

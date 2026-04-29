@@ -414,6 +414,54 @@ export async function batchResolveBySupabaseId(
 }
 
 /**
+ * Lightweight price-only resolver. Returns a Map<scryfall_id, price triplet>
+ * built from the catalog's price columns + price_overrides — without
+ * SELECT * or JSON parsing. Keeps the alerts list responsive when the user
+ * has dozens of alerts and we only need usd/usd_foil/usd_etched.
+ */
+export async function batchResolvePricesByScryfallId(
+  scryfallIds: string[]
+): Promise<Map<string, { usd: number | null; usd_foil: number | null; usd_etched: number | null }>> {
+  const resolved = new Map<
+    string,
+    { usd: number | null; usd_foil: number | null; usd_etched: number | null }
+  >();
+  const db = getCatalog();
+  if (!db || scryfallIds.length === 0) return resolved;
+
+  const unique = Array.from(new Set(scryfallIds));
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const slice = unique.slice(i, i + IN_CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    const res = await db.execute(
+      `SELECT scryfall_id, price_usd, price_usd_foil, price_usd_etched
+         FROM cards WHERE scryfall_id IN (${placeholders})`,
+      slice
+    );
+    for (const row of readAllRows(res)) {
+      const id = row.scryfall_id as string | undefined;
+      if (!id) continue;
+      const override = getPriceOverride(id);
+      const usd = override ? override.price_usd : (row.price_usd as number | null);
+      const usdFoil = override ? override.price_usd_foil : (row.price_usd_foil as number | null);
+      resolved.set(id, {
+        usd: numOrNull(usd),
+        usd_foil: numOrNull(usdFoil),
+        usd_etched: numOrNull(row.price_usd_etched as number | null),
+      });
+    }
+  }
+
+  return resolved;
+}
+
+function numOrNull(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Batch mapping of scryfall_id → Supabase cards.id (UUID) for a set of cards.
  * Used during bulk import to convert resolved ScryfallCard ids into the FK
  * column that collection_cards expects, without a round-trip per row.

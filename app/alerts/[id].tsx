@@ -33,11 +33,10 @@ import { useAlertPrices, priceKey } from '../../src/lib/hooks/useAlertPrices';
 import { CreateAlertSheet } from '../../src/components/CreateAlertSheet';
 import { AlertActionsSheet } from '../../src/components/AlertActionsSheet';
 
-const DIR_UP = '#1D9E58';
-const DIR_DOWN = '#C24848';
-const PAUSE_COLOR = '#6B7280';
+const DIR_UP = colors.success;
+const DIR_DOWN = colors.error;
+const PAUSE_COLOR = colors.textSecondary;
 const SNOOZE_COLOR = '#6B8AFF';
-const REARM_COLOR = '#1D9E58';
 
 type EventRow = {
   id: string;
@@ -123,7 +122,7 @@ export default function AlertDetailScreen() {
     if (snoozed) {
       RNAlert.alert(
         'Snoozed alert',
-        `Active again at ${formatDate(alert.snoozed_until!)}.`,
+        `Active again at ${formatDateTime(alert.snoozed_until!)}.`,
         [
           { text: 'Cancel snooze', onPress: () => snoozeAlertLocal(alert.id, 0) },
           { text: 'Close', style: 'cancel' },
@@ -177,6 +176,8 @@ export default function AlertDetailScreen() {
           <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Alert details</Text>
+          <View style={{ width: 28 }} />
         </View>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Alert not found.</Text>
@@ -207,6 +208,14 @@ export default function AlertDetailScreen() {
   const deltaUp = deltaPct >= 0;
   const isTriggered = alert.status === 'triggered';
 
+  const triggerCount = events?.length ?? 0;
+  const originalSnapshot =
+    triggerCount > 0
+      ? events![triggerCount - 1].snapshot_price ?? alert.snapshot_price
+      : alert.snapshot_price;
+  const snapshotMoved =
+    triggerCount > 0 && Math.abs(originalSnapshot - alert.snapshot_price) > 0.001;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -219,7 +228,7 @@ export default function AlertDetailScreen() {
           hitSlop={8}
           accessibilityLabel="More actions"
         >
-          <Ionicons name="ellipsis-horizontal-circle-outline" size={28} color={colors.text} />
+          <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -230,7 +239,7 @@ export default function AlertDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero card — identity + condition + status */}
+        {/* Hero — identity + condition + status chips */}
         <View style={styles.hero}>
           {alert.card_image_uri && (
             <Image
@@ -247,29 +256,40 @@ export default function AlertDetailScreen() {
             <Text style={styles.cardMeta} numberOfLines={1}>
               {alert.card_set.toUpperCase()} · #{alert.card_collector_number} · {capitalize(alert.finish)}
             </Text>
-            <View style={[styles.conditionPill, { backgroundColor: dirColor + '15' }]}>
-              <Ionicons name={dirIcon} size={14} color={dirColor} />
-              <Text style={[styles.conditionPillText, { color: dirColor }]}>
-                {conditionLabel}
-              </Text>
-            </View>
-            {(alert.status === 'paused' || snoozed || !!alert.auto_rearm) && (
-              <View style={styles.chipRow}>
-                {alert.status === 'paused' && (
-                  <Chip label="Paused" color={PAUSE_COLOR} icon="pause" />
-                )}
-                {snoozed && (
-                  <Chip
-                    label={`Snoozed until ${formatDate(alert.snoozed_until!)}`}
-                    color={SNOOZE_COLOR}
-                    icon="moon-outline"
-                  />
-                )}
-                {!!alert.auto_rearm && (
-                  <Chip label="Auto re-arm" color={REARM_COLOR} icon="refresh" />
-                )}
+            <View style={styles.heroChipRow}>
+              <View style={[styles.chip, { backgroundColor: dirColor + '1F' }]}>
+                <Ionicons name={dirIcon} size={12} color={dirColor} />
+                <Text style={[styles.chipText, { color: dirColor }]}>{conditionLabel}</Text>
               </View>
-            )}
+              {triggerCount > 0 && (
+                <View style={[styles.chip, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="flash" size={12} color={colors.primary} />
+                  <Text style={[styles.chipText, { color: colors.primary }]}>
+                    {triggerCount === 1 ? 'Triggered' : `Triggered ${triggerCount}×`}
+                  </Text>
+                </View>
+              )}
+              {alert.status === 'paused' && (
+                <View style={[styles.chip, { backgroundColor: PAUSE_COLOR + '1F' }]}>
+                  <Ionicons name="pause" size={12} color={PAUSE_COLOR} />
+                  <Text style={[styles.chipText, { color: PAUSE_COLOR }]}>Paused</Text>
+                </View>
+              )}
+              {snoozed && (
+                <View style={[styles.chip, { backgroundColor: SNOOZE_COLOR + '1F' }]}>
+                  <Ionicons name="moon-outline" size={12} color={SNOOZE_COLOR} />
+                  <Text style={[styles.chipText, { color: SNOOZE_COLOR }]}>
+                    Snoozed · {formatDateShort(alert.snoozed_until!)}
+                  </Text>
+                </View>
+              )}
+              {!!alert.auto_rearm && (
+                <View style={[styles.chip, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="refresh" size={12} color={colors.primary} />
+                  <Text style={[styles.chipText, { color: colors.primary }]}>Auto re-arm</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
 
@@ -281,16 +301,16 @@ export default function AlertDetailScreen() {
             activeOpacity={0.85}
           >
             <View style={styles.reactivateIconWrap}>
-              <Ionicons name="refresh-circle" size={28} color={colors.primary} />
+              <Ionicons name="refresh-circle" size={26} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.reactivateTitle}>Alert already triggered</Text>
               <Text style={styles.reactivateBody}>
-                Fired {alert.triggered_at ? formatDate(alert.triggered_at) : ''}
+                Fired {alert.triggered_at ? formatDateTime(alert.triggered_at) : ''}
                 {'. '}Tap to re-activate it — snapshot resets to the current price.
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </TouchableOpacity>
         )}
 
@@ -299,7 +319,11 @@ export default function AlertDetailScreen() {
           <PriceCell
             label="Current"
             value={hasCurrent ? formatUSD(currentPrice!) : '—'}
-            subtitle={hasCurrent ? `${deltaUp ? '+' : ''}${deltaPct.toFixed(2)}% from snapshot` : 'no market data'}
+            subtitle={
+              hasCurrent
+                ? `${deltaUp ? '+' : ''}${deltaPct.toFixed(2)}% from snapshot`
+                : 'no market data'
+            }
             subtitleColor={hasCurrent ? (deltaUp ? DIR_UP : DIR_DOWN) : colors.textMuted}
             emphasized
           />
@@ -307,7 +331,7 @@ export default function AlertDetailScreen() {
           <PriceCell
             label="Snapshot"
             value={formatUSD(alert.snapshot_price)}
-            subtitle="when alert was created"
+            subtitle={snapshotMoved ? 'after auto re-arm' : 'when alert was created'}
           />
           <View style={styles.priceDivider} />
           <PriceCell
@@ -322,28 +346,92 @@ export default function AlertDetailScreen() {
 
         {/* History */}
         <Text style={styles.sectionLabel}>
-          History · {events?.length ?? 0} trigger{(events?.length ?? 0) === 1 ? '' : 's'}
+          History · {triggerCount} {triggerCount === 1 ? 'trigger' : 'triggers'}
         </Text>
-        {(events?.length ?? 0) === 0 ? (
-          <View style={styles.historyEmpty}>
-            <Ionicons name="time-outline" size={32} color={colors.textMuted} />
-            <Text style={styles.historyEmptyText}>
-              No triggers yet. When this alert fires, each event lands here.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.historyList}>
-            {events!.map((e, idx) => (
-              <HistoryEvent
+
+        <View style={styles.timelineCard}>
+          {/* Latest snapshot — only if it has moved from the original */}
+          {snapshotMoved && (
+            <TimelineRow
+              isFirst
+              marker={
+                <View style={[styles.timelineDot, { backgroundColor: colors.primary + '1F' }]}>
+                  <View style={[styles.timelineDotCore, { backgroundColor: colors.primary }]} />
+                </View>
+              }
+              label="Latest snapshot"
+              date={formatDateTime(alert.updated_at)}
+              relative={formatRelative(alert.updated_at)}
+              valueNode={
+                <Text style={styles.timelineValue}>{formatUSD(alert.snapshot_price)}</Text>
+              }
+              caption={`Re-armed after the last trigger · target ${formatUSD(target)}`}
+            />
+          )}
+
+          {/* Trigger events (newest first) */}
+          {events?.map((e, idx) => {
+            const dir = e.direction;
+            const eDirColor = dir === 'above' ? DIR_UP : DIR_DOWN;
+            const verb = dir === 'above' ? 'Rose to' : 'Dropped to';
+            const snap = e.snapshot_price ?? 0;
+            const eDelta = snap > 0 ? ((e.current_price - snap) / snap) * 100 : 0;
+            const isFirst = !snapshotMoved && idx === 0;
+
+            return (
+              <TimelineRow
                 key={e.id}
-                event={e}
-                snapshotAtCreate={e.snapshot_price ?? alert.snapshot_price}
-                isFirst={idx === 0}
-                isLast={idx === events!.length - 1}
+                isFirst={isFirst}
+                marker={
+                  <View style={[styles.timelineDot, { backgroundColor: eDirColor + '1F' }]}>
+                    <Ionicons name="flash" size={11} color={eDirColor} />
+                  </View>
+                }
+                label="Triggered"
+                date={formatDateTime(e.at)}
+                relative={formatRelative(e.at)}
+                valueNode={
+                  <Text style={styles.timelineValue}>
+                    <Text style={styles.timelineVerb}>{verb} </Text>
+                    <Text style={{ color: eDirColor }}>{formatUSD(e.current_price)}</Text>
+                  </Text>
+                }
+                caption={`${eDelta >= 0 ? '+' : ''}${eDelta.toFixed(2)}% from $${snap.toFixed(2)} · target ${formatUSD(e.target_price)}`}
               />
-            ))}
-          </View>
-        )}
+            );
+          })}
+
+          {/* Original snapshot — always anchored at the bottom */}
+          <TimelineRow
+            isLast
+            isFirst={triggerCount === 0 && !snapshotMoved}
+            marker={
+              <View style={[styles.timelineDot, { backgroundColor: colors.surfaceSecondary }]}>
+                <Ionicons
+                  name={triggerCount > 0 ? 'flag-outline' : 'time-outline'}
+                  size={11}
+                  color={colors.textSecondary}
+                />
+              </View>
+            }
+            label={triggerCount > 0 ? 'Original snapshot' : 'Snapshot'}
+            date={formatDateTime(alert.created_at)}
+            relative={formatRelative(alert.created_at)}
+            valueNode={<Text style={styles.timelineValue}>{formatUSD(originalSnapshot)}</Text>}
+            caption={
+              triggerCount > 0
+                ? 'Initial anchor when the alert was created.'
+                : `Watching for ${conditionLabel} · target ${formatUSD(target)}.`
+            }
+            footer={
+              triggerCount === 0 ? (
+                <Text style={styles.timelineEmptyHint}>
+                  When this alert fires, each event lands here.
+                </Text>
+              ) : undefined
+            }
+          />
+        </View>
       </ScrollView>
 
       <CreateAlertSheet
@@ -382,12 +470,13 @@ function PriceCell({
 }) {
   return (
     <View style={styles.priceCell}>
-      <Text style={styles.priceCellLabel}>{label}</Text>
+      <Text style={styles.priceCellLabel}>{label.toUpperCase()}</Text>
       <Text
         style={[
           styles.priceCellValue,
           emphasized && styles.priceCellValueEmphasized,
         ]}
+        numberOfLines={1}
       >
         {value}
       </Text>
@@ -397,6 +486,7 @@ function PriceCell({
             styles.priceCellSubtitle,
             subtitleColor ? { color: subtitleColor } : null,
           ]}
+          numberOfLines={1}
         >
           {subtitle}
         </Text>
@@ -405,75 +495,43 @@ function PriceCell({
   );
 }
 
-function Chip({
+function TimelineRow({
+  marker,
   label,
-  color,
-  icon,
-}: {
-  label: string;
-  color: string;
-  icon?: React.ComponentProps<typeof Ionicons>['name'];
-}) {
-  return (
-    <View style={[styles.chip, { backgroundColor: color + '15' }]}>
-      {icon && <Ionicons name={icon} size={11} color={color} />}
-      <Text style={[styles.chipText, { color }]}>{label}</Text>
-    </View>
-  );
-}
-
-
-function HistoryEvent({
-  event,
-  snapshotAtCreate,
+  date,
+  relative,
+  valueNode,
+  caption,
+  footer,
   isFirst,
   isLast,
 }: {
-  event: EventRow;
-  snapshotAtCreate: number;
-  isFirst: boolean;
-  isLast: boolean;
+  marker: React.ReactNode;
+  label: string;
+  date: string;
+  relative?: string;
+  valueNode: React.ReactNode;
+  caption?: string;
+  footer?: React.ReactNode;
+  isFirst?: boolean;
+  isLast?: boolean;
 }) {
-  const dir = event.direction as 'below' | 'above';
-  const color = dir === 'above' ? DIR_UP : DIR_DOWN;
-  const icon = dir === 'above' ? 'trending-up' : 'trending-down';
-  const verb = dir === 'below' ? 'Dropped to' : 'Rose to';
-  const delta =
-    snapshotAtCreate > 0
-      ? ((event.current_price - snapshotAtCreate) / snapshotAtCreate) * 100
-      : 0;
-
   return (
-    <View style={styles.historyItem}>
-      <View style={styles.historyRailWrap}>
-        {!isFirst && <View style={styles.historyRailUp} />}
-        <View style={[styles.historyDotOuter, { backgroundColor: color + '25' }]}>
-          <Ionicons name={icon} size={14} color={color} />
-        </View>
-        {!isLast && <View style={styles.historyRailDown} />}
+    <View style={styles.timelineRow}>
+      <View style={styles.timelineRail}>
+        <View style={[styles.timelineLineUp, isFirst && styles.timelineLineHidden]} />
+        {marker}
+        <View style={[styles.timelineLineDown, isLast && styles.timelineLineHidden]} />
       </View>
-      <View style={styles.historyCard}>
-        <View style={styles.historyHeaderRow}>
-          <Text style={styles.historyWhen}>{formatEventRelative(event.at)}</Text>
-          <Text style={styles.historyAbsolute}>{formatDateShort(event.at)}</Text>
+      <View style={[styles.timelineBody, isLast && styles.timelineBodyLast]}>
+        <View style={styles.timelineHeader}>
+          <Text style={styles.timelineLabel}>{label}</Text>
+          {relative && <Text style={styles.timelineRelative}>{relative}</Text>}
         </View>
-        <Text style={styles.historyHeadline}>
-          <Text style={styles.historyVerb}>{verb} </Text>
-          <Text style={[styles.historyPrice, { color }]}>{formatUSD(event.current_price)}</Text>
-        </Text>
-        <View style={styles.historyMetaRow}>
-          <Text style={styles.historyMetaKey}>Target</Text>
-          <Text style={styles.historyMetaValue}>{formatUSD(event.target_price)}</Text>
-        </View>
-        <View style={styles.historyMetaRow}>
-          <Text style={styles.historyMetaKey}>From snapshot</Text>
-          <Text style={styles.historyMetaValue}>
-            {formatUSD(snapshotAtCreate)}
-            <Text style={[styles.historyDelta, { color: delta >= 0 ? DIR_UP : DIR_DOWN }]}>
-              {'  '}{delta >= 0 ? '+' : ''}{delta.toFixed(2)}%
-            </Text>
-          </Text>
-        </View>
+        {valueNode}
+        {caption && <Text style={styles.timelineCaption}>{caption}</Text>}
+        <Text style={styles.timelineDate}>{date}</Text>
+        {footer}
       </View>
     </View>
   );
@@ -483,12 +541,13 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function formatDate(iso: string): string {
+function formatDateTime(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   });
@@ -500,7 +559,7 @@ function formatDateShort(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function formatEventRelative(iso: string): string {
+function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   if (isNaN(diffMs)) return '';
   const sec = Math.floor(diffMs / 1000);
@@ -512,7 +571,11 @@ function formatEventRelative(iso: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   const wks = Math.floor(days / 7);
-  return `${wks}w ago`;
+  if (wks < 4) return `${wks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
 }
 
 const styles = StyleSheet.create({
@@ -528,12 +591,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   content: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
+
+  // Hero
   hero: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -543,223 +609,236 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   heroImage: {
-    width: 67,
-    height: 94,
+    width: 64,
+    height: 90,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceSecondary,
   },
-  heroBody: { flex: 1, gap: 6 },
+  heroBody: { flex: 1, gap: 4 },
   cardName: {
     color: colors.text,
-    fontSize: fontSize.lg,
+    fontSize: fontSize.xl,
     fontWeight: '800',
-    lineHeight: 22,
+    lineHeight: 24,
+    letterSpacing: -0.4,
   },
   cardMeta: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
-  conditionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  conditionPillText: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-  },
-  chipRow: {
+  heroChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
+    gap: 6,
     marginTop: 6,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: borderRadius.sm,
   },
-  chipText: { fontSize: 10, fontWeight: '700' },
+  chipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+
   // Re-activate CTA
   reactivateCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.primary + '10',
-    borderWidth: 1,
-    borderColor: colors.primary + '30',
+    backgroundColor: colors.primaryLight,
     borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
   reactivateIconWrap: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   reactivateTitle: {
-    color: colors.text,
+    color: colors.primary,
     fontSize: fontSize.sm,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   reactivateBody: {
-    color: colors.textSecondary,
+    color: colors.primary,
     fontSize: fontSize.xs,
+    fontWeight: '500',
     lineHeight: 16,
     marginTop: 2,
+    opacity: 0.85,
   },
+
   // Section
   sectionLabel: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.md,
-    marginBottom: 2,
+    letterSpacing: 0.6,
+    marginTop: spacing.sm,
+    marginBottom: 0,
   },
+
   // Prices
   priceCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     ...shadows.sm,
   },
-  priceCell: { flex: 1, alignItems: 'flex-start' },
+  priceCell: {
+    flex: 1,
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.xs + 2,
+  },
   priceDivider: {
     width: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
-    marginHorizontal: spacing.sm,
+    marginVertical: 2,
   },
   priceCellLabel: {
     color: colors.textMuted,
     fontSize: 10,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   priceCellValue: {
     color: colors.text,
     fontSize: fontSize.lg,
     fontWeight: '700',
     marginTop: 4,
+    letterSpacing: -0.3,
   },
   priceCellValueEmphasized: {
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   priceCellSubtitle: {
     color: colors.textMuted,
     fontSize: 10,
     fontWeight: '600',
     marginTop: 4,
+    letterSpacing: 0.1,
   },
-  // History
-  historyList: {},
-  historyItem: {
+
+  // Timeline
+  timelineCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    ...shadows.sm,
+  },
+  timelineRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: spacing.sm + 2,
   },
-  historyRailWrap: {
+  timelineRail: {
     alignItems: 'center',
-    width: 32,
+    width: 22,
   },
-  historyRailUp: {
+  timelineLineUp: {
     width: StyleSheet.hairlineWidth * 2,
-    height: spacing.sm,
+    height: 6,
     backgroundColor: colors.border,
   },
-  historyRailDown: {
+  timelineLineDown: {
     flex: 1,
     width: StyleSheet.hairlineWidth * 2,
     backgroundColor: colors.border,
     marginTop: 2,
   },
-  historyDotOuter: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  timelineLineHidden: {
+    backgroundColor: 'transparent',
+  },
+  timelineDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  historyCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    ...shadows.sm,
+  timelineDotCore: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  historyHeaderRow: {
+  timelineBody: {
+    flex: 1,
+    paddingBottom: spacing.md + 2,
+  },
+  timelineBodyLast: {
+    paddingBottom: 0,
+  },
+  timelineHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    marginBottom: 4,
   },
-  historyWhen: {
+  timelineLabel: {
     color: colors.textSecondary,
-    fontSize: fontSize.xs,
+    fontSize: 10,
     fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
-  historyAbsolute: {
+  timelineRelative: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '600',
   },
-  historyHeadline: {
-    marginTop: 6,
+  timelineValue: {
     fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.3,
   },
-  historyVerb: {
+  timelineVerb: {
     color: colors.textSecondary,
     fontSize: fontSize.md,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
-  historyPrice: {
-    fontSize: fontSize.xl,
-    fontWeight: '800',
-  },
-  historyMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  timelineCaption: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '500',
     marginTop: 4,
+    lineHeight: 16,
   },
-  historyMetaKey: {
+  timelineDate: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 6,
+    letterSpacing: 0.2,
+  },
+  timelineEmptyHint: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '500',
+    marginTop: spacing.sm + 2,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    fontStyle: 'italic',
   },
-  historyMetaValue: {
-    color: colors.text,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-  },
-  historyDelta: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
-  historyEmpty: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-    ...shadows.sm,
-  },
-  historyEmptyText: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: colors.textSecondary, fontSize: fontSize.md },
 });

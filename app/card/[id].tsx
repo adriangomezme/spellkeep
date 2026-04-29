@@ -1369,9 +1369,9 @@ function CostBasisMockup({ card, ownership }: { card: ScryfallCard; ownership: O
             <Ionicons
               name={up ? 'arrow-up' : 'arrow-down'}
               size={14}
-              color={up ? '#16A34A' : '#DC2626'}
+              color={up ? colors.success : colors.error}
             />
-            <Text style={[styles.costDeltaText, { color: up ? '#16A34A' : '#DC2626' }]}>
+            <Text style={[styles.costDeltaText, { color: up ? colors.success : colors.error }]}>
               {up ? '+' : ''}{formatUSD(delta)} ({up ? '+' : ''}{pct.toFixed(1)}%)
             </Text>
           </View>
@@ -1420,9 +1420,9 @@ function CostRowItem({ row }: { row: CostRow }) {
           <Ionicons
             name={up ? 'caret-up' : 'caret-down'}
             size={11}
-            color={up ? '#16A34A' : '#DC2626'}
+            color={up ? colors.success : colors.error}
           />
-          <Text style={[styles.costRowDelta, { color: up ? '#16A34A' : '#DC2626' }]}>
+          <Text style={[styles.costRowDelta, { color: up ? colors.success : colors.error }]}>
             {up ? '+' : ''}{formatUSD(delta)} ({up ? '+' : ''}{pct.toFixed(0)}%)
           </Text>
         </View>

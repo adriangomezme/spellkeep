@@ -35,7 +35,7 @@ export const colors = {
   manaMulti: '#E0C540',
 
   // Status
-  success: '#22C55E',
+  success: '#1D9E58',
   successLight: '#ECFDF5',
   warning: '#F59E0B',
   warningLight: '#FFFBEB',
