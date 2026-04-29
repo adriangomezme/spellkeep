@@ -49,6 +49,17 @@ comment on column public.top_commanders.edhrec_slug is
 create index top_commanders_window_rank_idx
   on public.top_commanders (time_window, rank);
 
+-- Match the security posture of sets / cards / discovery_buckets:
+-- RLS on, public SELECT, worker writes with the service-role key
+-- (which bypasses RLS). Without this the table reads as
+-- UNRESTRICTED in the Supabase table editor.
+alter table public.top_commanders enable row level security;
+
+create policy top_commanders_select_anon
+  on public.top_commanders
+  for select
+  using (true);
+
 -- PowerSync needs the table on the logical replication publication so
 -- row changes stream to clients. The table is global (not per-user).
 alter publication powersync add table public.top_commanders;
