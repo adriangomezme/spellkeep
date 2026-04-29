@@ -314,6 +314,22 @@ const scan_history = new Table({
 }, { indexes: { user_id: ['user_id'] } });
 
 // ============================================================
+// Top Commanders feed (global, read-only). Populated every 5 days
+// by the commander-sync worker from EDHREC's week / month / year
+// endpoints. The Search hub's Top Commanders carousel reads this.
+// ============================================================
+
+const top_commanders = new Table({
+  time_window: column.text,
+  rank: column.integer,
+  scryfall_id: column.text,
+  edhrec_slug: column.text,
+  refreshed_at: column.text,
+}, {
+  indexes: { time_window: ['time_window', 'rank'] },
+});
+
+// ============================================================
 // Export schema
 // ============================================================
 
@@ -335,6 +351,7 @@ export const AppSchema = new Schema({
   price_alerts,
   price_alert_events,
   collection_stats_cache,
+  top_commanders,
 });
 
 export type Database = (typeof AppSchema)['types'];

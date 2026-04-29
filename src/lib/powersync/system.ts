@@ -18,6 +18,7 @@ export const connector = new SupabaseConnector();
 // locally-inserted rows during its next reconciliation pass.
 const DEFAULT_STREAMS: string[] = [
   'global_sets',
+  'global_top_commanders',
   'user_profile',
   'user_collection_folders',
   'user_collections',
