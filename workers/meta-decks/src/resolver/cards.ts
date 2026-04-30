@@ -144,6 +144,42 @@ export async function resolveDeck(
     }
   }
 
+  // ── 4. DFC / split-card fallback. MTGGoldfish writes only the
+  //     front face for double-faced cards (`Brightclimb Pathway`)
+  //     and condensed slashes for splits (`Wear/Tear`,
+  //     `Unholy Annex/Ritual Chamber`). Scryfall stores the full
+  //     `front // back` string. Match by `name LIKE '<front> //%'`
+  //     where <front> is the prefix before any `/` in the source line.
+  const dfcBySet = new Map<string, Array<{ index: number; front: string }>>();
+  for (const [set, items] of nameBySet) {
+    for (const { index, name } of items) {
+      if (claimed.has(index)) continue;
+      const front = name.split('/')[0]!.trim();
+      if (!front) continue;
+      const arr = dfcBySet.get(set) ?? [];
+      arr.push({ index, front });
+      dfcBySet.set(set, arr);
+    }
+  }
+  for (const [set, items] of dfcBySet) {
+    const fronts = Array.from(new Set(items.map((i) => i.front)));
+    const rows = await fetchBySetAndDfcFronts(set, fronts);
+    const byFront = new Map<string, CatalogRow>();
+    for (const row of rows) {
+      const front = row.name.split('//')[0]!.trim();
+      const key = `${row.set_code}|${front}`;
+      const existing = byFront.get(key);
+      if (!existing || preferPrint(row, existing)) byFront.set(key, row);
+    }
+    for (const { index, front } of items) {
+      const row = byFront.get(`${set}|${front}`);
+      if (row) {
+        resolved.push(toResolved(index, row));
+        claimed.add(index);
+      }
+    }
+  }
+
   // Anything still unclaimed is missing from the catalog.
   const missing: ParsedLine[] = [];
   lines.forEach((line, index) => {
@@ -250,6 +286,36 @@ async function fetchBySetAndNames(
       .eq('lang', LANG)
       .in('name', slice);
     if (error) throw new Error(`cards ${set} by name failed: ${error.message}`);
+    out.push(...((data ?? []) as CatalogRow[]));
+  }
+  return out;
+}
+
+/**
+ * Per-front LIKE query so split / DFC cards resolve. We can't batch
+ * many LIKE patterns into one PostgREST `or` clause cleanly because
+ * card names contain commas and operators, so we run one query per
+ * front. Volumes are small (≤ 5 unmatched fronts per set per run).
+ */
+async function fetchBySetAndDfcFronts(
+  set: string,
+  fronts: string[]
+): Promise<CatalogRow[]> {
+  if (fronts.length === 0) return [];
+  const out: CatalogRow[] = [];
+  for (const front of fronts) {
+    // PostgREST's like uses % as wildcard. Escape % / _ in the front
+    // (rare in Magic names but safe to handle).
+    const escaped = front.replace(/[\\%_]/g, (m) => `\\${m}`);
+    const { data, error } = await supabase
+      .from('cards')
+      .select(SELECT)
+      .eq('set_code', set)
+      .eq('lang', LANG)
+      .like('name', `${escaped} //%`);
+    if (error) {
+      throw new Error(`cards ${set} dfc by front failed: ${error.message}`);
+    }
     out.push(...((data ?? []) as CatalogRow[]));
   }
   return out;
