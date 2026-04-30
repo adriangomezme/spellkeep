@@ -47,15 +47,20 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
-    gap: spacing.xs,
+    // Chip-to-chip + row-to-row gap. xs (4) read as "stuck together"
+    // when the chips wrapped onto the same line; sm (6) gives a
+    // visible breath without sprawling on small screens.
+    gap: spacing.sm,
   },
   chip: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
+    // Tighter internal rhythm: 6 px between icon → label → close
+    // glyph keeps each chip readable instead of cramped.
+    gap: 6,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: colors.primaryLight,
     maxWidth: 240,
@@ -64,5 +69,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSize.xs,
     fontWeight: '600',
+    letterSpacing: -0.1,
   },
 });
