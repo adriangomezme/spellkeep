@@ -44,15 +44,60 @@ async function loadSets(): Promise<LocalSetInfo[]> {
         );
         resRows = res?.rows;
       }
+
+      // Local card counts per set. catalog-sync skips digital-only
+      // printings (Arena Anthology, Historic Anthology, etc.), so
+      // those sets still exist in `sets` with their Scryfall card
+      // count but the local `cards` table has zero rows for them.
+      // Joining against the actual count lets us:
+      //   1. Hide sets that would render an empty grid on tap.
+      //   2. Use the local count (instead of Scryfall's claim) so
+      //      Sets Browser shows a number that matches reality —
+      //      e.g. Mystical Archive renders as 126 (en + ja) instead
+      //      of 63 once the lang='en' filter elsewhere is dropped.
+      const localCounts = new Map<string, number>();
+      try {
+        const countRes = await db.execute(
+          `SELECT set_code, COUNT(*) AS n FROM cards GROUP BY set_code`
+        );
+        const cRows: any = countRes?.rows;
+        const cLen = cRows?.length ?? 0;
+        for (let i = 0; i < cLen; i++) {
+          const r = cRows.item(i);
+          localCounts.set(String(r.set_code).toLowerCase(), Number(r.n));
+        }
+      } catch {
+        // If the count query fails we leave localCounts empty and
+        // fall through to the original card_count from sets — better
+        // a stale count than a missing list.
+      }
+
       const rows: LocalSetInfo[] = [];
       const length = resRows?.length ?? 0;
       for (let i = 0; i < length; i++) {
         const r = resRows.item(i);
+        const code = (r.code as string).toLowerCase();
+        const localN = localCounts.get(code);
+        // Skip sets whose cards aren't in the local catalog at all
+        // — opening them would just render an empty grid. Sets with
+        // a count but no local rows include Arena Anthology, the
+        // Historic / Explorer / Pioneer Anthologies, and other
+        // digital-only product lines.
+        if (localCounts.size > 0 && (localN === undefined || localN === 0)) {
+          continue;
+        }
         rows.push({
-          code: (r.code as string).toLowerCase(),
+          code,
           name: r.name as string,
           released_at: r.released_at ?? null,
-          card_count: r.card_count != null ? Number(r.card_count) : null,
+          // Prefer the local count when we have it so the number
+          // matches what useSetCards actually renders.
+          card_count:
+            localN != null
+              ? localN
+              : r.card_count != null
+                ? Number(r.card_count)
+                : null,
           icon_svg_uri: r.icon_svg_uri ?? null,
           parent_set_code: r.parent_set_code ? String(r.parent_set_code).toLowerCase() : null,
         });
