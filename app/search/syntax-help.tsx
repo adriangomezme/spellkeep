@@ -5,12 +5,19 @@ import {
   ScrollView,
   StyleSheet,
   Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { stagePendingSyntaxQuery } from '../../src/lib/search/pendingSyntaxQuery';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants';
+
+// iOS ships Menlo as the default fixed-pitch font; Android doesn't,
+// so 'Menlo' falls back to the system serif there. `monospace` is the
+// generic Android keyword that resolves to Roboto Mono / DroidSans
+// Mono. Both platforms get a consistent typewriter look this way.
+const MONOSPACE_FONT = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 // ──────────────────────────────────────────────────────────────────────
 // Reference content — every recognized Scryfall syntax operator
@@ -306,7 +313,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   code: {
-    fontFamily: 'Menlo',
+    fontFamily: MONOSPACE_FONT,
     color: colors.text,
     fontSize: fontSize.sm,
   },
@@ -348,7 +355,7 @@ const styles = StyleSheet.create({
   },
   exampleCode: {
     color: colors.text,
-    fontFamily: 'Menlo',
+    fontFamily: MONOSPACE_FONT,
     fontSize: fontSize.sm,
     fontWeight: '600',
   },

@@ -37,6 +37,7 @@ import {
 import { useScryfallCatalog } from '../../src/lib/hooks/useScryfallCatalog';
 import { useLocalSets } from '../../src/lib/hooks/useLocalSets';
 import type { ColorMatchMode } from '../../src/components/collection/FilterSheet';
+import { PrimaryCTA } from '../../src/components/PrimaryCTA';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../src/constants';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -232,12 +233,11 @@ export default function FilterScreen() {
 
       {/* ── Sticky footer ── */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.sm }]}>
-        <TouchableOpacity style={styles.applyBtn} onPress={handleApply} activeOpacity={0.7}>
-          <Ionicons name="checkmark" size={18} color="#FFF" />
-          <Text style={styles.applyText}>
-            Apply{activeCount > 0 ? ` (${activeCount})` : ''}
-          </Text>
-        </TouchableOpacity>
+        <PrimaryCTA
+          icon="checkmark"
+          label={`Apply${activeCount > 0 ? ` (${activeCount})` : ''}`}
+          onPress={handleApply}
+        />
       </View>
 
       <FilterPresetsSheet
@@ -1215,19 +1215,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
-  },
-  applyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
-  },
-  applyText: {
-    color: '#FFF',
-    fontSize: fontSize.lg,
-    fontWeight: '700',
   },
 });
