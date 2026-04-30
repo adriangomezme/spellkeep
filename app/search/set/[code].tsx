@@ -6,11 +6,17 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   Dimensions,
   type TextInput as RNTextInput,
 } from 'react-native';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -31,6 +37,7 @@ import {
 import { filterScryfallCards } from '../../../src/lib/search/filterScryfallCards';
 import {
   nextViewMode,
+  toolbarHeightFor,
   toolbarMetricsFor,
 } from '../../../src/components/collection/CollectionToolbar';
 import { GroupedCollectionList } from '../../../src/components/collection/GroupedCollectionList';
@@ -102,6 +109,7 @@ export default function SetDetailScreen() {
     useSearchViewPrefs();
   const { cardsPerRow, toolbarSize } = useCollectionViewPrefs();
   const m = toolbarMetricsFor(toolbarSize);
+  const toolbarHeight = toolbarHeightFor(toolbarSize);
 
   // Set page leans on its own sort palette. If the global pref isn't
   // one of those, render as if `collector_number` is selected without
@@ -228,6 +236,40 @@ export default function SetDetailScreen() {
     [router]
   );
 
+  // ── Toolbar collapse on scroll — same pattern used by Owned and the
+  //    binder/list detail screens. The toolbar lives inside the header
+  //    card and translates up while the user scrolls down. Any upward
+  //    drag (delta < 0) brings it back instantly without waiting for
+  //    the user to reach the top — Instagram / Safari behavior.
+  const COLLAPSE_THRESHOLD = 220;
+  const lastY = useSharedValue(0);
+  const accumulator = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const y = e.contentOffset.y;
+      const delta = y - lastY.value;
+      lastY.value = y;
+      if (y <= 0) {
+        accumulator.value = 0;
+        return;
+      }
+      const next = accumulator.value + delta;
+      accumulator.value =
+        next < 0 ? 0 : next > COLLAPSE_THRESHOLD ? COLLAPSE_THRESHOLD : next;
+    },
+  });
+
+  const toolbarStyle = useAnimatedStyle(() => {
+    if (toolbarHeight === 0) return { opacity: 1 };
+    const progress = accumulator.value / COLLAPSE_THRESHOLD;
+    return {
+      transform: [{ translateY: -toolbarHeight * progress }],
+      marginBottom: -toolbarHeight * progress,
+      opacity: interpolate(progress, [0, 0.45, 1], [1, 0, 0], Extrapolation.CLAMP),
+    };
+  });
+
   // ── Card renderers (shared with grouped + flat paths) ──
   const isGrid = viewMode !== 'list';
   const gridItemWidth = useMemo(() => computeGridItemWidth(cardsPerRow), [cardsPerRow]);
@@ -301,84 +343,147 @@ export default function SetDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Status-bar slab — extends the hero color into the safe area
-          so there's no white strip above the chrome row. */}
-      <View style={[styles.statusBarBg, { height: insets.top }]} />
-
-      {/* ── Colored header ── */}
-      <View style={styles.heroChrome}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={26} color="#FFF" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }} />
-        <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          {/* 3-dot menu — settings sheet ships next iteration. */}
-          <Ionicons name="ellipsis-horizontal-circle-outline" size={24} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-
-      <SetHeader
-        setMeta={setMeta}
-        totalCards={cards.length}
-        marketValue={stats.value}
-        rarityCounts={stats.rarityCounts}
-      />
-
-      {/* ── Toolbar (size driven by /profile/grid) ── */}
-      <View style={styles.toolbar}>
-        <Pressable
-          style={[styles.searchField, { height: m.controlHeight }]}
-          onPress={() => inputRef.current?.focus()}
-        >
-          <Ionicons name="search" size={m.searchIcon} color={colors.textMuted} />
-          <TextInput
-            ref={inputRef}
-            style={[styles.searchInput, { fontSize: m.searchFontSize }]}
-            placeholder="Filter this set…"
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
-              <Ionicons name="close-circle" size={m.searchIcon} color={colors.textMuted} />
+      {/* ── White header card ──
+           Hosts back/menu chrome, set identity (icon + name + stats),
+           and the search/sort/filter/view toolbar that collapses on
+           scroll. Same pattern used by Owned and binder/list detail
+           screens — single white surface with a soft bottom radius. */}
+      <View style={styles.headerCard}>
+        <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
+          {/* Back chevron + 3-dot menu */}
+          <View style={styles.chromeRow}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
             </TouchableOpacity>
-          )}
-        </Pressable>
-        <TouchableOpacity
-          style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
-          onPress={() => setShowSort(true)}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="swap-vertical" size={m.actionIcon} color={colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
-          onPress={() => setShowFilter(true)}
-          activeOpacity={0.6}
-        >
-          <Ionicons
-            name="options-outline"
-            size={m.actionIcon}
-            color={activeFilterCount > 0 ? colors.primary : colors.text}
-          />
-          {activeFilterCount > 0 && (
-            <View style={styles.filterBadge} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
-          onPress={() => setViewMode(nextViewMode(viewMode))}
-          activeOpacity={0.6}
-        >
-          <Ionicons
-            name={viewMode === 'list' ? 'list' : viewMode === 'grid' ? 'grid' : 'grid-outline'}
-            size={m.actionIcon}
-            color={colors.text}
-          />
-        </TouchableOpacity>
+            <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons
+                name="ellipsis-horizontal-circle-outline"
+                size={28}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Set identity row — icon + name + meta */}
+          <View style={styles.identityRow}>
+            <View style={styles.setIconWrap}>
+              {setMeta?.icon_svg_uri ? (
+                <Image
+                  source={{ uri: setMeta.icon_svg_uri }}
+                  style={styles.setIcon}
+                  contentFit="contain"
+                  tintColor={colors.text}
+                />
+              ) : (
+                <Ionicons name="albums-outline" size={26} color={colors.text} />
+              )}
+            </View>
+            <View style={styles.identityText}>
+              <Text style={styles.setName} numberOfLines={2}>
+                {setMeta?.name ?? '—'}
+              </Text>
+              <Text style={styles.setMeta} numberOfLines={1}>
+                {(setMeta?.code ?? '—').toUpperCase()}
+                {setMeta?.released_at ? ` · ${setMeta.released_at}` : ''}
+                {cards.length > 0 ? ` · ${cards.length} cards` : ''}
+              </Text>
+            </View>
+          </View>
+
+          {/* Stats row — rarity counts + total market value */}
+          <View style={styles.statsRow}>
+            {RARITY_META.map((r) => {
+              const count = stats.rarityCounts[r.key] ?? 0;
+              if (count === 0) return null;
+              return (
+                <View key={r.key} style={styles.rarityChip}>
+                  <MTGGlyph kind="rarity" code={r.key} size={14} />
+                  <Text style={styles.rarityCount}>{count}</Text>
+                </View>
+              );
+            })}
+            <View style={{ flex: 1 }} />
+            {stats.value > 0 && (
+              <View style={styles.valueChip}>
+                <Ionicons name="cash-outline" size={12} color={colors.primary} />
+                <Text style={styles.valueLabel}>
+                  {formatUSD(stats.value.toFixed(2))}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Toolbar inside the header — collapses on scroll. The clip
+            wrapper hides the translate-out so it doesn't bleed past
+            the header card's bottom edge. */}
+        <View style={styles.toolbarClip}>
+          <Animated.View style={toolbarStyle}>
+            <View style={styles.toolbar}>
+              <Pressable
+                style={[styles.searchField, { height: m.controlHeight }]}
+                onPress={() => inputRef.current?.focus()}
+              >
+                <Ionicons name="search" size={m.searchIcon} color={colors.textMuted} />
+                <TextInput
+                  ref={inputRef}
+                  style={[styles.searchInput, { fontSize: m.searchFontSize }]}
+                  placeholder="Filter this set…"
+                  placeholderTextColor={colors.textMuted}
+                  value={search}
+                  onChangeText={setSearch}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {search.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearch('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={m.searchIcon}
+                      color={colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                )}
+              </Pressable>
+              <TouchableOpacity
+                style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
+                onPress={() => setShowSort(true)}
+                activeOpacity={0.6}
+              >
+                <Ionicons name="swap-vertical" size={m.actionIcon} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
+                onPress={() => setShowFilter(true)}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={m.actionIcon}
+                  color={activeFilterCount > 0 ? colors.primary : colors.text}
+                />
+                {activeFilterCount > 0 && <View style={styles.filterBadge} />}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
+                onPress={() => setViewMode(nextViewMode(viewMode))}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name={viewMode === 'list' ? 'list' : viewMode === 'grid' ? 'grid' : 'grid-outline'}
+                  size={m.actionIcon}
+                  color={colors.text}
+                />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
       </View>
 
       {/* ── Body ── */}
@@ -387,10 +492,6 @@ export default function SetDetailScreen() {
           <ActivityIndicator color={colors.primary} />
         </View>
       ) : isGroupedSort && groups.length > 0 ? (
-        // GroupHeader + the card-row wrapper inside GroupedCollectionList
-        // already inject `paddingHorizontal: spacing.lg`, so we MUST NOT
-        // add it again here — otherwise headers + cards float visually
-        // inset from the screen edge (the bug in screenshot 32/33).
         <GroupedCollectionList
           groups={groups}
           cardsPerRow={isGrid ? cardsPerRow : 1}
@@ -402,9 +503,10 @@ export default function SetDetailScreen() {
           onToggleKey={handleToggleKey}
           contentContainerStyle={styles.groupedListContent}
           ListEmptyComponent={emptyComponent}
+          onScroll={scrollHandler}
         />
       ) : (
-        <FlatList
+        <Animated.FlatList
           key={`${viewMode}-${cardsPerRow}`}
           data={sorted}
           keyExtractor={(item) => item.id}
@@ -417,6 +519,8 @@ export default function SetDetailScreen() {
           initialNumToRender={12}
           windowSize={7}
           maxToRenderPerBatch={10}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
         />
       )}
 
@@ -433,9 +537,6 @@ export default function SetDetailScreen() {
       <FilterSheet
         visible={showFilter}
         filters={filters}
-        // Surface the active set as the only Sets entry so the tab
-        // isn't a dead end. Languages + Tags hide automatically when
-        // their lists are empty.
         availableSets={
           setMeta
             ? [{ code: setMeta.code, name: setMeta.name, count: cards.length }]
@@ -451,133 +552,62 @@ export default function SetDetailScreen() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Header — primary-tinted hero panel with set icon + stats
-// ──────────────────────────────────────────────────────────────────────
-
-function SetHeader({
-  setMeta,
-  totalCards,
-  marketValue,
-  rarityCounts,
-}: {
-  setMeta: { name: string; code: string; released_at: string | null; icon_svg_uri: string | null } | null;
-  totalCards: number;
-  marketValue: number;
-  rarityCounts: Record<string, number>;
-}) {
-  return (
-    <View style={styles.hero}>
-      <View style={styles.heroTop}>
-        <View style={styles.setIconWrap}>
-          {setMeta?.icon_svg_uri ? (
-            <Image
-              source={{ uri: setMeta.icon_svg_uri }}
-              style={styles.setIcon}
-              contentFit="contain"
-              tintColor="#FFF"
-            />
-          ) : (
-            <Ionicons name="albums-outline" size={28} color="#FFF" />
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.setName} numberOfLines={2}>
-            {setMeta?.name ?? '—'}
-          </Text>
-          <Text style={styles.setMeta}>
-            {(setMeta?.code ?? '—').toUpperCase()}
-            {setMeta?.released_at ? ` · ${setMeta.released_at}` : ''}
-            {totalCards > 0 ? ` · ${totalCards} cards` : ''}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.statsRow}>
-        {RARITY_META.map((r) => {
-          const count = rarityCounts[r.key] ?? 0;
-          if (count === 0) return null;
-          return (
-            <View key={r.key} style={styles.rarityChip}>
-              {/* Same MTG rarity glyph used in the binder/list group-by
-                  headers — keeps the visual vocabulary consistent. */}
-              <MTGGlyph kind="rarity" code={r.key} size={16} />
-              <Text style={styles.rarityCount}>{count}</Text>
-            </View>
-          );
-        })}
-        <View style={{ flex: 1 }} />
-        <View style={styles.valueChip}>
-          <Ionicons name="cash-outline" size={12} color="#FFF" />
-          <Text style={styles.valueLabel}>{formatUSD(marketValue.toFixed(2))}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  statusBarBg: {
-    backgroundColor: '#0F172A',
-    width: '100%',
+  /* Header card — white refactor pattern matching Owned and binder
+     detail. Single surface, soft shadow, rounded bottom corners,
+     hosts every above-the-fold control. */
+  headerCard: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: borderRadius.xl,
+    borderBottomRightRadius: borderRadius.xl,
+    paddingBottom: spacing.xs + 2,
+    ...shadows.sm,
   },
-  filterBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: colors.primary,
+  headerInner: {
+    paddingHorizontal: spacing.md + 2,
+    paddingBottom: spacing.sm,
   },
-  /* Hero (header chrome + set info) — primary-tinted slab so the set
-     identity reads as its own zone, separated from the white results
-     panel underneath. Inspired by the Price Alerts hero. */
-  heroChrome: {
+  chromeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
-    backgroundColor: '#0F172A',
+    justifyContent: 'space-between',
+    paddingBottom: spacing.sm,
   },
-  hero: {
-    backgroundColor: '#0F172A',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  heroTop: {
+  identityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
   setIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   setIcon: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
+  },
+  identityText: {
+    flex: 1,
+    minWidth: 0,
   },
   setName: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: fontSize.xl,
     fontWeight: '800',
+    letterSpacing: -0.4,
   },
   setMeta: {
-    color: 'rgba(255,255,255,0.72)',
+    color: colors.textMuted,
     fontSize: fontSize.xs,
+    fontWeight: '500',
     marginTop: 2,
   },
   statsRow: {
@@ -594,10 +624,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: colors.surfaceSecondary,
   },
   rarityCount: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: fontSize.sm,
     fontWeight: '700',
   },
@@ -608,19 +638,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: colors.primaryLight,
   },
   valueLabel: {
-    color: '#FFF',
+    color: colors.primary,
     fontSize: fontSize.sm,
     fontWeight: '700',
   },
   /* Toolbar */
+  toolbarClip: {
+    overflow: 'hidden',
+  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm + 2,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
@@ -644,6 +677,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  filterBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.primary,
+  },
   /* Card renderers (grid + list shared) */
   gridList: {
     paddingHorizontal: GRID_PADDING,
@@ -659,9 +701,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: 100,
   },
-  // Used ONLY by GroupedCollectionList. Headers + card-rows manage
-  // their own horizontal padding internally; adding any here would
-  // double-pad and shrink everything inward from the screen edge.
   groupedListContent: {
     paddingBottom: 100,
   },
@@ -715,8 +754,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '700',
   },
-  // List row dimensions mirror collection/owned.tsx so the visual
-  // language stays consistent across binder / list / owned / set pages.
   listCard: {
     flexDirection: 'row',
     alignItems: 'center',
