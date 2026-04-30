@@ -3,9 +3,11 @@ import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  Pressable,
   type TextInput as TextInputType,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -158,6 +160,11 @@ export default function SearchScreen() {
   // 'sets' = a browseable list of every set in the catalog. Tapping a
   // set in 'sets' mode hands a `set:CODE` query back to 'cards'.
   const [searchView, setSearchView] = useState<'cards' | 'sets'>('cards');
+  // Sets-mode search lives at this level (not inside SetsBrowser) so
+  // the field can render inside the header card alongside the Cards
+  // toolbar — same position, same chrome, no Sets-specific surface.
+  const [setsSearchQuery, setSetsSearchQuery] = useState('');
+  const setsInputRef = useRef<TextInput | null>(null);
 
   const handleSelectSet = useCallback(
     (set: LocalSetInfo) => {
@@ -481,10 +488,42 @@ export default function SearchScreen() {
             fieldSquareBottom={showSuggestions}
           />
         )}
+
+        {searchView === 'sets' && (
+          /* Sets-mode search field — same position, padding and pill
+             chrome as SearchToolbar(small) so toggling between Cards
+             and Sets keeps the field anchored in the header card. */
+          <View style={styles.setsSearchBarRow}>
+            <Pressable
+              style={styles.setsSearchField}
+              onPress={() => setsInputRef.current?.focus()}
+            >
+              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <TextInput
+                ref={setsInputRef}
+                style={styles.setsSearchInput}
+                placeholder="Search sets…"
+                placeholderTextColor={colors.textMuted}
+                value={setsSearchQuery}
+                onChangeText={setSetsSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {setsSearchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSetsSearchQuery('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {searchView === 'sets' ? (
-        <SetsBrowser onSelectSet={handleSelectSet} />
+        <SetsBrowser onSelectSet={handleSelectSet} searchQuery={setsSearchQuery} />
       ) : (
         <>
       <SyntaxChips clauses={syntaxClauses} onRemove={handleRemoveClause} />
@@ -597,6 +636,29 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: borderRadius.xl,
     paddingBottom: spacing.xs + 2,
     ...shadows.sm,
+  },
+  /* Sets-mode search bar — geometry matches SearchToolbar(size=small)
+     so the field sits at the same position regardless of which
+     segment the user has selected. No action buttons here; browsing
+     sets has no sort/filter affordances. */
+  setsSearchBarRow: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  setsSearchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: spacing.md,
+    height: 36,
+  },
+  setsSearchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: fontSize.md,
+    padding: 0,
   },
   headerInner: {
     paddingHorizontal: spacing.lg,

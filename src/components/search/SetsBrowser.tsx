@@ -1,13 +1,10 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useMemo } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   SectionList,
-  Pressable,
-  type TextInput as RNTextInput,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,15 +14,23 @@ import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 type Props = {
   onSelectSet: (set: LocalSetInfo) => void;
+  /** Search text — owned by the parent (search.tsx) so the search
+   *  field can live inside the header card alongside the Cards-mode
+   *  toolbar. */
+  searchQuery: string;
 };
 
 type HierarchyNode = {
   set: LocalSetInfo;
   /** Depth from root, 0 = top-level. Drives indentation + arrow. */
   depth: number;
+  /** True for the topmost row of a family (always the depth-0 root).
+   *  Drives the rounded top corners so each family reads as a card. */
+  isFirstOfFamily: boolean;
   /** True for the visually last row of a parent's whole family
-   *  (parent + descendants). Drives the inter-family gap so a new
-   *  parent always reads as starting a new section. */
+   *  (parent + descendants). Drives the rounded bottom corners and
+   *  the inter-family gap so a new parent always reads as starting
+   *  a new section. */
   isLastOfFamily: boolean;
 };
 
@@ -45,11 +50,10 @@ function yearOf(released: string | null | undefined): string {
  * Each row shows the set's total card count on the right. Tapping
  * any row hands a `set:CODE` query back to the Search tab.
  */
-function SetsBrowserInner({ onSelectSet }: Props) {
+function SetsBrowserInner({ onSelectSet, searchQuery }: Props) {
   const sets = useLocalSets();
   const parentMap = useSetsParentMap();
-  const [search, setSearch] = useState('');
-  const inputRef = useRef<RNTextInput | null>(null);
+  const search = searchQuery;
 
   // Build a tree: roots (no parent in map) get rendered first, then
   // any descendants under each root, in DFS order so the SectionList
@@ -93,7 +97,12 @@ function SetsBrowserInner({ onSelectSet }: Props) {
 
     // Flatten: for each root, emit it then its descendants (DFS).
     function walk(node: LocalSetInfo, depth: number, out: HierarchyNode[]) {
-      out.push({ set: node, depth, isLastOfFamily: false });
+      out.push({
+        set: node,
+        depth,
+        isFirstOfFamily: false,
+        isLastOfFamily: false,
+      });
       const kids = (childrenOf.get(node.code) ?? []).slice().sort((a, b) =>
         (a.released_at ?? '').localeCompare(b.released_at ?? '')
       );
@@ -104,9 +113,13 @@ function SetsBrowserInner({ onSelectSet }: Props) {
     for (const root of roots) {
       const flat: HierarchyNode[] = [];
       walk(root, 0, flat);
-      // Tag the trailing row so the next family below renders with a
-      // visible gap (no bg contrast — the gap itself is the divider).
-      if (flat.length > 0) flat[flat.length - 1].isLastOfFamily = true;
+      // Tag the leading + trailing rows so each family reads as a
+      // self-contained card with rounded top + bottom corners and a
+      // visible gap before the next family below.
+      if (flat.length > 0) {
+        flat[0].isFirstOfFamily = true;
+        flat[flat.length - 1].isLastOfFamily = true;
+      }
       const key = yearOf(root.released_at);
       const bucket = byYear.get(key) ?? [];
       bucket.push(...flat);
@@ -126,34 +139,6 @@ function SetsBrowserInner({ onSelectSet }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Search bar — sized to match SearchToolbar (small) so the
-          field sits in the same place and at the same height as
-          the Cards-mode toolbar. No filter / sort / view buttons
-          since browsing sets doesn't need them. */}
-      <View style={styles.searchBarRow}>
-        <Pressable style={styles.searchField} onPress={() => inputRef.current?.focus()}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
-          <TextInput
-            ref={inputRef}
-            style={styles.searchInput}
-            placeholder="Search sets…"
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearch('')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </Pressable>
-      </View>
-
       {totalShown === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="albums-outline" size={32} color={colors.textMuted} />
@@ -194,37 +179,33 @@ const SetRow = memo(function SetRow({
   node: HierarchyNode;
   onPress: () => void;
 }) {
-  const { set, depth, isLastOfFamily } = node;
+  const { set, depth, isFirstOfFamily, isLastOfFamily } = node;
   const isChild = depth > 0;
-  // Children indent by 16px per level so the hierarchy reads at a
-  // glance without burning the whole row width. Roots sit flush
-  // against the screen edge.
-  const indent = depth * 16;
+  // Tighter indent (12 px per level) keeps the hierarchy visible
+  // without burning row width. The arrow glyph is omitted — the
+  // indent itself + smaller icon is enough hierarchy signal.
+  const indent = depth * 12;
   return (
     <TouchableOpacity
-      style={[styles.row, isLastOfFamily && styles.rowLastOfFamily]}
+      style={[
+        styles.row,
+        isFirstOfFamily && styles.rowFirstOfFamily,
+        isLastOfFamily && styles.rowLastOfFamily,
+      ]}
       onPress={onPress}
       activeOpacity={0.6}
     >
       <View style={{ width: indent }} />
-      {isChild && (
-        <Ionicons
-          name="return-down-forward-outline"
-          size={12}
-          color={colors.textMuted}
-          style={{ marginRight: 4 }}
-        />
-      )}
       <View style={[styles.iconWrap, isChild && styles.iconWrapChild]}>
         {set.icon_svg_uri ? (
           <Image
             source={{ uri: set.icon_svg_uri }}
             style={[styles.icon, isChild && styles.iconChild]}
             contentFit="contain"
-            tintColor={colors.primary}
+            tintColor={colors.text}
           />
         ) : (
-          <Ionicons name="albums-outline" size={16} color={colors.primary} />
+          <Ionicons name="albums-outline" size={16} color={colors.text} />
         )}
       </View>
       <View style={styles.info}>
@@ -256,29 +237,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  /* Search bar — geometry mirrors SearchToolbar(size='small'): 36 px
-     control height, surfaceSecondary pill, screen-edge padding so the
-     field aligns horizontally with the Cards toolbar. No action
-     buttons because Sets has no sort/filter affordances. */
-  searchBarRow: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.sm,
-    paddingHorizontal: spacing.md,
-    height: 36,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: fontSize.md,
-    padding: 0,
-  },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -308,24 +266,31 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  /* Row — white-card hub-row pattern. surface bg, hairline divider,
-     no per-row shadow (the visual weight of the icon circle carries
-     the row already). 15 px paddingVertical matches FolderListItem
-     so heights are consistent across the app. */
+  /* Row — white-card hub-row pattern. surface bg, hairline divider
+     between siblings inside the same family. Each family wraps as a
+     self-contained card: the FIRST row gets a top border + rounded
+     top corners, the LAST row gets rounded bottom corners + no
+     bottom divider + a marginBottom that creates the inter-family
+     gap. */
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 13,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 12,
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  rowFirstOfFamily: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    borderTopLeftRadius: borderRadius.md,
+    borderTopRightRadius: borderRadius.md,
+  },
   rowLastOfFamily: {
-    // The next family below renders with a transparent gap that
-    // shows the screen background — no per-row divider needed.
-    borderBottomWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
     marginBottom: spacing.sm,
     borderBottomLeftRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,
