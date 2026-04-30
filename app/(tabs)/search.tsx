@@ -243,9 +243,28 @@ export default function SearchScreen() {
     (bucket: DiscoveryBucket) => {
       // "See all" on the weekly editorial card stages the bucket's
       // Scryfall query into the input so the user can browse the
-      // full result set (instead of the 12-card preview row). The
-      // bucket title is what we save to recents — re-tapping replays
-      // the same theme without exposing the raw syntax.
+      // full result set (instead of the 12-card preview row).
+      //
+      // We mirror the carousel's sort and unique-mode so the See-all
+      // page reads as the carousel "expanded": same dedup, same
+      // ordering. Without this, See-all would inherit whatever sort
+      // the user last selected — confusing when the carousel is
+      // ordered by EDHREC popularity and See-all shows it by name.
+      const sortMap: Record<
+        DiscoveryBucket['sort_by'],
+        { by: 'edhrec_rank' | 'price' | 'added'; asc: boolean }
+      > = {
+        edhrec_asc: { by: 'edhrec_rank', asc: true },
+        edhrec_desc: { by: 'edhrec_rank', asc: false },
+        price_asc: { by: 'price', asc: true },
+        price_desc: { by: 'price', asc: false },
+        released_asc: { by: 'added', asc: true },
+        released_desc: { by: 'added', asc: false },
+      };
+      const m = sortMap[bucket.sort_by];
+      setFilters({ ...filters, uniqueMode: 'cards' });
+      setSortBy(m.by);
+      setSortAsc(m.asc);
       setQuery(bucket.query);
       submit(bucket.query);
       void addRecentSearch(bucket.title, {
@@ -253,7 +272,7 @@ export default function SearchScreen() {
       });
       inputRef.current?.blur();
     },
-    [setQuery, submit]
+    [filters, setFilters, setQuery, setSortBy, setSortAsc, submit]
   );
 
   const handleAiApply = useCallback(
