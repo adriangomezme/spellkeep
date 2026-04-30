@@ -88,10 +88,18 @@ const ALIAS_PATTERN = OPERATORS.flatMap((o) => o.aliases)
   .sort((a, b) => b.length - a.length)
   .join('|');
 
-// Match `(operator)(comparator)(value)` at a token boundary. The value
-// can be a quoted string or a non-whitespace run.
+// Match `(operator)(comparator)(value)` at a token boundary. The
+// boundary may be the start of the string, whitespace, or an opening
+// paren — Scryfall syntax allows grouping like `(t:angel OR t:demon)`
+// where the operator immediately follows `(`. Without `(` in the
+// look-behind, the first clause inside parens slipped through and
+// the second clause's value greedily swallowed the closing `)`.
+//
+// The value can be a quoted string or a non-whitespace, non-`)` run
+// — stopping at `)` keeps the closing paren of a group clause from
+// becoming part of the matched value.
 const CLAUSE_RE = new RegExp(
-  `(?:^|(?<=\\s))(${ALIAS_PATTERN})(>=|<=|=|<|>|:)("[^"]*"|\\S+)`,
+  `(?:^|(?<=[\\s(]))(${ALIAS_PATTERN})(>=|<=|=|<|>|:)("[^"]*"|[^\\s)]+)`,
   'gi'
 );
 

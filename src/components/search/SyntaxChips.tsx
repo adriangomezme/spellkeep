@@ -25,13 +25,13 @@ function SyntaxChipsInner({ clauses, onRemove }: Props) {
     <View style={styles.row}>
       {clauses.map((c) => (
         <View key={`${c.start}-${c.raw}`} style={styles.chip}>
-          <Ionicons name={c.icon} size={14} color={colors.primary} />
+          <Ionicons name={c.icon} size={12} color={colors.primary} />
           <Text style={styles.label} numberOfLines={1}>{c.label}</Text>
           <TouchableOpacity
             onPress={() => onRemove(c)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="close" size={14} color={colors.primary} />
+            <Ionicons name="close" size={12} color={colors.primary} />
           </TouchableOpacity>
         </View>
       ))}
@@ -46,32 +46,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: spacing.lg,
+    // Vertical breathing — keeps chips from kissing the search bar
+    // above and the result feed below.
     paddingTop: spacing.xs + 2,
     paddingBottom: spacing.sm + 2,
-    // Chip-to-chip + row-to-row gap. Earlier 4 / 6 read as "stuck
-    // together" — 8 gives every chip a clear gutter to its neighbour
-    // and to the next wrapped row.
+    // 8 px gutter between chips (and between wrapped rows) so two
+    // adjacent chips read as discrete pills, not one chunk.
     gap: 8,
   },
   chip: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    // Internal rhythm: 8 px between icon → label → close glyph so
-    // the close target doesn't feel glued to the label.
-    gap: 8,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
+    // Original compact rhythm restored — bigger pills felt heavy.
+    // The breathing wins came from the row-level gaps + paddingTop,
+    // not from inflating each chip.
+    gap: 4,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: colors.primaryLight,
     maxWidth: 240,
   },
   label: {
     color: colors.primary,
-    // sm (13) is the body-text size used by the design system's
-    // pill components (PrimaryCTA, segmented controls). Keeps the
-    // chips legible without dominating the row.
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     fontWeight: '600',
     letterSpacing: -0.1,
   },
