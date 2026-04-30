@@ -34,7 +34,39 @@ type CatalogRow = {
   set_code: string;
   collector_number: string;
   name: string;
+  layout?: string | null;
+  released_at?: string | null;
 };
+
+/** Layouts that don't render usefully in a meta-deck carousel. */
+const SKIP_LAYOUTS = new Set([
+  'art_series',
+  'token',
+  'double_faced_token',
+  'emblem',
+  'planar',
+  'scheme',
+  'vanguard',
+  'reversible_card',
+  'minigame',
+]);
+
+/**
+ * Set types whose prints we treat as "canonical" reprints when
+ * choosing a representative for the global name-only fallback. Other
+ * types (promos, memorabilia/Secret Lair, masterpieces) only win if
+ * absolutely no canonical print exists.
+ */
+const CANONICAL_SET_TYPES = new Set([
+  'expansion',
+  'core',
+  'masters',
+  'commander',
+  'draft_innovation',
+  'starter',
+  'duel_deck',
+  'box',
+]);
 
 const LANG = 'en';
 
@@ -180,6 +212,56 @@ export async function resolveDeck(
     }
   }
 
+  // ── 5. Name-only global fallback. Some MTGGoldfish lines cite a
+  //     set we don't ingest (e.g. mb1 — Mystery Booster only ships
+  //     under fmb1 in Scryfall snapshots). The card almost always
+  //     exists under a different set as a normal printing; we just
+  //     need to find ANY representative print so the carousel has
+  //     an image.
+  //
+  //     We exclude special layouts (art_series, token, etc.) and
+  //     promo/memorabilia/masterpiece set types so the fallback
+  //     doesn't surface Secret Lair art or oversized tokens; among
+  //     what's left we pick the most recent release because the
+  //     contemporary reprint is the one MTG players recognize.
+  const stillMissing = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ index }) => !claimed.has(index));
+  if (stillMissing.length > 0) {
+    const dfcAware = (name: string): string[] => {
+      // The line carries only the front face; expand to also try
+      // `front //%` so DFCs in unknown sets resolve too.
+      const front = name.split('/')[0]!.trim();
+      return front && front !== name ? [name, front] : [name];
+    };
+    const wanted = new Set<string>();
+    for (const { line } of stillMissing) {
+      for (const variant of dfcAware(line.name)) wanted.add(variant);
+    }
+    const rows = await fetchByNamesGlobal(Array.from(wanted));
+    // Group rows by exact name and by front-face. preferPrintGlobal
+    // ranks within each name so we pick the canonical reprint.
+    const byExact = new Map<string, CatalogRow>();
+    const byFront = new Map<string, CatalogRow>();
+    for (const row of rows) {
+      const exactKey = row.name;
+      const e = byExact.get(exactKey);
+      if (!e || preferPrintGlobal(row, e)) byExact.set(exactKey, row);
+      const front = row.name.split('//')[0]!.trim();
+      const frontKey = front;
+      const f = byFront.get(frontKey);
+      if (!f || preferPrintGlobal(row, f)) byFront.set(frontKey, row);
+    }
+    for (const { index, line } of stillMissing) {
+      const front = line.name.split('/')[0]!.trim();
+      const row = byExact.get(line.name) ?? byFront.get(front);
+      if (row) {
+        resolved.push(toResolved(index, row));
+        claimed.add(index);
+      }
+    }
+  }
+
   // Anything still unclaimed is missing from the catalog.
   const missing: ParsedLine[] = [];
   lines.forEach((line, index) => {
@@ -238,6 +320,8 @@ function collectorNumeric(cn: string): number {
 }
 
 const SELECT = 'scryfall_id, type_line, color_identity, set_code, collector_number, name';
+const SELECT_GLOBAL =
+  'scryfall_id, type_line, color_identity, set_code, collector_number, name, layout, released_at';
 
 async function fetchByIds(ids: string[]): Promise<CatalogRow[]> {
   if (ids.length === 0) return [];
@@ -289,6 +373,82 @@ async function fetchBySetAndNames(
     out.push(...((data ?? []) as CatalogRow[]));
   }
   return out;
+}
+
+/**
+ * Global name-only lookup used as the last-resort fallback when even
+ * the (set, name) tier failed. We then need a set-type filter so we
+ * don't surface Secret Lair art / oversized tokens — that's why we
+ * also load `set_type` for every set_code that came back and rank
+ * canonical reprints first via `preferPrintGlobal`.
+ */
+async function fetchByNamesGlobal(names: string[]): Promise<CatalogRow[]> {
+  if (names.length === 0) return [];
+  const cardRows: CatalogRow[] = [];
+  const CHUNK = 100;
+  for (let i = 0; i < names.length; i += CHUNK) {
+    const slice = names.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('cards')
+      .select(SELECT_GLOBAL)
+      .eq('lang', LANG)
+      .in('name', slice);
+    if (error) {
+      throw new Error(`cards global by name failed: ${error.message}`);
+    }
+    cardRows.push(...((data ?? []) as CatalogRow[]));
+  }
+  // Filter out junk layouts before we waste a sets join on them.
+  const filtered = cardRows.filter(
+    (r) => !r.layout || !SKIP_LAYOUTS.has(r.layout)
+  );
+  // Annotate each row with its set_type so preferPrintGlobal can
+  // bias toward canonical reprints.
+  const setCodes = Array.from(new Set(filtered.map((r) => r.set_code)));
+  const setTypeMap = await fetchSetTypes(setCodes);
+  for (const r of filtered) {
+    (r as CatalogRow & { set_type?: string }).set_type =
+      setTypeMap.get(r.set_code) ?? 'unknown';
+  }
+  return filtered;
+}
+
+async function fetchSetTypes(codes: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (codes.length === 0) return out;
+  const CHUNK = 200;
+  for (let i = 0; i < codes.length; i += CHUNK) {
+    const slice = codes.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('sets')
+      .select('code, set_type')
+      .in('code', slice);
+    if (error) throw new Error(`sets by code failed: ${error.message}`);
+    for (const row of data ?? []) {
+      out.set((row as { code: string }).code, (row as { set_type: string }).set_type);
+    }
+  }
+  return out;
+}
+
+/**
+ * Compare two prints when picking a "global representative" of a
+ * card name. The contemporary canonical reprint wins over Secret
+ * Lair / promo / memorabilia art; among canonicals, the most-recent
+ * release wins because that's the print competitive players see.
+ */
+function preferPrintGlobal(candidate: CatalogRow, current: CatalogRow): boolean {
+  const cType = (candidate as CatalogRow & { set_type?: string }).set_type;
+  const eType = (current as CatalogRow & { set_type?: string }).set_type;
+  const cCanonical = cType ? CANONICAL_SET_TYPES.has(cType) : false;
+  const eCanonical = eType ? CANONICAL_SET_TYPES.has(eType) : false;
+  if (cCanonical !== eCanonical) return cCanonical;
+  const cReleased = candidate.released_at ?? '';
+  const eReleased = current.released_at ?? '';
+  if (cReleased !== eReleased) return cReleased > eReleased;
+  // Tie-break with the same numeric-collector-number heuristic so a
+  // main-set print beats a promo collector slot inside the same set.
+  return preferPrint(candidate, current);
 }
 
 /**

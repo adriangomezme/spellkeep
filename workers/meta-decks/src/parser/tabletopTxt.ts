@@ -44,6 +44,16 @@ const COLLECTOR_NUMBER_RE = /^[0-9]+[a-z★†]?$/i;
 const LINE_RE =
   /^\s*(\d+)\s+(.+?)(?:\s+<([^>]+)>)?\s+\[([A-Za-z0-9]+)\]\s*$/;
 
+/**
+ * MTGGoldfish uses set codes that don't always match Scryfall's. The
+ * canonical example is The List: MTGGoldfish writes `[PLIST]` but
+ * Scryfall (and our catalog) ingest it as `plst`. Add aliases here
+ * as we discover them — typos vs. canonical Scryfall codes.
+ */
+const SET_ALIASES: Record<string, string> = {
+  plist: 'plst',
+};
+
 export function parseTabletop(txt: string): ParsedLine[] {
   // Normalize newlines and split into raw lines. A blank line marks
   // the boundary between mainboard and sideboard. We do NOT trust
@@ -85,10 +95,11 @@ export function parseTabletop(txt: string): ParsedLine[] {
     const qty = Number(qtyRaw);
     if (!Number.isFinite(qty) || qty <= 0) continue;
 
+    const rawSet = (setRaw ?? '').toLowerCase();
     out.push({
       qty,
       name: (nameRaw ?? '').trim(),
-      set: (setRaw ?? '').toLowerCase(),
+      set: SET_ALIASES[rawSet] ?? rawSet,
       board,
       hint: classifyHint(hintRaw),
       position: positionInBoard,
