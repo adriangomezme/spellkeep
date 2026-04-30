@@ -458,12 +458,7 @@ export default function SetDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Set identity row — icon + name + meta on the left, the
-              "Set Value" stack docked to the right. Putting the
-              dollar value here (rather than below the rarity chips)
-              raises it next to the title where the eye lands first
-              and matches the Top Card cell's vertical alignment in
-              the collection hub. */}
+          {/* Set identity row — icon + name + meta. */}
           <View style={styles.identityRow}>
             <View style={styles.setIconWrap}>
               {setMeta?.icon_svg_uri ? (
@@ -487,17 +482,11 @@ export default function SetDetailScreen() {
                 {cards.length > 0 ? ` · ${cards.length} cards` : ''}
               </Text>
             </View>
-            {stats.value > 0 && (
-              <View style={styles.setValueBlock}>
-                <Text style={styles.setValueLabel}>Set Value</Text>
-                <Text style={styles.setValueAmount}>
-                  {formatUSD(stats.value.toFixed(2))}
-                </Text>
-              </View>
-            )}
           </View>
 
-          {/* Rarity counts row */}
+          {/* Rarity counts on the left + Set Value stack on the right,
+              both anchored to the same baseline so the totals line up
+              visually with the chips. */}
           <View style={styles.statsRow}>
             {RARITY_META.map((r) => {
               const count = stats.rarityCounts[r.key] ?? 0;
@@ -509,6 +498,15 @@ export default function SetDetailScreen() {
                 </View>
               );
             })}
+            <View style={{ flex: 1 }} />
+            {stats.value > 0 && (
+              <View style={styles.setValueBlock}>
+                <Text style={styles.setValueLabel}>Set Value</Text>
+                <Text style={styles.setValueAmount}>
+                  {formatUSD(stats.value.toFixed(2))}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -733,7 +731,11 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // Align to the bottom so the SET VALUE stack's dollar amount
+    // (its visual anchor) sits on the same baseline as the rarity
+    // chips, instead of centering the taller block and lifting it
+    // above the chips.
+    alignItems: 'flex-end',
     gap: spacing.sm,
     marginTop: spacing.md,
     flexWrap: 'wrap',
