@@ -42,6 +42,20 @@ async function load(limit: number): Promise<NewlyPrintedResult> {
       // (recency is the main signal) with EDHREC popularity as a
       // tiebreaker so when 30 cards drop the same day we surface the
       // ones people actually care about.
+      // The dedup-by-oracle-id step below keeps the FIRST occurrence
+      // we encounter per oracle. We want that to be the canonical
+      // black-bordered, non-promo, no-frame-effect print whenever a
+      // card drops in multiple variants the same day (regular set
+      // print vs. borderless / showcase / extended-art / Secret Lair
+      // foil-only treatment). The CASE expression below ranks each
+      // candidate as 0 (canonical) or 1 (variant) and breaks the tie
+      // before edhrec_rank kicks in.
+      //
+      // We deliberately don't FILTER non-canonical prints out — if
+      // a card only ships as a Secret Lair drop in this window, the
+      // Secret Lair variant is the most-recent print and should
+      // surface. The bias just ensures regular prints win when they
+      // exist alongside variants.
       const res = await db.execute(
         `SELECT * FROM cards
           WHERE released_at >= ?
@@ -50,6 +64,14 @@ async function load(limit: number): Promise<NewlyPrintedResult> {
             AND (type_line IS NULL OR type_line NOT LIKE '%Basic Land%')
           ORDER BY
             released_at DESC,
+            CASE
+              WHEN COALESCE(border_color, 'black') = 'black'
+               AND (frame_effects IS NULL OR frame_effects = '[]')
+               AND COALESCE(full_art, 0) = 0
+               AND COALESCE(promo, 0) = 0
+              THEN 0
+              ELSE 1
+            END ASC,
             CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END,
             edhrec_rank ASC
           LIMIT ?`,
