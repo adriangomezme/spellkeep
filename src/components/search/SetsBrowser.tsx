@@ -13,7 +13,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSets, type LocalSetInfo } from '../../lib/hooks/useLocalSets';
 import { useSetsParentMap } from '../../lib/hooks/useSetsParentMap';
-import { colors, spacing, fontSize, borderRadius, shadows } from '../../constants';
+import { colors, spacing, fontSize, borderRadius } from '../../constants';
 
 type Props = {
   onSelectSet: (set: LocalSetInfo) => void;
@@ -126,24 +126,33 @@ function SetsBrowserInner({ onSelectSet }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.searchField} onPress={() => inputRef.current?.focus()}>
-        <Ionicons name="search" size={16} color={colors.textMuted} />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Search sets…"
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-        )}
-      </Pressable>
+      {/* Search bar — sized to match SearchToolbar (small) so the
+          field sits in the same place and at the same height as
+          the Cards-mode toolbar. No filter / sort / view buttons
+          since browsing sets doesn't need them. */}
+      <View style={styles.searchBarRow}>
+        <Pressable style={styles.searchField} onPress={() => inputRef.current?.focus()}>
+          <Ionicons name="search" size={16} color={colors.textMuted} />
+          <TextInput
+            ref={inputRef}
+            style={styles.searchInput}
+            placeholder="Search sets…"
+            placeholderTextColor={colors.textMuted}
+            value={search}
+            onChangeText={setSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearch('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </Pressable>
+      </View>
 
       {totalShown === 0 ? (
         <View style={styles.empty}>
@@ -212,10 +221,10 @@ const SetRow = memo(function SetRow({
             source={{ uri: set.icon_svg_uri }}
             style={[styles.icon, isChild && styles.iconChild]}
             contentFit="contain"
-            tintColor={colors.text}
+            tintColor={colors.primary}
           />
         ) : (
-          <Ionicons name="albums-outline" size={14} color={colors.textMuted} />
+          <Ionicons name="albums-outline" size={16} color={colors.primary} />
         )}
       </View>
       <View style={styles.info}>
@@ -226,9 +235,11 @@ const SetRow = memo(function SetRow({
           >
             {set.name}
           </Text>
-          <Text style={[styles.code, isChild && styles.codeChild]}>
-            {set.code.toUpperCase()}
-          </Text>
+          <View style={styles.codeChip}>
+            <Text style={[styles.code, isChild && styles.codeChild]}>
+              {set.code.toUpperCase()}
+            </Text>
+          </View>
         </View>
         <Text style={styles.subtitle} numberOfLines={1}>
           {set.released_at ?? '—'}
@@ -245,6 +256,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  /* Search bar — geometry mirrors SearchToolbar(size='small'): 36 px
+     control height, surfaceSecondary pill, screen-edge padding so the
+     field aligns horizontally with the Cards toolbar. No action
+     buttons because Sets has no sort/filter affordances. */
+  searchBarRow: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
   searchField: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -252,9 +271,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     borderRadius: borderRadius.sm,
     paddingHorizontal: spacing.md,
-    height: 40,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    height: 36,
   },
   searchInput: {
     flex: 1,
@@ -263,66 +280,79 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   listContent: {
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
   },
+  /* Year section header — small uppercase label sitting against the
+     screen background, matching the meta attribution pattern from
+     the Search hub (`metaAttribution` styling). */
   sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     backgroundColor: colors.background,
   },
   sectionTitle: {
     color: colors.text,
-    fontSize: fontSize.sm,
-    fontWeight: '700',
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   sectionCount: {
     color: colors.textMuted,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
+  /* Row — white-card hub-row pattern. surface bg, hairline divider,
+     no per-row shadow (the visual weight of the icon circle carries
+     the row already). 15 px paddingVertical matches FolderListItem
+     so heights are consistent across the app. */
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    // Tight horizontal padding (was spacing.lg) so the parent set is
-    // closer to the left edge — leaves more room for the title +
-    // children indent without truncating.
+    gap: spacing.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: 13,
     backgroundColor: colors.surface,
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   rowLastOfFamily: {
-    // Solid background everywhere — separation between families is
-    // a transparent gap that shows the screen background through.
+    // The next family below renders with a transparent gap that
+    // shows the screen background — no per-row divider needed.
     borderBottomWidth: 0,
     marginBottom: spacing.sm,
+    borderBottomLeftRadius: borderRadius.md,
+    borderBottomRightRadius: borderRadius.md,
   },
+  /* Icon circle — tinted primaryLight bg + primary glyph. Same
+     pattern used by FolderListItem / Hub iconCircles so the Sets
+     browser feels like a sibling surface. */
   iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.sm,
   },
   iconWrapChild: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
   },
   icon: {
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
   },
   iconChild: {
-    width: 14,
-    height: 14,
+    width: 16,
+    height: 16,
   },
   info: {
     flex: 1,
@@ -330,7 +360,7 @@ const styles = StyleSheet.create({
   },
   nameRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   name: {
@@ -338,18 +368,28 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     flexShrink: 1,
+    letterSpacing: -0.2,
   },
   nameChild: {
     fontSize: fontSize.sm,
     fontWeight: '500',
   },
+  /* Set code rendered as a subtle chip rather than free-floating
+     text, matches the editorial "kicker" feel used elsewhere. */
+  codeChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 4,
+  },
   code: {
     color: colors.textMuted,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   codeChild: {
-    fontSize: 10,
+    fontSize: 9,
   },
   subtitle: {
     color: colors.textMuted,
@@ -362,6 +402,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     minWidth: 50,
     textAlign: 'right',
+    letterSpacing: -0.2,
   },
   cardCountChild: {
     color: colors.textMuted,
@@ -376,8 +417,9 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: colors.text,
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: spacing.md,
+    letterSpacing: -0.3,
   },
   emptyHint: {
     color: colors.textMuted,
