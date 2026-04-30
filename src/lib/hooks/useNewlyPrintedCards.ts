@@ -15,6 +15,16 @@ const RECENT_WINDOW_DAYS = 45;
 
 const HIDDEN_LAYOUTS = `'art_series','token','double_faced_token','emblem','planar','scheme','vanguard'`;
 
+// Set types we treat as "real" newly-printed releases. Expansions /
+// commander products / Modern Horizons-style draft innovations and
+// starter products are what people mean when they say "what just
+// came out". Everything else (promo packs, Mystical-Archive style
+// masterpieces, Secret Lair memorabilia, art series, tokens, joke
+// sets, alchemy-only digital releases) is filtered out — those
+// dominate the recency sort otherwise and produce a feed full of
+// Promo Pack stamps, Marvel borderless one-offs, and judge promos.
+const ALLOWED_SET_TYPES = `'expansion','core','masters','commander','draft_innovation','starter','duel_deck','box'`;
+
 export type NewlyPrintedResult = {
   cards: ScryfallCard[];
   /** Earliest release date in the result set, used for the section
@@ -57,23 +67,26 @@ async function load(limit: number): Promise<NewlyPrintedResult> {
       // surface. The bias just ensures regular prints win when they
       // exist alongside variants.
       const res = await db.execute(
-        `SELECT * FROM cards
-          WHERE released_at >= ?
-            AND lang = 'en'
-            AND layout NOT IN (${HIDDEN_LAYOUTS})
-            AND (type_line IS NULL OR type_line NOT LIKE '%Basic Land%')
+        `SELECT cards.*
+           FROM cards
+           JOIN sets ON sets.code = cards.set_code
+          WHERE cards.released_at >= ?
+            AND cards.lang = 'en'
+            AND cards.layout NOT IN (${HIDDEN_LAYOUTS})
+            AND (cards.type_line IS NULL OR cards.type_line NOT LIKE '%Basic Land%')
+            AND sets.set_type IN (${ALLOWED_SET_TYPES})
+            AND COALESCE(cards.promo, 0) = 0
           ORDER BY
-            released_at DESC,
+            cards.released_at DESC,
             CASE
-              WHEN COALESCE(border_color, 'black') = 'black'
-               AND (frame_effects IS NULL OR frame_effects = '[]')
-               AND COALESCE(full_art, 0) = 0
-               AND COALESCE(promo, 0) = 0
+              WHEN COALESCE(cards.border_color, 'black') = 'black'
+               AND (cards.frame_effects IS NULL OR cards.frame_effects = '[]')
+               AND COALESCE(cards.full_art, 0) = 0
               THEN 0
               ELSE 1
             END ASC,
-            CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END,
-            edhrec_rank ASC
+            CASE WHEN cards.edhrec_rank IS NULL THEN 1 ELSE 0 END,
+            cards.edhrec_rank ASC
           LIMIT ?`,
         [cutoff, limit * 8]
       );
