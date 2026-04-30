@@ -15,16 +15,6 @@ const RECENT_WINDOW_DAYS = 45;
 
 const HIDDEN_LAYOUTS = `'art_series','token','double_faced_token','emblem','planar','scheme','vanguard'`;
 
-// Set types we treat as "real" newly-printed releases. Expansions /
-// commander products / Modern Horizons-style draft innovations and
-// starter products are what people mean when they say "what just
-// came out". Everything else (promo packs, Mystical-Archive style
-// masterpieces, Secret Lair memorabilia, art series, tokens, joke
-// sets, alchemy-only digital releases) is filtered out — those
-// dominate the recency sort otherwise and produce a feed full of
-// Promo Pack stamps, Marvel borderless one-offs, and judge promos.
-const ALLOWED_SET_TYPES = `'expansion','core','masters','commander','draft_innovation','starter','duel_deck','box'`;
-
 export type NewlyPrintedResult = {
   cards: ScryfallCard[];
   /** Earliest release date in the result set, used for the section
@@ -52,41 +42,24 @@ async function load(limit: number): Promise<NewlyPrintedResult> {
       // (recency is the main signal) with EDHREC popularity as a
       // tiebreaker so when 30 cards drop the same day we surface the
       // ones people actually care about.
-      // The dedup-by-oracle-id step below keeps the FIRST occurrence
-      // we encounter per oracle. We want that to be the canonical
-      // black-bordered, non-promo, no-frame-effect print whenever a
-      // card drops in multiple variants the same day (regular set
-      // print vs. borderless / showcase / extended-art / Secret Lair
-      // foil-only treatment). The CASE expression below ranks each
-      // candidate as 0 (canonical) or 1 (variant) and breaks the tie
-      // before edhrec_rank kicks in.
-      //
-      // We deliberately don't FILTER non-canonical prints out — if
-      // a card only ships as a Secret Lair drop in this window, the
-      // Secret Lair variant is the most-recent print and should
-      // surface. The bias just ensures regular prints win when they
-      // exist alongside variants.
+      // Whatever's freshest in the catalog wins. We intentionally
+      // don't bias toward canonical black-bordered prints or filter
+      // by set_type here — the section's job is to show "what just
+      // came out", and Secret Lair / Promo Pack / Mystical Archive
+      // releases are part of that signal. The dedup-by-oracle-id
+      // pass below keeps one variant per card so the carousel still
+      // reads as N distinct cards instead of the same card in 5
+      // frame treatments.
       const res = await db.execute(
-        `SELECT cards.*
-           FROM cards
-           JOIN sets ON sets.code = cards.set_code
-          WHERE cards.released_at >= ?
-            AND cards.lang = 'en'
-            AND cards.layout NOT IN (${HIDDEN_LAYOUTS})
-            AND (cards.type_line IS NULL OR cards.type_line NOT LIKE '%Basic Land%')
-            AND sets.set_type IN (${ALLOWED_SET_TYPES})
-            AND COALESCE(cards.promo, 0) = 0
+        `SELECT * FROM cards
+          WHERE released_at >= ?
+            AND lang = 'en'
+            AND layout NOT IN (${HIDDEN_LAYOUTS})
+            AND (type_line IS NULL OR type_line NOT LIKE '%Basic Land%')
           ORDER BY
-            cards.released_at DESC,
-            CASE
-              WHEN COALESCE(cards.border_color, 'black') = 'black'
-               AND (cards.frame_effects IS NULL OR cards.frame_effects = '[]')
-               AND COALESCE(cards.full_art, 0) = 0
-              THEN 0
-              ELSE 1
-            END ASC,
-            CASE WHEN cards.edhrec_rank IS NULL THEN 1 ELSE 0 END,
-            cards.edhrec_rank ASC
+            released_at DESC,
+            CASE WHEN edhrec_rank IS NULL THEN 1 ELSE 0 END,
+            edhrec_rank ASC
           LIMIT ?`,
         [cutoff, limit * 8]
       );
