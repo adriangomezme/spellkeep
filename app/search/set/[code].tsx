@@ -34,6 +34,10 @@ import {
   countActiveFilters,
   type FilterState,
 } from '../../../src/components/collection/FilterSheet';
+import {
+  GroupBySheet,
+  type GroupByOption,
+} from '../../../src/components/collection/GroupBySheet';
 import { filterScryfallCards } from '../../../src/lib/search/filterScryfallCards';
 import {
   nextViewMode,
@@ -52,7 +56,8 @@ import { useLocalSets } from '../../../src/lib/hooks/useLocalSets';
 import { useSetCards } from '../../../src/lib/hooks/useSetCards';
 import { useSearchViewPrefs } from '../../../src/lib/hooks/useSearchViewPrefs';
 import { useCollectionViewPrefs } from '../../../src/lib/hooks/useCollectionViewPrefs';
-import { groupCardsForSet } from '../../../src/lib/search/setGrouping';
+import { groupSetCardsBy } from '../../../src/lib/search/setGrouping';
+import type { GroupBy } from '../../../src/lib/hooks/useGroupByPref';
 import {
   colors,
   spacing,
@@ -83,6 +88,18 @@ const SET_SORT_OPTIONS: SortOptionDef[] = [
 ];
 
 const ALLOWED_SORTS: SortOption[] = SET_SORT_OPTIONS.map((o) => o.key);
+
+// Group By options surfaced on the Set Detail screen. We deliberately
+// hide `set` (we're already inside one set) and `tags` (no per-card
+// tags here). `print_group` reproduces Scryfall's set-page sectioning
+// (Main / Borderless / Showcase / Extended Art / Promos / Tokens).
+const SET_GROUP_OPTIONS: GroupByOption[] = [
+  { key: 'none', label: 'No grouping', icon: 'remove-outline' },
+  { key: 'rarity', label: 'Rarity', icon: 'diamond-outline' },
+  { key: 'color', label: 'Color', icon: 'color-palette-outline' },
+  { key: 'type', label: 'Type', icon: 'shapes-outline' },
+  { key: 'print_group', label: 'Print Group', icon: 'albums-outline' },
+];
 
 const RARITY_META: { key: 'mythic' | 'rare' | 'uncommon' | 'common'; label: string }[] = [
   { key: 'mythic', label: 'M' },
@@ -117,12 +134,17 @@ export default function SetDetailScreen() {
   const effectiveSortBy: SortOption = useMemo(() => {
     return ALLOWED_SORTS.includes(sortBy) ? sortBy : 'collector_number';
   }, [sortBy]);
-  const isGroupedSort = effectiveSortBy === 'collector_number';
 
   const [search, setSearch] = useState('');
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
+  const [showGroupBy, setShowGroupBy] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  // Group By is local to this screen — not persisted. Defaults to
+  // none so the user lands on the literal sort they picked; switching
+  // to print_group reproduces the previous "Set Number sort builds
+  // Scryfall sections" behavior on demand.
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const activeFilterCount = countActiveFilters(filters);
 
   // ── Header derivations ──
@@ -155,14 +177,27 @@ export default function SetDetailScreen() {
     return filterScryfallCards(result, filters);
   }, [cards, search, filters]);
 
-  // ── Sort (flat path) ──
+  // ── Sort ──
+  // Set Number now sorts literally by collector number — no implicit
+  // grouping. The Scryfall-style sectioning lives under Group By
+  // ("Print Group") so the two axes (sort + group) are independent.
   const sorted = useMemo(() => {
-    if (isGroupedSort) return visible;
     const dir = sortAsc ? 1 : -1;
     const arr = [...visible];
+    const collatorCN = (a: string, b: string) => {
+      const ma = a.match(/^(\d+)/);
+      const mb = b.match(/^(\d+)/);
+      const na = ma ? parseInt(ma[1], 10) : Number.MAX_SAFE_INTEGER;
+      const nb = mb ? parseInt(mb[1], 10) : Number.MAX_SAFE_INTEGER;
+      if (na !== nb) return na - nb;
+      return a.localeCompare(b);
+    };
     arr.sort((a, b) => {
       let cmp = 0;
       switch (effectiveSortBy) {
+        case 'collector_number':
+          cmp = collatorCN(a.collector_number ?? '', b.collector_number ?? '');
+          break;
         case 'name':
           cmp = a.name.localeCompare(b.name);
           break;
@@ -198,22 +233,26 @@ export default function SetDetailScreen() {
       return cmp * dir;
     });
     return arr;
-  }, [visible, effectiveSortBy, isGroupedSort, sortAsc]);
+  }, [visible, effectiveSortBy, sortAsc]);
 
-  // ── Grouped path: build Group<ScryfallCard>[] for GroupedCollectionList ──
+  // ── Group ──
+  // print_group ignores sortBy and uses its own collector-number
+  // ordering inside each section (Main Set / Borderless / Showcase
+  // / etc — the natural reading order). The other modes group the
+  // already-sorted list so each bucket preserves the user's chosen
+  // sort.
   const groups: Group<ScryfallCard>[] = useMemo(() => {
-    if (!isGroupedSort) return [];
-    const setGroups = groupCardsForSet(visible, setMeta?.card_count ?? null);
-    return setGroups.map<Group<ScryfallCard>>((g) => ({
-      key: g.id,
-      label: g.title,
-      icon: { kind: 'none' },
-      entries: g.cards,
-      cardCount: g.cards.length,
-      uniqueCount: g.cards.length,
-      subtotal: null,
-    }));
-  }, [isGroupedSort, visible, setMeta]);
+    if (groupBy === 'none') return [];
+    if (groupBy === 'rarity' || groupBy === 'color' || groupBy === 'type') {
+      return groupSetCardsBy(sorted, groupBy, setMeta?.card_count ?? null);
+    }
+    if (groupBy === 'print_group') {
+      return groupSetCardsBy(visible, 'print_group', setMeta?.card_count ?? null);
+    }
+    return [];
+  }, [groupBy, sorted, visible, setMeta]);
+
+  const isGrouped = groupBy !== 'none' && groups.length > 0;
 
   // Section collapse state — local to this screen; not persisted yet.
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(new Set());
@@ -472,6 +511,18 @@ export default function SetDetailScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
+                onPress={() => setShowGroupBy(true)}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="layers-outline"
+                  size={m.actionIcon}
+                  color={isGrouped ? colors.primary : colors.text}
+                />
+                {isGrouped && <View style={styles.filterBadge} />}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.iconBtn, { width: m.iconBtn, height: m.iconBtn }]}
                 onPress={() => setViewMode(nextViewMode(viewMode))}
                 activeOpacity={0.6}
               >
@@ -491,7 +542,7 @@ export default function SetDetailScreen() {
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      ) : isGroupedSort && groups.length > 0 ? (
+      ) : isGrouped ? (
         <GroupedCollectionList
           groups={groups}
           cardsPerRow={isGrid ? cardsPerRow : 1}
@@ -547,6 +598,17 @@ export default function SetDetailScreen() {
         onApply={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
         onClose={() => setShowFilter(false)}
+      />
+
+      <GroupBySheet
+        visible={showGroupBy}
+        current={groupBy}
+        options={SET_GROUP_OPTIONS}
+        onSelect={(g) => {
+          setGroupBy(g);
+          setShowGroupBy(false);
+        }}
+        onClose={() => setShowGroupBy(false)}
       />
     </View>
   );

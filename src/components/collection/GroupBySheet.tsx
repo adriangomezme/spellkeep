@@ -4,11 +4,13 @@ import { BottomSheet } from '../BottomSheet';
 import { colors, spacing, fontSize, borderRadius } from '../../constants';
 import type { GroupBy } from '../../lib/hooks/useGroupByPref';
 
-const GROUP_OPTIONS: {
+export type GroupByOption = {
   key: GroupBy;
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
-}[] = [
+};
+
+const DEFAULT_GROUP_OPTIONS: GroupByOption[] = [
   { key: 'none', label: 'No grouping', icon: 'remove-outline' },
   { key: 'rarity', label: 'Rarity', icon: 'diamond-outline' },
   { key: 'set', label: 'Set', icon: 'albums-outline' },
@@ -22,6 +24,10 @@ type Props = {
   current: GroupBy;
   onSelect: (g: GroupBy) => void;
   onClose: () => void;
+  /** Override the visible options. Use to restrict the menu in
+   *  contexts where some groups don't apply (set detail can't group
+   *  by Tags or by Set itself). Defaults to the full collection list. */
+  options?: GroupByOption[];
   /** Collapse-all chip — only meaningful when grouping is active and
    *  there is at least one group. */
   allCollapsed?: boolean;
@@ -34,10 +40,12 @@ export function GroupBySheet({
   current,
   onSelect,
   onClose,
+  options,
   allCollapsed,
   onToggleAllCollapsed,
   collapseDisabled,
 }: Props) {
+  const groupOptions = options ?? DEFAULT_GROUP_OPTIONS;
   const showCollapseChip = current !== 'none' && !!onToggleAllCollapsed;
   return (
     <BottomSheet visible={visible} onClose={onClose}>
@@ -69,9 +77,9 @@ export function GroupBySheet({
 
       {/* Options list */}
       <View style={styles.list}>
-        {GROUP_OPTIONS.map((option, idx) => {
+        {groupOptions.map((option, idx) => {
           const isActive = current === option.key;
-          const isLast = idx === GROUP_OPTIONS.length - 1;
+          const isLast = idx === groupOptions.length - 1;
           return (
             <TouchableOpacity
               key={option.key}

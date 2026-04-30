@@ -18,7 +18,12 @@ export type GroupBy =
   | 'set'
   | 'color'
   | 'type'
-  | 'tags';
+  | 'tags'
+  // Set-detail-specific. Splits a set's cards into the same buckets
+  // Scryfall surfaces on its set pages: Main Set / Borderless /
+  // Showcase / Extended Art / Promos / Tokens / Art Series / etc.
+  // Never offered on binder / list / owned screens.
+  | 'print_group';
 
 export const GROUP_BY_DEFAULT: GroupBy = 'none';
 
@@ -29,6 +34,7 @@ const VALID = new Set<GroupBy>([
   'color',
   'type',
   'tags',
+  'print_group',
 ]);
 
 function key(collectionId: string): string {

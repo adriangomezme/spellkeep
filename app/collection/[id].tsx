@@ -429,6 +429,9 @@ export default function CollectionDetailScreen() {
 
   const groups = useMemo(() => {
     if (groupBy === 'none') return [];
+    // `print_group` is a Set Detail-only option and never reaches the
+    // binder GroupBySheet — guard the type narrow defensively.
+    if (groupBy === 'print_group') return [];
     return groupEntries(displayEntries, groupBy, {
       tagsByEntryId,
       tagsCatalog: availableTags,
