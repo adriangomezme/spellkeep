@@ -220,15 +220,17 @@ export default function SearchScreen() {
   );
 
   const tapSeeAllNewlyPrinted = useCallback(() => {
-    // Approximate the local "newly printed" carousel with a Scryfall
-    // query: cards released in the last 45 days, ordered by release
-    // date, excluding basics and reprints to keep the result feed
-    // focused on first-time prints. The friendly label "Newly printed"
-    // is what we save to recents, not the raw syntax.
+    // Mirror the local "Newly printed" carousel as closely as Scryfall
+    // syntax allows: cards released in the last 45 days, basics
+    // excluded, one row per oracle (so showcase + regular don't both
+    // surface). Reprints stay in — a Sol Ring reprinted today *is*
+    // newly printed by the section's lens, and the carousel includes
+    // it. The friendly label "Newly printed" is what we save to
+    // recents instead of the raw syntax.
     const cutoff = new Date(Date.now() - 45 * 86400000)
       .toISOString()
       .slice(0, 10);
-    const text = `date>=${cutoff} -is:reprint -t:basic`;
+    const text = `date>=${cutoff} -t:basic unique:cards`;
     setQuery(text);
     setSortBy('added');
     setSortAsc(false);
