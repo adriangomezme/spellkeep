@@ -330,6 +330,43 @@ const top_commanders = new Table({
 });
 
 // ============================================================
+// Meta decks feed (global, read-only). Populated every 5 days
+// by the meta-decks worker from MTGGoldfish's metagame index for
+// standard / modern / pioneer. The Search hub's "X Meta" sections
+// read meta_decks for the segmented control labels and join
+// meta_deck_cards for the carousel card lists.
+// ============================================================
+
+const meta_decks = new Table({
+  format: column.text,
+  slug: column.text,
+  name: column.text,
+  colors: column.text,
+  archetype_url: column.text,
+  meta_share: column.real,
+  position: column.integer,
+  refreshed_at: column.text,
+}, {
+  indexes: { format_position: ['format', 'position'] },
+});
+
+const meta_deck_cards = new Table({
+  deck_id: column.text,
+  format: column.text,
+  scryfall_id: column.text,
+  quantity: column.integer,
+  board: column.text,
+  category: column.text,
+  position: column.integer,
+  refreshed_at: column.text,
+}, {
+  indexes: {
+    deck: ['deck_id', 'board', 'position'],
+    format: ['format'],
+  },
+});
+
+// ============================================================
 // Export schema
 // ============================================================
 
@@ -352,6 +389,8 @@ export const AppSchema = new Schema({
   price_alert_events,
   collection_stats_cache,
   top_commanders,
+  meta_decks,
+  meta_deck_cards,
 });
 
 export type Database = (typeof AppSchema)['types'];

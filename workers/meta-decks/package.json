@@ -1,0 +1,23 @@
+{
+  "name": "@spellkeep/meta-decks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worker that scrapes MTGGoldfish's metagame index for standard / modern / pioneer every 5 days, downloads the top-4 archetypes' Tabletop decklists, parses qty/name/set/collector_number/board, resolves each line against the catalog cards table, derives categories from type_line, and persists everything via the admin_replace_meta_deck RPC for the Search hub's Meta sections.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "cheerio": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

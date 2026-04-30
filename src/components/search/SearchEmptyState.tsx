@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,11 @@ import {
   useTopCommanders,
   type CommanderWindow,
 } from '../../lib/hooks/useTopCommanders';
+import {
+  useMetaDecks,
+  type MetaFormat,
+  type MetaDeck,
+} from '../../lib/hooks/useMetaDecks';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../constants';
 
 type Props = {
@@ -234,28 +239,13 @@ function SearchEmptyStateInner({
             feed; it shows whatever the worker has populated. */}
       <TopCommandersSection onPressCard={onTapDiscoverCard} />
 
-      {/* 7. Standard meta — DUMMY. Renders the deck list and a card
-            carousel using newly-printed data as filler. Backend will
-            replace the deck rosters + card lists later. */}
-      {hasNewlyPrinted && (
-        <MetaDeckSection
-          format="Standard"
-          decks={STANDARD_DECKS}
-          dummyCards={newlyPrintedCards}
-          onPressCard={onTapDiscoverCard}
-        />
-      )}
-
-      {/* 8. Modern meta — DUMMY. Same shape as Standard, swapped
-            deck list + format label. */}
-      {hasNewlyPrinted && (
-        <MetaDeckSection
-          format="Modern"
-          decks={MODERN_DECKS}
-          dummyCards={newlyPrintedCards}
-          onPressCard={onTapDiscoverCard}
-        />
-      )}
+      {/* 7-9. Meta sections — sourced from MTGGoldfish via the
+            meta-decks worker, top 4 archetypes per format. Each
+            section hides itself when the worker has not populated
+            the format yet (additive, not load-bearing). */}
+      <MetaSection format="standard" onPressCard={onTapDiscoverCard} />
+      <MetaSection format="modern" onPressCard={onTapDiscoverCard} />
+      <MetaSection format="pioneer" onPressCard={onTapDiscoverCard} />
     </ScrollView>
   );
 }
@@ -456,64 +446,84 @@ const DISCOVER_CARD_WIDTH = Math.round(96 * 1.2 * 1.15);
 const WEEKLY_CARD_WIDTH = Math.round(96 * 1.38 * 1.15 * 1.15);
 
 // ──────────────────────────────────────────────────────────────────────
-// Meta decks — DUMMY scaffolding. The deck rosters below are
-// hard-coded and the card lists are filled with whatever cards land
-// in `dummyCards` (currently the newly-printed feed). Future iteration
-// will fetch deck-specific lists from the backend.
+// Meta decks — top-4 archetype lists per format scraped from
+// MTGGoldfish by the meta-decks worker every 5 days. Each section
+// shows a segmented control (one button per archetype) and a card
+// carousel of the active archetype's mainboard. The section hides
+// itself entirely while the worker hasn't populated the format yet.
 // ──────────────────────────────────────────────────────────────────────
 
-type MetaDeck = {
-  id: string;
-  name: string;
-  /** Color identity rendered as a row of mana gem glyphs in the deck
-   *  selector. Order matters — Izzet reads "U R" not "R U". */
-  colors: ManaGlyph[];
+const FORMAT_LABELS: Record<MetaFormat, string> = {
+  standard: 'Standard',
+  modern: 'Modern',
+  pioneer: 'Pioneer',
 };
 
-const STANDARD_DECKS: MetaDeck[] = [
-  { id: 'std-mono-green', name: 'Mono-Green Landfall', colors: ['G'] },
-  { id: 'std-izzet-prowess', name: 'Izzet Prowess', colors: ['U', 'R'] },
-  { id: 'std-izzet-spell', name: 'Izzet Spellementals', colors: ['U', 'R'] },
-  { id: 'std-dimir', name: 'Dimir Excruciator', colors: ['U', 'B'] },
-];
-
-const MODERN_DECKS: MetaDeck[] = [
-  { id: 'mod-mono-red', name: 'Mono-Red Burn', colors: ['R'] },
-  { id: 'mod-azorius', name: 'Azorius Control', colors: ['W', 'U'] },
-  { id: 'mod-domain-zoo', name: 'Domain Zoo', colors: ['W', 'U', 'B', 'R', 'G'] },
-  { id: 'mod-boros-energy', name: 'Boros Energy', colors: ['W', 'R'] },
-];
-
-function MetaDeckSection({
+function MetaSection({
   format,
-  decks,
-  dummyCards,
   onPressCard,
 }: {
-  format: string;
-  decks: MetaDeck[];
-  dummyCards: ScryfallCard[];
+  format: MetaFormat;
   onPressCard: (card: ScryfallCard) => void;
 }) {
-  const [activeId, setActiveId] = useState(decks[0]?.id ?? '');
-  // Pad the dummy card list out to ~24 entries (a typical deck cover
-  // page) by repeating the source feed. Each active deck slices a
-  // different window so flipping between decks visually changes the
-  // carousel without needing real backend data yet.
-  const cards = useMemo(() => {
-    const padded = [...dummyCards, ...dummyCards, ...dummyCards];
-    const idx = Math.max(0, decks.findIndex((d) => d.id === activeId));
-    const offset = (idx * 4) % Math.max(1, dummyCards.length);
-    return padded.slice(offset, offset + 24);
-  }, [activeId, decks, dummyCards]);
+  const { decks } = useMetaDecks(format);
+  if (decks.length === 0) return null;
+  return (
+    <MetaDeckSection
+      formatLabel={FORMAT_LABELS[format]}
+      decks={decks}
+      onPressCard={onPressCard}
+    />
+  );
+}
+
+const COLOR_TO_GLYPH: Record<string, ManaGlyph> = {
+  W: 'W',
+  U: 'U',
+  B: 'B',
+  R: 'R',
+  G: 'G',
+};
+
+function colorsToGlyphs(colors: string): ManaGlyph[] {
+  if (!colors || colors.length === 0) return ['C'];
+  const out: ManaGlyph[] = [];
+  for (const c of colors.toUpperCase()) {
+    const g = COLOR_TO_GLYPH[c];
+    if (g) out.push(g);
+  }
+  return out.length === 0 ? ['C'] : out;
+}
+
+function MetaDeckSection({
+  formatLabel,
+  decks,
+  onPressCard,
+}: {
+  formatLabel: string;
+  decks: MetaDeck[];
+  onPressCard: (card: ScryfallCard) => void;
+}) {
+  const [activeId, setActiveId] = useState<string>(decks[0]?.id ?? '');
+  // Reset active selection if the worker swaps the deck list out from
+  // under us (e.g. an archetype dropped out of the top-N).
+  useEffect(() => {
+    if (!decks.some((d) => d.id === activeId) && decks[0]) {
+      setActiveId(decks[0].id);
+    }
+  }, [decks, activeId]);
+
+  const activeDeck = decks.find((d) => d.id === activeId) ?? decks[0];
+  const cards = activeDeck?.cards ?? [];
 
   return (
     <View style={styles.metaSection}>
       <View style={styles.metaHeader}>
-        <Text style={styles.metaSectionTitle}>{format} Meta</Text>
+        <Text style={styles.metaSectionTitle}>{formatLabel} Meta</Text>
         <Text style={styles.metaSectionSubtitle}>
-          Cards from the top-performing decks of the last 30 days.
+          Top archetypes scraped from the live tournament metagame.
         </Text>
+        <Text style={styles.metaAttribution}>Data from MTGGoldfish</Text>
       </View>
 
       <View style={styles.metaSegmentTrack}>
@@ -524,6 +534,7 @@ function MetaDeckSection({
         >
           {decks.map((deck) => {
             const active = deck.id === activeId;
+            const glyphs = colorsToGlyphs(deck.colors);
             return (
               <TouchableOpacity
                 key={deck.id}
@@ -532,7 +543,7 @@ function MetaDeckSection({
                 activeOpacity={0.6}
               >
                 <View style={styles.metaSegmentGems}>
-                  {deck.colors.map((c, i) => {
+                  {glyphs.map((c, i) => {
                     const gem = MANA_GEMS[c];
                     return (
                       <View

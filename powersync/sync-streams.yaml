@@ -12,6 +12,16 @@ streams:
     # unique(time_window, rank).
     global_top_commanders:
         query: "SELECT id, time_window, rank, scryfall_id, edhrec_slug, refreshed_at FROM top_commanders"
+    # Meta decks feed from MTGGoldfish — top 4 archetypes per format
+    # (standard / modern / pioneer), refreshed every 5 days by the
+    # meta-decks worker. Two tables: meta_decks (one row per archetype)
+    # and meta_deck_cards (one row per card per board). `format` is
+    # denormalized onto the cards table so the WHERE clause filters
+    # without a JOIN — same pattern as collection_cards.user_id.
+    global_meta_decks:
+        queries:
+            - "SELECT id, format, slug, name, colors, archetype_url, meta_share, position, refreshed_at FROM meta_decks"
+            - "SELECT id, deck_id, format, scryfall_id, quantity, board, category, position, refreshed_at FROM meta_deck_cards"
     # Profile row for the signed-in user.
     user_profile:
         query: "SELECT * FROM profiles WHERE id = auth.user_id()"

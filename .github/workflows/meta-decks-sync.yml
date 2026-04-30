@@ -1,0 +1,59 @@
+name: meta-decks-sync
+
+on:
+  schedule:
+    # Runs every 5 days at 08:00 UTC. MTGGoldfish updates its
+    # metagame snapshots once a day at most; a 5-day cadence keeps
+    # the Search hub's Meta sections fresh without scraping their
+    # site too aggressively. The 08:00 UTC slot is off-peak and
+    # doesn't compete with other scheduled work:
+    #   - catalog-sync       13:00 UTC
+    #   - commander-sync     06:00 UTC
+    #   - price-alerts sweep 13:00 / 18:00 / 23:00 UTC
+    #
+    # `*/5` resets at month boundaries so the cadence drifts up to
+    # ~6 days a few times a year — discovery data, fine to drift.
+    - cron: '0 8 */5 * *'
+  workflow_dispatch:
+    inputs:
+      formats:
+        description: 'Comma-separated formats to sync (default: standard,modern,pioneer)'
+        required: false
+        default: 'standard,modern,pioneer'
+      top_n:
+        description: 'Override top-N per format (default 4)'
+        required: false
+        default: '4'
+
+concurrency:
+  group: meta-decks-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: workers/meta-decks
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: workers/meta-decks/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Run meta decks sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          META_FORMATS: ${{ github.event.inputs.formats || 'standard,modern,pioneer' }}
+          META_TOP_N: ${{ github.event.inputs.top_n || '4' }}
+        run: npm start

@@ -19,6 +19,7 @@ export const connector = new SupabaseConnector();
 const DEFAULT_STREAMS: string[] = [
   'global_sets',
   'global_top_commanders',
+  'global_meta_decks',
   'user_profile',
   'user_collection_folders',
   'user_collections',
