@@ -533,10 +533,13 @@ const COLOR_DISPLAY_ORDER: Record<string, number> = {
   colorless: 6,
 };
 
-// Type buckets — ordered the way MTG players actually talk about them.
+// Type buckets — Planeswalkers lead because they're the rarest /
+// most discussed permanent type; Creatures follow as the deck's
+// body. Spells, artifacts, enchantments, lands round out the list
+// in the canonical "permanents → effects → mana base" order.
 const TYPE_ORDER: Array<{ key: string; needle: string; label: string }> = [
-  { key: 'creature', needle: 'creature', label: 'Creature' },
   { key: 'planeswalker', needle: 'planeswalker', label: 'Planeswalker' },
+  { key: 'creature', needle: 'creature', label: 'Creature' },
   { key: 'battle', needle: 'battle', label: 'Battle' },
   { key: 'artifact', needle: 'artifact', label: 'Artifact' },
   { key: 'enchantment', needle: 'enchantment', label: 'Enchantment' },

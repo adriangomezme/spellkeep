@@ -265,6 +265,31 @@ export default function SetDetailScreen() {
     });
   }, []);
 
+  // Collapse-all chip wiring — mirrors binder/[id].tsx. We only flag
+  // the deck as "all collapsed" when every non-empty visible group
+  // is in `collapsedKeys`; tapping the chip then either expands them
+  // all or collapses them all.
+  const allGroupsCollapsed = useMemo(() => {
+    if (groups.length === 0) return false;
+    for (const g of groups) {
+      if (g.entries.length === 0) continue;
+      if (!collapsedKeys.has(g.key)) return false;
+    }
+    return true;
+  }, [groups, collapsedKeys]);
+
+  const handleToggleAllCollapsed = useCallback(() => {
+    if (allGroupsCollapsed) {
+      setCollapsedKeys(new Set());
+      return;
+    }
+    const all = new Set<string>();
+    for (const g of groups) {
+      if (g.entries.length > 0) all.add(g.key);
+    }
+    setCollapsedKeys(all);
+  }, [allGroupsCollapsed, groups]);
+
   const handleCardPress = useCallback(
     (card: ScryfallCard) => {
       router.push({
@@ -306,6 +331,32 @@ export default function SetDetailScreen() {
       transform: [{ translateY: -toolbarHeight * progress }],
       marginBottom: -toolbarHeight * progress,
       opacity: interpolate(progress, [0, 0.45, 1], [1, 0, 0], Extrapolation.CLAMP),
+    };
+  });
+
+  // When grouping is active, the sticky group header collides with
+  // the header card's rounded bottom corner and the page bg "tooths"
+  // through the seam. Interpolate the bottom radius to 0 once the
+  // user starts scrolling so the section header seals cleanly into
+  // the bottom of the header card. Without grouping (FlatList only,
+  // no sticky chrome) we keep the corner static — there's nothing
+  // for it to collide with.
+  const headerCardStyle = useAnimatedStyle(() => {
+    if (!isGrouped) {
+      return {
+        borderBottomLeftRadius: borderRadius.xl,
+        borderBottomRightRadius: borderRadius.xl,
+      };
+    }
+    const radius = interpolate(
+      lastY.value,
+      [0, 6],
+      [borderRadius.xl, 0],
+      Extrapolation.CLAMP,
+    );
+    return {
+      borderBottomLeftRadius: radius,
+      borderBottomRightRadius: radius,
     };
   });
 
@@ -386,8 +437,9 @@ export default function SetDetailScreen() {
            Hosts back/menu chrome, set identity (icon + name + stats),
            and the search/sort/filter/view toolbar that collapses on
            scroll. Same pattern used by Owned and binder/list detail
-           screens — single white surface with a soft bottom radius. */}
-      <View style={styles.headerCard}>
+           screens — single white surface with a soft bottom radius
+           that flattens when grouping is active. */}
+      <Animated.View style={[styles.headerCard, headerCardStyle]}>
         <View style={[styles.headerInner, { paddingTop: insets.top + spacing.sm }]}>
           {/* Back chevron + 3-dot menu */}
           <View style={styles.chromeRow}>
@@ -535,7 +587,7 @@ export default function SetDetailScreen() {
             </View>
           </Animated.View>
         </View>
-      </View>
+      </Animated.View>
 
       {/* ── Body ── */}
       {!isReady ? (
@@ -609,6 +661,9 @@ export default function SetDetailScreen() {
           setShowGroupBy(false);
         }}
         onClose={() => setShowGroupBy(false)}
+        allCollapsed={allGroupsCollapsed}
+        onToggleAllCollapsed={isGrouped ? handleToggleAllCollapsed : undefined}
+        collapseDisabled={!isGrouped}
       />
     </View>
   );

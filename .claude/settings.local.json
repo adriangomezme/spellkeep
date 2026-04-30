@@ -120,7 +120,8 @@
       "Bash(grep -nE \"titleAtBottom\\\\s*$|titleAtBottom=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
       "Bash(grep -nE \"fullBleed\\\\s*$|fullBleed=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
       "Bash(npx tsx *)",
-      "Bash(echo \"EXIT $?\")"
+      "Bash(echo \"EXIT $?\")",
+      "Bash(grep -n \"</View>$\" /Users/adriangomez/Desktop/DEV/SpellKeep/app/search/set/\\\\[code\\\\].tsx)"
     ]
   },
   "enableAllProjectMcpServers": true,

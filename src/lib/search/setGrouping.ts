@@ -184,9 +184,12 @@ const COLOR_DISPLAY_ORDER: Record<string, number> = {
   colorless: 6,
 };
 
+// Planeswalker first — see cardListUtils.ts for the rationale (kept
+// in lockstep so binder / list / owned / set views all order the
+// type buckets identically).
 const TYPE_ORDER: Array<{ key: string; needle: string; label: string }> = [
-  { key: 'creature', needle: 'creature', label: 'Creature' },
   { key: 'planeswalker', needle: 'planeswalker', label: 'Planeswalker' },
+  { key: 'creature', needle: 'creature', label: 'Creature' },
   { key: 'battle', needle: 'battle', label: 'Battle' },
   { key: 'artifact', needle: 'artifact', label: 'Artifact' },
   { key: 'enchantment', needle: 'enchantment', label: 'Enchantment' },
