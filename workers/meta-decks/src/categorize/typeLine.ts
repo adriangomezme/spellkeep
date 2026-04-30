@@ -19,7 +19,15 @@ export type Category =
   | 'lands';
 
 export function typeLineToCategory(typeLine: string | null | undefined): Category {
-  const t = (typeLine ?? '').toLowerCase();
+  // Scryfall stores DFC / split / adventure type lines as
+  // `<front> // <back>` (e.g. `Sorcery // Creature — Eldrazi`).
+  // What you cast — and how the deckbuilder thinks about the slot —
+  // is the front face, so categorize off that one. Without this
+  // split, an Esper Origins (Sorcery // Creature) would be filed
+  // under `creatures` because the substring search finds "Creature"
+  // in the back-face half.
+  const front = (typeLine ?? '').split('//')[0]!;
+  const t = front.toLowerCase();
   // Land first — even creature-lands belong with the mana base.
   if (t.includes('land')) return 'lands';
   if (t.includes('creature')) return 'creatures';
