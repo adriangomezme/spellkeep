@@ -28,10 +28,11 @@ export const config = {
   supabaseServiceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
   // Which formats to sync this run. Defaults to all three.
   formats: parseFormats(process.env.META_FORMATS),
-  // How many archetypes to keep per format. The Search hub renders 4
-  // segments per Meta section, so 4 is the natural top-N. Worker
-  // accepts an override (e.g. for backfill).
-  topN: Number(process.env.META_TOP_N ?? 4),
+  // How many archetypes to keep per format. The segmented control in
+  // the Search hub's Meta sections is horizontally scrollable, so we
+  // can comfortably surface up to 6 archetypes per format. Worker
+  // accepts an override at runtime.
+  topN: Number(process.env.META_TOP_N ?? 6),
   // MTGGoldfish has no public API; we scrape their HTML pages. Be a
   // polite citizen — identify ourselves and pause between fetches so
   // we don't hammer them. The 5-day cron cadence keeps total volume

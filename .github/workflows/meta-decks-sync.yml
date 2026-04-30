@@ -21,9 +21,9 @@ on:
         required: false
         default: 'standard,modern,pioneer'
       top_n:
-        description: 'Override top-N per format (default 4)'
+        description: 'Override top-N per format (default 6)'
         required: false
-        default: '4'
+        default: '6'
 
 concurrency:
   group: meta-decks-sync
@@ -55,5 +55,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           META_FORMATS: ${{ github.event.inputs.formats || 'standard,modern,pioneer' }}
-          META_TOP_N: ${{ github.event.inputs.top_n || '4' }}
+          META_TOP_N: ${{ github.event.inputs.top_n || '6' }}
         run: npm start
