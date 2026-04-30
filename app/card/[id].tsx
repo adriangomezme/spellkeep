@@ -1748,11 +1748,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   printCard: {
-    width: 121,
+    width: 132,
   },
   printImageWrap: {
-    width: 121,
-    height: 169,
+    width: 132,
+    height: 184,
     borderRadius: borderRadius.sm,
     overflow: 'hidden',
     backgroundColor: colors.surfaceSecondary,

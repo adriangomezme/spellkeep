@@ -274,9 +274,7 @@ function Section({
   action,
   variant,
   fullBleed,
-  flush,
   compactTitle,
-  titleAtBottom,
   children,
 }: {
   title: string;
@@ -287,18 +285,11 @@ function Section({
    *  to 0. Inner header/content padding shifts to `lg` so text aligns
    *  with the rest of the screen edge. */
   fullBleed?: boolean;
-  /** Drops the bottom margin so the section sits flush against the
-   *  next one — used to chain related editorial bands together. */
-  flush?: boolean;
   /** Smaller section title (md vs default xl). For sections that
    *  are visually anchored by their content (Recent searches preview
    *  cards, Recently viewed thumbnails) and don't need a heavyweight
    *  title competing with the carousel underneath. */
   compactTitle?: boolean;
-  /** Render the title row UNDER the children instead of above. Lets
-   *  the visual content lead and the title act as a caption — better
-   *  for galleries where the cards themselves are the message. */
-  titleAtBottom?: boolean;
   children: React.ReactNode;
 }) {
   const baseStyle =
@@ -307,50 +298,38 @@ function Section({
       : variant === 'tinted'
         ? styles.sectionCardTinted
         : styles.sectionCardGray;
-  const fullBleedStyle = fullBleed ? styles.sectionCardFullBleed : null;
-  const headerNode = (
-    <View
-      style={[
-        styles.sectionHeader,
-        fullBleed && styles.sectionHeaderFullBleed,
-        titleAtBottom && styles.sectionHeaderBottom,
-      ]}
-    >
-      <View style={{ flex: 1 }}>
-        <Text
-          style={[
-            styles.sectionTitle,
-            compactTitle && styles.sectionTitleCompact,
-          ]}
-        >
-          {title}
-        </Text>
-        {subtitle && (
-          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
-        )}
-      </View>
-      {action && (
-        <TouchableOpacity
-          onPress={action.onPress}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.sectionAction}>{action.label}</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
   return (
     <View
       style={[
         styles.section,
         baseStyle,
-        fullBleedStyle,
-        flush && styles.sectionFlush,
+        fullBleed && styles.sectionCardFullBleed,
       ]}
     >
-      {!titleAtBottom && headerNode}
+      <View style={[styles.sectionHeader, fullBleed && styles.sectionHeaderFullBleed]}>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              compactTitle && styles.sectionTitleCompact,
+            ]}
+          >
+            {title}
+          </Text>
+          {subtitle && (
+            <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+          )}
+        </View>
+        {action && (
+          <TouchableOpacity
+            onPress={action.onPress}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.sectionAction}>{action.label}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {children}
-      {titleAtBottom && headerNode}
     </View>
   );
 }
@@ -466,15 +445,15 @@ function WeeklyBucketSection({
   );
 }
 
-// Standard discovery card — used by Recently viewed only. Bumped
-// 20% from the original 96 px to 115 px for better visibility.
-const DISCOVER_CARD_WIDTH = Math.round(96 * 1.2);
+// Standard discovery card — used by Recently viewed. Each bump
+// builds on the last: 96 px base × 1.2 × 1.15 = 132 px.
+const DISCOVER_CARD_WIDTH = Math.round(96 * 1.2 * 1.15);
 // Editorial card — used by This Week's pick, Newly printed, Top
-// Commanders, and the Standard / Modern Meta sections. The Search
-// hub centers all the curated discovery on a single, larger card
-// size so the hierarchy reads "Recently viewed = quick gallery,
-// everything else = editorial".
-const WEEKLY_CARD_WIDTH = Math.round(96 * 1.38 * 1.15);
+// Commanders, and the Standard / Modern Meta sections. Same 1.15×
+// bump applied on top of the previous editorial size so the
+// hierarchy ratio (editorial ≈ 1.32× discover) stays intact:
+// 96 × 1.38 × 1.15 × 1.15 = 175 px.
+const WEEKLY_CARD_WIDTH = Math.round(96 * 1.38 * 1.15 * 1.15);
 
 // ──────────────────────────────────────────────────────────────────────
 // Meta decks — DUMMY scaffolding. The deck rosters below are
@@ -552,13 +531,13 @@ function MetaDeckSection({
                 onPress={() => setActiveId(deck.id)}
                 activeOpacity={0.6}
               >
-                <View style={styles.metaTabGems}>
+                <View style={styles.metaSegmentGems}>
                   {deck.colors.map((c, i) => {
                     const gem = MANA_GEMS[c];
                     return (
                       <View
                         key={i}
-                        style={[styles.metaGem, { backgroundColor: gem.bg }]}
+                        style={[styles.metaSegmentGem, { backgroundColor: gem.bg }]}
                       >
                         <MTGGlyph
                           kind="mana"
@@ -615,15 +594,10 @@ function TopCommandersSection({
   const [activeId, setActiveId] = useState<CommanderWindow>('week');
   const { cards } = useTopCommanders(activeId, 30);
 
-  // Hide the section entirely when no window has data yet (fresh
-  // install before the first PowerSync stream + the worker has run).
-  // Once any window populates, the carousel shows whatever it has and
-  // an empty active window degrades to a thin band — acceptable.
-  if (cards.length === 0 && activeId === 'week') {
-    // Avoid flashing a hollow section on first paint. Render the
-    // chrome anyway so the user can flip windows; the carousel is
-    // empty until cards arrive.
-  }
+  // The section always renders its chrome — an empty carousel on
+  // first paint (fresh install, before PowerSync delivers the
+  // bucket) is acceptable; the user can flip windows and the
+  // carousel populates as soon as data lands.
 
   return (
     <View style={styles.metaSection}>
@@ -793,9 +767,6 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.lg + spacing.xs,
   },
-  sectionFlush: {
-    marginBottom: 0,
-  },
   sectionCardWhite: {
     backgroundColor: colors.surface,
     marginHorizontal: spacing.lg,
@@ -843,10 +814,6 @@ const styles = StyleSheet.create({
   sectionHeaderFullBleed: {
     paddingHorizontal: spacing.lg,
   },
-  sectionHeaderBottom: {
-    marginBottom: 0,
-    marginTop: spacing.md,
-  },
   sectionTitle: {
     color: colors.text,
     fontSize: fontSize.xl,
@@ -874,10 +841,6 @@ const styles = StyleSheet.create({
   /* Recent searches preview row. */
   row: {
     paddingHorizontal: spacing.md,
-    gap: spacing.md,
-  },
-  rowFullBleed: {
-    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
 
@@ -1118,12 +1081,12 @@ const styles = StyleSheet.create({
     color: '#3A3A3A',
     fontWeight: '700',
   },
-  metaTabGems: {
+  metaSegmentGems: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   },
-  metaGem: {
+  metaSegmentGem: {
     width: 16,
     height: 16,
     borderRadius: 8,

@@ -105,7 +105,20 @@
       "Bash(npm --prefix workers/catalog-sync run typecheck)",
       "Bash(gh workflow *)",
       "Bash(gh run *)",
-      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
+      "Bash(xargs ls *)",
+      "WebFetch(domain:scryfall.com)",
+      "mcp__supabase__get_edge_function",
+      "Bash(command -v gh)",
+      "Bash(gh auth *)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(npm --prefix /Users/adriangomez/Desktop/DEV/SpellKeep/workers/commander-sync install)",
+      "Bash(npm --prefix /Users/adriangomez/Desktop/DEV/SpellKeep/workers/commander-sync run typecheck)",
+      "Bash(grep -nE \"flush\\\\s*$|flush=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
+      "Bash(grep -nE \"compactTitle\\\\s*$|compactTitle=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
+      "Bash(grep -nE \"titleAtBottom\\\\s*$|titleAtBottom=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
+      "Bash(grep -nE \"fullBleed\\\\s*$|fullBleed=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)"
     ]
   },
   "enableAllProjectMcpServers": true,

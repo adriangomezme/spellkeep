@@ -14,14 +14,12 @@ export type RawEdhrecCommander = {
    *  the page hero, so reusing it keeps our carousel art consistent
    *  with EDHREC's own display. */
   id: string;
-  /** EDHREC's display name. May be a partner pair joined by " // ". */
+  /** EDHREC's display name. Logged as a hint when an id fails to
+   *  resolve in the catalog. */
   name: string;
-  /** URL slug — e.g. "atraxa-praetors-voice". */
+  /** URL slug — e.g. "atraxa-praetors-voice". Persisted as
+   *  `edhrec_slug` for back-reference. */
   sanitized?: string;
-  /** Image URL (Scryfall mirror) — we don't use it; the catalog wins. */
-  image?: string;
-  num_decks?: number;
-  potential_decks?: number;
 };
 
 // EDHREC's data backend lives on the `json.edhrec.com` host — appending
@@ -88,10 +86,6 @@ function extractCardviews(body: unknown): RawEdhrecCommander[] {
         id,
         name,
         sanitized: typeof obj.sanitized === 'string' ? obj.sanitized : undefined,
-        image: typeof obj.image === 'string' ? obj.image : undefined,
-        num_decks: typeof obj.num_decks === 'number' ? obj.num_decks : undefined,
-        potential_decks:
-          typeof obj.potential_decks === 'number' ? obj.potential_decks : undefined,
       });
     }
   }
