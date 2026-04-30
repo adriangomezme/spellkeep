@@ -485,8 +485,21 @@ export default function CardDetailScreen() {
             {card.type_line ?? card.card_faces?.[0]?.type_line}
           </Text>
 
-          {/* Set: text + icon line */}
-          <View style={styles.setRow}>
+          {/* Set: icon + name + code, silently tappable as a whole.
+              Tap navigates to the set detail. No color change so the
+              row reads as descriptive metadata, not a link. */}
+          <TouchableOpacity
+            style={styles.setRow}
+            activeOpacity={0.7}
+            onPress={() =>
+              card.set
+                ? router.push({
+                    pathname: '/search/set/[code]',
+                    params: { code: card.set.toLowerCase() },
+                  })
+                : undefined
+            }
+          >
             {setIconUri && (
               <Image
                 source={{ uri: setIconUri }}
@@ -499,7 +512,7 @@ export default function CardDetailScreen() {
               {card.set_name}
             </Text>
             <Text style={styles.setCode}>· {(card.set ?? '').toUpperCase()}</Text>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.metaRow}>
             <MetaPill label={`#${card.collector_number}`} />

@@ -484,7 +484,11 @@ export default function SetDetailScreen() {
             </View>
           </View>
 
-          {/* Stats row — rarity counts + total market value */}
+          {/* Stats row — rarity chips on the left, "Set Value" stack
+              on the right. Set Value reuses the Top Card label/value
+              typography from the collection hub: small uppercase
+              kicker label sitting above the dollar amount in body
+              weight, no pill — keeps the header light. */}
           <View style={styles.statsRow}>
             {RARITY_META.map((r) => {
               const count = stats.rarityCounts[r.key] ?? 0;
@@ -498,9 +502,9 @@ export default function SetDetailScreen() {
             })}
             <View style={{ flex: 1 }} />
             {stats.value > 0 && (
-              <View style={styles.valueChip}>
-                <Ionicons name="cash-outline" size={12} color={colors.primary} />
-                <Text style={styles.valueLabel}>
+              <View style={styles.setValueBlock}>
+                <Text style={styles.setValueLabel}>Set Value</Text>
+                <Text style={styles.setValueAmount}>
                   {formatUSD(stats.value.toFixed(2))}
                 </Text>
               </View>
@@ -748,19 +752,27 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '700',
   },
-  valueChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: colors.primaryLight,
+  /* Set Value stack — mirrors the Top Card cell used in the
+     collection hub's MarketHeaderCompact: a small uppercase
+     letterspaced label sitting above the body-weight dollar amount,
+     right-aligned so the rarity chips on the left and the value
+     stack on the right anchor the row. */
+  setValueBlock: {
+    alignItems: 'flex-end',
   },
-  valueLabel: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
+  setValueLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  setValueAmount: {
+    color: colors.text,
+    fontSize: fontSize.md,
     fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: -0.2,
   },
   /* Toolbar */
   toolbarClip: {
