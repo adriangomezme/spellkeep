@@ -688,7 +688,10 @@ const styles = StyleSheet.create({
   },
   headerInner: {
     paddingHorizontal: spacing.md + 2,
-    paddingBottom: spacing.sm,
+    // Tight gutter between the rarity / Set Value row and the
+    // toolbar below — the toolbar adds its own paddingTop so the
+    // visual gap is the sum of both.
+    paddingBottom: spacing.xs - 1,
   },
   chromeRow: {
     flexDirection: 'row',
@@ -784,7 +787,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm + 2,
+    // Tight top gutter — pairs with headerInner.paddingBottom so the
+    // toolbar sits ~half the previous distance from the stats row.
+    paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
