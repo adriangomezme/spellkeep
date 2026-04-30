@@ -15,7 +15,7 @@ import type { RecentCard } from '../../lib/hooks/useRecentlyViewedCards';
 import type { RecentSearch } from '../../lib/hooks/useRecentSearches';
 import type { ScryfallCard } from '../../lib/scryfall';
 import { getCardImageUri } from '../../lib/scryfall';
-import type { AiSuggestionChip } from '../../lib/search/aiSuggestionChips';
+import type { QuickSearchChip } from '../../lib/search/quickSearchChips';
 import type { DiscoveryBucket } from '../../lib/hooks/useWeeklyBucket';
 import {
   useTopCommanders,
@@ -45,13 +45,13 @@ type Props = {
   weeklyBucket: DiscoveryBucket | null;
   weeklyBucketCards: ScryfallCard[];
   weeklyBucketLoading: boolean;
-  aiChips: AiSuggestionChip[];
+  quickChips: QuickSearchChip[];
   onTapSearch: (rs: RecentSearch) => void;
   onRemoveSearch: (query: string) => void;
   onClearSearches: () => void;
   onTapCard: (card: RecentCard) => void;
   onTapDiscoverCard: (card: ScryfallCard) => void;
-  onTapAiChip: (chip: AiSuggestionChip) => void;
+  onTapQuickChip: (chip: QuickSearchChip) => void;
   /** Stage the weekly bucket's Scryfall query into the search input
    *  so the user can browse the full result set, not just the
    *  preview row. */
@@ -79,13 +79,13 @@ function SearchEmptyStateInner({
   weeklyBucket,
   weeklyBucketCards,
   weeklyBucketLoading,
-  aiChips,
+  quickChips,
   onTapSearch,
   onRemoveSearch,
   onClearSearches,
   onTapCard,
   onTapDiscoverCard,
-  onTapAiChip,
+  onTapQuickChip,
   onTapWeeklyBucketSeeAll,
   onOpenAi,
   onTapAiExample,
@@ -102,11 +102,11 @@ function SearchEmptyStateInner({
   const hasViewed = recentlyViewed.length > 0;
   const hasNewlyPrinted = newlyPrintedCards.length > 0;
   const hasBucket = !!weeklyBucket && weeklyBucketCards.length > 0;
-  const hasAi = aiChips.length > 0;
+  const hasChips = quickChips.length > 0;
 
   // Brand-new install with no catalog data and no history yet — keep
   // the original placeholder so the screen isn't a blank slate.
-  if (!hasRecents && !hasViewed && !hasNewlyPrinted && !hasBucket && !hasAi) {
+  if (!hasRecents && !hasViewed && !hasNewlyPrinted && !hasBucket && !hasChips) {
     return (
       <View style={styles.empty}>
         <View style={styles.emptyIcon}>
@@ -125,22 +125,22 @@ function SearchEmptyStateInner({
       showsVerticalScrollIndicator={false}
     >
       {/* 1. Pre-cooked query pills — no title/subtitle, the row leads. */}
-      {hasAi && (
+      {hasChips && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.pillsRow}
           style={styles.pillsBlock}
         >
-          {aiChips.map((chip) => (
+          {quickChips.map((chip) => (
             <TouchableOpacity
               key={chip.id}
-              style={styles.aiChip}
-              onPress={() => onTapAiChip(chip)}
+              style={styles.quickChip}
+              onPress={() => onTapQuickChip(chip)}
               activeOpacity={0.6}
             >
               <Ionicons name={chip.icon} size={14} color={colors.accent} />
-              <Text style={styles.aiChipLabel}>{chip.label}</Text>
+              <Text style={styles.quickChipLabel}>{chip.label}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -353,7 +353,7 @@ function Section({
 }
 
 // Plain-English example prompts shown in the AI Search promotional
-// banner. Static (not from `aiSuggestionChips` which are pre-cooked
+// banner. Static (not from `quickSearchChips` which are pre-cooked
 // Scryfall syntax) so the banner illustrates the *value* of natural
 // language: "type how you'd describe the cards out loud".
 const AI_AD_EXAMPLES = [
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
   },
-  aiChip: {
+  quickChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs + 2,
@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  aiChipLabel: {
+  quickChipLabel: {
     color: colors.text,
     fontSize: fontSize.sm,
     fontWeight: '600',

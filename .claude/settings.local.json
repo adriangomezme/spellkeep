@@ -118,7 +118,9 @@
       "Bash(grep -nE \"flush\\\\s*$|flush=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
       "Bash(grep -nE \"compactTitle\\\\s*$|compactTitle=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
       "Bash(grep -nE \"titleAtBottom\\\\s*$|titleAtBottom=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
-      "Bash(grep -nE \"fullBleed\\\\s*$|fullBleed=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)"
+      "Bash(grep -nE \"fullBleed\\\\s*$|fullBleed=\" /Users/adriangomez/Desktop/DEV/SpellKeep/src/components/search/SearchEmptyState.tsx)",
+      "Bash(npx tsx *)",
+      "Bash(echo \"EXIT $?\")"
     ]
   },
   "enableAllProjectMcpServers": true,

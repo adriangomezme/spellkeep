@@ -2,13 +2,12 @@ import type { Ionicons } from '@expo/vector-icons';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-export type AiSuggestionChip = {
+export type QuickSearchChip = {
   id: string;
   label: string;
-  /** Scryfall query the chip executes today. Phase 6 (AI search) will
-   *  swap the action to a free-form prompt that the model translates
-   *  into filters, but the chips themselves stay as the same
-   *  discoverable, pre-cooked entry points. */
+  /** Scryfall query the chip stages into the search input on tap.
+   *  These are hand-curated shortcuts, NOT AI-generated — actual AI
+   *  search lives in the AiSearchSheet next to this row. */
   query: string;
   icon: IoniconName;
   /** Override for the search's uniqueMode at tap time. Mechanic chips
@@ -20,7 +19,7 @@ export type AiSuggestionChip = {
   unique?: 'cards' | 'art';
 };
 
-export const AI_SUGGESTION_CHIPS: AiSuggestionChip[] = [
+export const QUICK_SEARCH_CHIPS: QuickSearchChip[] = [
   // Manabase first — most-searched category for any deckbuilder.
   // No unique override: collectors browsing lands want to see every
   // printing's art and price.

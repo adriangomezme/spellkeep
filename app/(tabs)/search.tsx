@@ -35,7 +35,7 @@ import {
 import { useRecentlyViewedCards, type RecentCard } from '../../src/lib/hooks/useRecentlyViewedCards';
 import { useNewlyPrintedCards } from '../../src/lib/hooks/useNewlyPrintedCards';
 import { useWeeklyBucket, type DiscoveryBucket } from '../../src/lib/hooks/useWeeklyBucket';
-import { AI_SUGGESTION_CHIPS, type AiSuggestionChip } from '../../src/lib/search/aiSuggestionChips';
+import { QUICK_SEARCH_CHIPS, type QuickSearchChip } from '../../src/lib/search/quickSearchChips';
 import { useSearchFilters } from '../../src/lib/hooks/useSearchFilters';
 import type { SearchFilterState } from '../../src/lib/search/searchFilters';
 import { buildSearchQueryFragment } from '../../src/lib/search/buildSearchQuery';
@@ -206,8 +206,8 @@ export default function SearchScreen() {
     [router]
   );
 
-  const tapAiChip = useCallback(
-    (chip: AiSuggestionChip) => {
+  const tapQuickChip = useCallback(
+    (chip: QuickSearchChip) => {
       // Today the chip's `query` is a hand-written Scryfall syntax
       // string. When AI search ships in Phase 6 we'll route this
       // through the model — UI stays the same.
@@ -508,13 +508,13 @@ export default function SearchScreen() {
             weeklyBucket={weekly.bucket}
             weeklyBucketCards={weekly.cards}
             weeklyBucketLoading={weekly.loading}
-            aiChips={AI_SUGGESTION_CHIPS}
+            quickChips={QUICK_SEARCH_CHIPS}
             onTapSearch={tapRecentSearch}
             onRemoveSearch={removeRecentSearch}
             onClearSearches={clearRecentSearches}
             onTapCard={goToRecentCard}
             onTapDiscoverCard={goToCard}
-            onTapAiChip={tapAiChip}
+            onTapQuickChip={tapQuickChip}
             onTapWeeklyBucketSeeAll={tapWeeklyBucketSeeAll}
             onOpenAi={() => {
               setAiInitialPrompt(undefined);
