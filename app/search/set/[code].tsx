@@ -54,7 +54,7 @@ import {
 } from '../../../src/lib/scryfall';
 import { useLocalSets } from '../../../src/lib/hooks/useLocalSets';
 import { useSetCards } from '../../../src/lib/hooks/useSetCards';
-import { useSearchViewPrefs } from '../../../src/lib/hooks/useSearchViewPrefs';
+import { useSetViewPrefs } from '../../../src/lib/hooks/useSetViewPrefs';
 import { useCollectionViewPrefs } from '../../../src/lib/hooks/useCollectionViewPrefs';
 import { groupSetCardsBy } from '../../../src/lib/search/setGrouping';
 import type { GroupBy } from '../../../src/lib/hooks/useGroupByPref';
@@ -123,7 +123,7 @@ export default function SetDetailScreen() {
   const { cards, isReady } = useSetCards(code);
 
   const { viewMode, sortBy, sortAsc, setViewMode, setSortBy, setSortAsc } =
-    useSearchViewPrefs();
+    useSetViewPrefs();
   const { cardsPerRow, toolbarSize } = useCollectionViewPrefs();
   const m = toolbarMetricsFor(toolbarSize);
   const toolbarHeight = toolbarHeightFor(toolbarSize);
@@ -458,7 +458,12 @@ export default function SetDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Set identity row — icon + name + meta */}
+          {/* Set identity row — icon + name + meta on the left, the
+              "Set Value" stack docked to the right. Putting the
+              dollar value here (rather than below the rarity chips)
+              raises it next to the title where the eye lands first
+              and matches the Top Card cell's vertical alignment in
+              the collection hub. */}
           <View style={styles.identityRow}>
             <View style={styles.setIconWrap}>
               {setMeta?.icon_svg_uri ? (
@@ -482,13 +487,17 @@ export default function SetDetailScreen() {
                 {cards.length > 0 ? ` · ${cards.length} cards` : ''}
               </Text>
             </View>
+            {stats.value > 0 && (
+              <View style={styles.setValueBlock}>
+                <Text style={styles.setValueLabel}>Set Value</Text>
+                <Text style={styles.setValueAmount}>
+                  {formatUSD(stats.value.toFixed(2))}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Stats row — rarity chips on the left, "Set Value" stack
-              on the right. Set Value reuses the Top Card label/value
-              typography from the collection hub: small uppercase
-              kicker label sitting above the dollar amount in body
-              weight, no pill — keeps the header light. */}
+          {/* Rarity counts row */}
           <View style={styles.statsRow}>
             {RARITY_META.map((r) => {
               const count = stats.rarityCounts[r.key] ?? 0;
@@ -500,15 +509,6 @@ export default function SetDetailScreen() {
                 </View>
               );
             })}
-            <View style={{ flex: 1 }} />
-            {stats.value > 0 && (
-              <View style={styles.setValueBlock}>
-                <Text style={styles.setValueLabel}>Set Value</Text>
-                <Text style={styles.setValueAmount}>
-                  {formatUSD(stats.value.toFixed(2))}
-                </Text>
-              </View>
-            )}
           </View>
         </View>
 
