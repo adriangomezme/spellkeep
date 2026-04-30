@@ -211,12 +211,21 @@ export default function SearchScreen() {
       // Today the chip's `query` is a hand-written Scryfall syntax
       // string. When AI search ships in Phase 6 we'll route this
       // through the model — UI stays the same.
+      //
+      // Mechanic chips (counterspells, removal, ramp, tutors, …)
+      // declare `unique: 'cards'` so the result list dedupes by
+      // oracle_id and reads as N distinct cards. Land / commander
+      // chips leave it alone so the previous selection persists and
+      // collectors can still browse every printing.
+      if (chip.unique) {
+        setFilters({ ...filters, uniqueMode: chip.unique });
+      }
       setQuery(chip.query);
       submit(chip.query);
       void addRecentSearch(chip.query);
       inputRef.current?.blur();
     },
-    [setQuery, submit]
+    [filters, setFilters, setQuery, submit]
   );
 
   const tapSeeAllNewlyPrinted = useCallback(() => {
