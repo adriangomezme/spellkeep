@@ -196,6 +196,14 @@ const SetRow = memo(function SetRow({
       activeOpacity={0.6}
     >
       <View style={{ width: indent }} />
+      {isChild && (
+        <Ionicons
+          name="return-down-forward-outline"
+          size={12}
+          color={colors.textMuted}
+          style={styles.hierarchyArrow}
+        />
+      )}
       <View style={[styles.iconWrap, isChild && styles.iconWrapChild]}>
         {set.icon_svg_uri ? (
           <Image
@@ -295,14 +303,21 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,
   },
-  /* Icon circle — tinted primaryLight bg + primary glyph. Same
-     pattern used by FolderListItem / Hub iconCircles so the Sets
-     browser feels like a sibling surface. */
+  /* Hierarchy arrow on child rows — tight 4px gap to its icon
+     circle so the inden + arrow + icon trio reads as one unit
+     instead of three separate elements floating apart. */
+  hierarchyArrow: {
+    marginRight: 4,
+  },
+  /* Icon circle — neutral whisper-gray bg with the set's black SVG
+     glyph. The earlier primaryLight (lavender-navy) bg fought with
+     black logos; surfaceSecondary keeps the chip readable while
+     still giving each icon a circular frame for consistency. */
   iconWrap: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
   },
