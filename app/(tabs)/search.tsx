@@ -498,6 +498,7 @@ export default function SearchScreen() {
             newlyPrintedCards={newlyPrinted.cards}
             weeklyBucket={weekly.bucket}
             weeklyBucketCards={weekly.cards}
+            weeklyBucketLoading={weekly.loading}
             aiChips={AI_SUGGESTION_CHIPS}
             onTapSearch={tapRecentSearch}
             onRemoveSearch={removeRecentSearch}

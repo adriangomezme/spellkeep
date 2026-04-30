@@ -26,6 +26,7 @@ import {
   type MetaFormat,
   type MetaDeck,
 } from '../../lib/hooks/useMetaDecks';
+import { LoadingCardRow } from './LoadingCardRow';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../../constants';
 
 type Props = {
@@ -37,9 +38,13 @@ type Props = {
   newlyPrintedCards: ScryfallCard[];
   /** This week's themed bucket loaded from Supabase, plus its cards
    *  (Layer 4). When the bucket fetch fails or returns zero hits the
-   *  whole section is hidden — discovery is additive, not load-bearing. */
+   *  whole section is hidden — discovery is additive, not load-bearing.
+   *  `loading` lets us swap the section for a skeleton on the very
+   *  first paint instead of flashing nothing while the Supabase
+   *  fetch is in flight. */
   weeklyBucket: DiscoveryBucket | null;
   weeklyBucketCards: ScryfallCard[];
+  weeklyBucketLoading: boolean;
   aiChips: AiSuggestionChip[];
   onTapSearch: (rs: RecentSearch) => void;
   onRemoveSearch: (query: string) => void;
@@ -73,6 +78,7 @@ function SearchEmptyStateInner({
   newlyPrintedCards,
   weeklyBucket,
   weeklyBucketCards,
+  weeklyBucketLoading,
   aiChips,
   onTapSearch,
   onRemoveSearch,
@@ -199,15 +205,36 @@ function SearchEmptyStateInner({
         </Section>
       )}
 
-      {/* 4. This Week's pick — full-bleed editorial accent. */}
-      {hasBucket && weeklyBucket && (
+      {/* 4. This Week's pick — full-bleed editorial accent. While the
+            Supabase fetch is in flight we render a skeleton in the
+            same full-bleed shell so the section's footprint is
+            stable from first paint. */}
+      {hasBucket && weeklyBucket ? (
         <WeeklyBucketSection
           bucket={weeklyBucket}
           cards={weeklyBucketCards}
           onPressCard={onTapDiscoverCard}
           onPressSeeAll={() => onTapWeeklyBucketSeeAll(weeklyBucket)}
         />
-      )}
+      ) : weeklyBucketLoading ? (
+        <View style={styles.bucketSection}>
+          <View style={styles.bucketHeader}>
+            <View style={styles.bucketIcon}>
+              <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.bucketKicker}>This week&rsquo;s pick</Text>
+              <View style={styles.bucketTitleSkeleton} />
+              <View style={styles.bucketSubtitleSkeleton} />
+            </View>
+          </View>
+          <LoadingCardRow
+            count={6}
+            cardWidth={WEEKLY_CARD_WIDTH}
+            showHeader={false}
+          />
+        </View>
+      ) : null}
 
       {/* AI Search promotional banner — premium navy surface that
           motivates first-time use by showing what natural-language
@@ -240,9 +267,10 @@ function SearchEmptyStateInner({
       <TopCommandersSection onPressCard={onTapDiscoverCard} />
 
       {/* 7-9. Meta sections — sourced from MTGGoldfish via the
-            meta-decks worker, top 4 archetypes per format. Each
-            section hides itself when the worker has not populated
-            the format yet (additive, not load-bearing). */}
+            meta-decks worker, top archetypes per format (the worker
+            currently keeps top-6). Each section hides itself when
+            the worker has not populated the format yet (additive,
+            not load-bearing). */}
       <MetaSection format="standard" onPressCard={onTapDiscoverCard} />
       <MetaSection format="modern" onPressCard={onTapDiscoverCard} />
       <MetaSection format="pioneer" onPressCard={onTapDiscoverCard} />
@@ -466,8 +494,25 @@ function MetaSection({
   format: MetaFormat;
   onPressCard: (card: ScryfallCard) => void;
 }) {
-  const { decks } = useMetaDecks(format);
-  if (decks.length === 0) return null;
+  const { decks, isLoading } = useMetaDecks(format);
+  if (decks.length === 0) {
+    if (!isLoading) return null;
+    return (
+      <View style={styles.metaSection}>
+        <View style={styles.metaHeader}>
+          <Text style={styles.metaSectionTitle}>{FORMAT_LABELS[format]} Meta</Text>
+          <Text style={styles.metaSectionSubtitle}>
+            Top archetypes from the live tournament metagame.
+          </Text>
+        </View>
+        <LoadingCardRow
+          count={6}
+          cardWidth={WEEKLY_CARD_WIDTH}
+          showHeader={false}
+        />
+      </View>
+    );
+  }
   return (
     <MetaDeckSection
       formatLabel={FORMAT_LABELS[format]}
@@ -521,9 +566,8 @@ function MetaDeckSection({
       <View style={styles.metaHeader}>
         <Text style={styles.metaSectionTitle}>{formatLabel} Meta</Text>
         <Text style={styles.metaSectionSubtitle}>
-          Top archetypes scraped from the live tournament metagame.
+          Top archetypes from the live tournament metagame.
         </Text>
-        <Text style={styles.metaAttribution}>Data from MTGGoldfish</Text>
       </View>
 
       <View style={styles.metaSegmentTrack}>
@@ -1152,5 +1196,19 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSize.sm,
     fontWeight: '700',
+  },
+  bucketTitleSkeleton: {
+    height: fontSize.xl,
+    width: 200,
+    borderRadius: 6,
+    backgroundColor: 'rgba(10, 35, 133, 0.12)',
+    marginTop: 2,
+  },
+  bucketSubtitleSkeleton: {
+    height: 10,
+    width: 240,
+    borderRadius: 5,
+    backgroundColor: 'rgba(10, 35, 133, 0.08)',
+    marginTop: 4,
   },
 });

@@ -51,22 +51,17 @@ type CardRow = {
   position: number;
 };
 
-const CATEGORY_RANK: Record<string, number> = {
-  creatures: 0,
-  planeswalkers: 1,
-  spells: 2,
-  artifacts: 3,
-  enchantments: 4,
-  battles: 5,
-  lands: 6,
-  sideboard: 99,
-};
+// Carousel ordering applied at the SQL layer below — Creatures →
+// Spells → Enchantments → Lands. Planeswalkers ride with creatures
+// (both are big-body permanents); artifacts / battles ride with
+// spells (non-permanent or permanent-but-not-creature-or-enchantment).
+// Sideboard never reaches the query because of `board = 'main'`.
 
 export function useMetaDecks(format: MetaFormat): {
   decks: MetaDeck[];
   isLoading: boolean;
 } {
-  const { data: deckRows } = useQuery<DeckRow>(
+  const { data: deckRows, isLoading: deckLoading } = useQuery<DeckRow>(
     `SELECT id, slug, name, colors, meta_share
        FROM meta_decks
       WHERE format = ?
@@ -74,30 +69,34 @@ export function useMetaDecks(format: MetaFormat): {
     [format]
   );
 
-  const { data: cardRows } = useQuery<CardRow>(
+  const { data: cardRows, isLoading: cardLoading } = useQuery<CardRow>(
     `SELECT deck_id, scryfall_id, category, position
        FROM meta_deck_cards
-      WHERE format = ? AND board = 'main'`,
+      WHERE format = ? AND board = 'main'
+      ORDER BY
+        CASE category
+          WHEN 'creatures'     THEN 0
+          WHEN 'planeswalkers' THEN 0
+          WHEN 'spells'        THEN 1
+          WHEN 'artifacts'     THEN 1
+          WHEN 'battles'       THEN 1
+          WHEN 'enchantments'  THEN 2
+          WHEN 'lands'         THEN 3
+          ELSE 50
+        END ASC,
+        position ASC`,
     [format]
   );
 
-  // Group card rows by deck for quick lookup. Sort by category rank
-  // first (visual cards lead) then by source position (stable order
-  // within the same category).
+  // Group card rows by deck. The SQL ORDER BY already returns rows in
+  // (category-rank, position) order, so insertion preserves the
+  // intended carousel ordering — no client-side sort needed.
   const cardsByDeck = useMemo(() => {
     const map = new Map<string, CardRow[]>();
     for (const row of cardRows ?? []) {
       const arr = map.get(row.deck_id) ?? [];
       arr.push(row);
       map.set(row.deck_id, arr);
-    }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => {
-        const ca = CATEGORY_RANK[a.category] ?? 50;
-        const cb = CATEGORY_RANK[b.category] ?? 50;
-        if (ca !== cb) return ca - cb;
-        return a.position - b.position;
-      });
     }
     return map;
   }, [cardRows]);
@@ -114,19 +113,19 @@ export function useMetaDecks(format: MetaFormat): {
   const [resolvedMap, setResolvedMap] = useState<Map<string, ScryfallCard>>(
     () => new Map()
   );
-  const [isLoading, setIsLoading] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
     if (allIds.length === 0) {
       setResolvedMap(new Map());
-      setIsLoading(false);
+      setIsResolving(false);
       return () => {
         mountedRef.current = false;
       };
     }
-    setIsLoading(true);
+    setIsResolving(true);
     batchResolveByScryfallId(allIds)
       .then((map) => {
         if (mountedRef.current) setResolvedMap(map);
@@ -135,7 +134,7 @@ export function useMetaDecks(format: MetaFormat): {
         if (mountedRef.current) setResolvedMap(new Map());
       })
       .finally(() => {
-        if (mountedRef.current) setIsLoading(false);
+        if (mountedRef.current) setIsResolving(false);
       });
     return () => {
       mountedRef.current = false;
@@ -166,6 +165,18 @@ export function useMetaDecks(format: MetaFormat): {
       };
     });
   }, [deckRows, cardsByDeck, resolvedMap]);
+
+  // Loading is true while either PowerSync query is doing its first
+  // sync, OR the catalog batch-resolve is still in flight, OR we have
+  // deck rows but the resolver hasn't produced cards for them yet.
+  // After the initial sync settles with no rows, isLoading is false
+  // and decks is empty — that's the "section never had data" state.
+  const idsResolved = idsKey.length === 0 || resolvedMap.size > 0;
+  const isLoading =
+    deckLoading ||
+    cardLoading ||
+    isResolving ||
+    ((deckRows?.length ?? 0) > 0 && !idsResolved);
 
   return { decks, isLoading };
 }
