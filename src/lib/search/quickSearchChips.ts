@@ -68,15 +68,17 @@ export const QUICK_SEARCH_CHIPS: QuickSearchChip[] = [
     unique: 'cards',
   },
   // Tutors — explicit "non-land tutor" filter. Land-fetching ramp
-  // (Cultivate, Rampant Growth, Crop Rotation) lives under Mana Ramp
-  // already, so we strip them here with `-o:"land card"` and
-  // `-o:"basic land"`. This still surfaces Demonic / Vampiric /
-  // Mystical / Worldly / Imperial Seal-style "search your library
-  // for a card" tutors.
+  // (Cultivate, Rampant Growth, Crop Rotation, Three Visits,
+  // Nature's Lore) lives under Mana Ramp already, so we strip them
+  // here with `-o:"land card"`, `-o:"basic land"` and `-o:"Forest"`.
+  // The Forest negation catches the green ramp pattern where the
+  // tutor names the basic-land subtype directly (Three Visits =
+  // "search your library for a Forest card").
   {
     id: 'tutors',
     label: 'Tutors',
-    query: 'o:"search your library for" -t:land -o:"land card" -o:"basic land" cmc<=3 lang:en',
+    query:
+      'o:"search your library for" -t:land -o:"land card" -o:"basic land" -o:"Forest" cmc<=3 lang:en',
     icon: 'search-outline',
     unique: 'cards',
   },
