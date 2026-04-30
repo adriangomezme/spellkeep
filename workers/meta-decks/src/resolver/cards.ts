@@ -102,7 +102,11 @@ export async function resolveDeck(
   }
 
   // ── 3. (set, name) — collect everything still unclaimed including
-  //     CN lines whose collector number didn't resolve.
+  //     UUID lines whose id wasn't in the catalog (MTGGoldfish often
+  //     points at a special-treatment print that the daily snapshot
+  //     hasn't ingested) and CN lines whose collector number missed.
+  //     The same card almost always exists in the same set under a
+  //     different print; the name+set fallback gets us back to it.
   const nameBySet = new Map<string, Array<{ index: number; name: string }>>();
   const collectFallback = (index: number, line: ParsedLine) => {
     if (claimed.has(index)) return;
@@ -110,6 +114,7 @@ export async function resolveDeck(
     arr.push({ index, name: line.name });
     nameBySet.set(line.set, arr);
   };
+  uuidLines.forEach(({ index, line }) => collectFallback(index, line));
   cnLines.forEach(({ index, line }) => collectFallback(index, line));
   nameOnlyLines.forEach(({ index, line }) => collectFallback(index, line));
 
