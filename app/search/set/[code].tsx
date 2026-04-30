@@ -818,7 +818,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: 100,
   },
+  /* Grouped list — paddingTop creates a visible gap between the
+     header card's rounded bottom corner and the first sticky group
+     header at rest. As the user scrolls down, that padding scrolls
+     up at the same rate the headerCardStyle interpolates the bottom
+     radius to 0, so the section header lands flush against the
+     (now-square) bottom of the header card. Same trick used by
+     binder/list detail. */
   groupedListContent: {
+    paddingTop: spacing.sm,
     paddingBottom: 100,
   },
   gridCompactCard: {
